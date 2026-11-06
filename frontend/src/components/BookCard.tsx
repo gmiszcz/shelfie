@@ -2,6 +2,7 @@ import { Rating } from 'primereact/rating';
 import { Tag } from 'primereact/tag';
 
 import { formatAuthors, formatYear } from '../format';
+import { useSettings } from '../settings/SettingsContext';
 import type { Book } from '../types';
 import { STATUS_LABELS, STATUS_SEVERITY } from '../types';
 
@@ -11,6 +12,12 @@ interface Props {
 }
 
 export function BookCard({ book, onOpen }: Props) {
+  const { settings } = useSettings();
+  const f = settings.cardFields;
+
+  const year = formatYear(book.published_date);
+  const showAuthorLine = (f.author && book.authors.length > 0) || (f.year && !!year);
+
   return (
     <div
       className="book-card"
@@ -32,15 +39,42 @@ export function BookCard({ book, onOpen }: Props) {
         <span className="title" title={book.title}>
           {book.title}
         </span>
-        <span className="author">
-          {formatAuthors(book.authors)}
-          {formatYear(book.published_date) && ` · ${formatYear(book.published_date)}`}
-        </span>
+
+        {showAuthorLine && (
+          <span className="author">
+            {f.author && formatAuthors(book.authors)}
+            {f.author && f.year && year && ' · '}
+            {f.year && year}
+          </span>
+        )}
+
+        {f.series && book.series && (
+          <span className="card-series" title={book.series}>
+            <i className="pi pi-bookmark" /> {book.series}
+            {book.volume && ` · Vol. ${book.volume}`}
+          </span>
+        )}
+
+        {f.pageCount && book.page_count != null && book.page_count > 0 && (
+          <span className="card-pages">{book.page_count} pages</span>
+        )}
+
+        {f.shelves && book.shelves.length > 0 && (
+          <div className="card-shelves">
+            {book.shelves.map((s) => (
+              <Tag key={s} value={s} severity="success" />
+            ))}
+          </div>
+        )}
+
         <div className="card-footer">
-          <Tag value={STATUS_LABELS[book.status]} severity={STATUS_SEVERITY[book.status]} />
-          {book.display_score != null ? (
+          {f.status && (
+            <Tag value={STATUS_LABELS[book.status]} severity={STATUS_SEVERITY[book.status]} />
+          )}
+          {f.score && book.display_score != null ? (
             <Tag value={`Score ${book.display_score.toFixed(1)}`} severity="info" />
           ) : (
+            f.stars &&
             book.stars != null && <Rating value={Math.round(book.stars)} readOnly cancel={false} />
           )}
         </div>

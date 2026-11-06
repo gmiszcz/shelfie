@@ -50,11 +50,12 @@ body {
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
-.app-header {
+/* --- App bar ---------------------------------------------------------------------------- */
+.app-bar {
   display: flex;
   align-items: center;
-  gap: var(--default-gap);
-  padding: var(--big-padding) var(--content-padding);
+  gap: var(--big-gap);
+  padding: var(--default-padding) var(--content-padding);
   background: var(--app-surface);
   border-bottom: 1px solid var(--app-border);
   position: sticky;
@@ -62,16 +63,61 @@ body {
   z-index: 10;
 }
 
-.app-header h1 {
-  margin: 0;
-  font-size: 1.4rem;
+.app-brand {
   display: flex;
   align-items: center;
   gap: var(--small-gap);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 
-.app-header .spacer {
+.app-brand i {
+  color: var(--app-accent);
+  font-size: 1.3rem;
+}
+
+.app-nav {
+  display: flex;
+  align-items: stretch;
+  gap: var(--small-gap);
   flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.app-nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-gap);
+  padding: var(--default-padding) var(--big-padding);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--app-text-muted);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.app-nav-item:hover {
+  color: var(--app-text);
+}
+
+.app-nav-item.active {
+  color: var(--app-accent);
+  border-bottom-color: var(--app-accent);
+}
+
+.app-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+  margin-left: auto;
 }
 
 .app-main {
@@ -80,12 +126,65 @@ body {
   margin: 0 auto;
 }
 
-.toolbar {
+/* --- Library toolbar -------------------------------------------------------------------- */
+.library-toolbar {
   display: flex;
   gap: var(--default-gap);
   align-items: center;
-  margin-bottom: var(--big-gap);
+  justify-content: space-between;
+  margin-bottom: var(--default-gap);
   flex-wrap: wrap;
+}
+
+.library-toolbar-left {
+  display: flex;
+  gap: var(--default-gap);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.library-toolbar-right {
+  display: flex;
+  align-items: center;
+}
+
+.library-count {
+  color: var(--app-text-muted);
+  font-size: 0.9rem;
+}
+
+.library-search {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.library-search > input {
+  padding-left: 2.25rem;
+  padding-right: 2rem;
+  min-width: min(320px, 70vw);
+}
+
+.library-search > i.pi-search {
+  position: absolute;
+  left: 0.75rem;
+  color: var(--app-text-muted);
+  pointer-events: none;
+}
+
+.library-search-clear {
+  position: absolute;
+  right: 0.75rem;
+  color: var(--app-text-muted);
+  cursor: pointer;
+}
+
+.library-search-clear:hover {
+  color: var(--app-text);
+}
+
+.library-filter-chip {
+  margin-bottom: var(--big-gap);
 }
 
 .book-grid {
@@ -254,4 +353,131 @@ body {
 
 .search-input-wrap > input {
   padding-left: 2.25rem;
+}
+
+/* --- Book card extras (settings-driven fields) ------------------------------------------ */
+.book-card .card-series,
+.book-card .card-pages {
+  color: var(--app-text-muted);
+  font-size: 0.8rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.book-card .card-series i {
+  font-size: 0.75rem;
+}
+
+.book-card .card-shelves {
+  display: flex;
+  gap: var(--small-padding);
+  flex-wrap: wrap;
+}
+
+/* --- Book detail sections --------------------------------------------------------------- */
+.detail-section {
+  margin-top: var(--big-gap);
+}
+
+.detail-section h4 {
+  margin: 0 0 var(--small-gap);
+  padding-bottom: var(--small-padding);
+  border-bottom: 1px solid var(--app-border);
+  font-size: 1rem;
+}
+
+.detail-field {
+  display: flex;
+  gap: var(--small-gap);
+  padding: 0.1rem 0;
+}
+
+.detail-field-label {
+  color: var(--app-text-muted);
+  min-width: 120px;
+  flex-shrink: 0;
+}
+
+.detail-field-value {
+  flex: 1;
+}
+
+.detail-insights .detail-field {
+  align-items: flex-start;
+}
+
+.detail-note {
+  margin-bottom: var(--default-gap);
+}
+
+.detail-note h5 {
+  margin: 0 0 var(--small-padding);
+  color: var(--app-text-muted);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.detail-note p {
+  margin: 0;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.detail-quote {
+  border-left: 3px solid var(--app-accent);
+  padding-left: var(--default-padding);
+  font-style: italic;
+}
+
+.detail-show-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+  margin-top: var(--big-gap);
+  padding-top: var(--default-padding);
+  border-top: 1px solid var(--app-border);
+}
+
+/* --- Settings sidebar ------------------------------------------------------------------- */
+.settings-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-gap);
+  font-weight: 600;
+}
+
+.settings-section h4 {
+  margin: 0 0 var(--small-padding);
+  font-size: 1rem;
+}
+
+.settings-hint {
+  margin: 0 0 var(--default-gap);
+  color: var(--app-text-muted);
+  font-size: 0.85rem;
+}
+
+.settings-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+}
+
+.settings-option {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+  cursor: pointer;
+}
+
+.settings-switch {
+  margin-bottom: var(--small-gap);
+}
+
+.settings-reset {
+  margin-top: var(--default-gap);
 }

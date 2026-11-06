@@ -60,6 +60,18 @@ export interface BookInput {
 /** Partial update (PATCH /api/books/{id}). */
 export type BookPatch = Partial<Omit<BookInput, 'external_id' | 'metadata_source'>>;
 
+/** Agent/user generated reading insights for a book (UI bus contract 2). */
+export interface BookInsights {
+  summary: string | null;
+  main_characters: string | null;
+  main_plot: string | null;
+  setting: string | null;
+  themes: string | null;
+  tone: string | null;
+  generated_at: string | null;
+  source: 'agent' | 'user' | null;
+}
+
 export interface Book extends Required<Omit<BookInput, 'stars'>> {
   id: number;
   stars: number | null;
@@ -69,6 +81,7 @@ export interface Book extends Required<Omit<BookInput, 'stars'>> {
   comparison_count: number;
   added_at: string;
   updated_at: string;
+  insights?: BookInsights | null;
 }
 
 export interface SearchResponse {
