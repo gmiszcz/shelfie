@@ -8,6 +8,15 @@ from enum import Enum
 from pydantic import BaseModel, Field, field_validator
 
 
+def _validate_half_step(value: float | None) -> float | None:
+    """Stars must be a multiple of 0.5 (0.5, 1.0, 1.5 ... 5.0). ``None`` means unrated."""
+    if value is None:
+        return value
+    if round(value * 2) != value * 2:
+        raise ValueError("stars must be given in half-star steps (0.5, 1.0, ... 5.0)")
+    return value
+
+
 class ReadingStatus(str, Enum):
     want = "want"
     reading = "reading"
@@ -83,6 +92,11 @@ class BookFields(BaseModel):
     def none_to_list(cls, value: object) -> object:
         return [] if value is None else value
 
+    @field_validator("stars")
+    @classmethod
+    def stars_half_step(cls, value: float | None) -> float | None:
+        return _validate_half_step(value)
+
     @field_validator("started_on", "finished_on", "purchase_date", mode="before")
     @classmethod
     def blank_date_to_none(cls, value: object) -> object:
@@ -132,6 +146,11 @@ class BookUpdate(BaseModel):
     purchase_date: date | None = None
     purchase_price: float | None = Field(default=None, ge=0)
     purchase_from: str | None = None
+
+    @field_validator("stars")
+    @classmethod
+    def stars_half_step(cls, value: float | None) -> float | None:
+        return _validate_half_step(value)
 
     @field_validator("started_on", "finished_on", "purchase_date", mode="before")
     @classmethod

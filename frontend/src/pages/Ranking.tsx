@@ -3,15 +3,24 @@ import { Column } from 'primereact/column';
 import { DataTable } from 'primereact/datatable';
 import { Dropdown } from 'primereact/dropdown';
 import { InputSwitch } from 'primereact/inputswitch';
-import { Rating } from 'primereact/rating';
+import { ProgressBar } from 'primereact/progressbar';
 import { Skeleton } from 'primereact/skeleton';
 import { Toast } from 'primereact/toast';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import './Ranking.css';
 import { ComparePair } from '../components/ComparePair';
+import { HalfStarRating } from '../components/HalfStarRating';
 import { formatAuthors } from '../format';
-import { formatScore, newSessionId, rankBooks, shelvesOf } from '../ranking';
+import {
+  bandLabel,
+  confidenceLabel,
+  confidenceOf,
+  formatScore,
+  newSessionId,
+  rankBooks,
+  shelvesOf,
+} from '../ranking';
 import { api } from '../services/api';
 import type { Book, RatingPair, Winner } from '../types';
 
@@ -185,9 +194,33 @@ export function Ranking() {
   );
 
   const starsBody = (row: Book) =>
-    row.stars != null ? <Rating value={Math.round(row.stars)} readOnly cancel={false} /> : '—';
+    row.stars != null ? (
+      <HalfStarRating value={row.stars} onChange={() => {}} readOnly ariaLabel={`${row.stars} stars`} />
+    ) : (
+      '—'
+    );
 
   const scoreBody = (row: Book) => <span className="rank-score">{formatScore(row)}</span>;
+
+  const bandBody = (row: Book) => <span className="rank-band">{bandLabel(row)}</span>;
+
+  const confidenceBody = (row: Book) => {
+    if (row.stars == null) {
+      return '—';
+    }
+    const pct = Math.round(confidenceOf(row) * 100);
+    return (
+      <div className="rank-confidence" title={`${row.comparison_count} comparison(s)`}>
+        <span className="rank-confidence-label">{confidenceLabel(row)}</span>
+        <ProgressBar
+          value={pct}
+          showValue={false}
+          style={{ height: '6px' }}
+          aria-label={`Confidence ${pct}%`}
+        />
+      </div>
+    );
+  };
 
   const uncertaintyBody = (row: Book) =>
     row.rating_uncertainty != null ? `± ${row.rating_uncertainty.toFixed(2)}` : '—';
@@ -209,6 +242,18 @@ export function Ranking() {
       </div>
 
       {error && <p style={{ color: 'var(--red-400)' }}>{error}</p>}
+
+      <div className="rank-infobox" role="note">
+        <i className="pi pi-info-circle" aria-hidden="true" />
+        <div>
+          <strong>How the score works.</strong> Your star rating sets a <em>band</em>: a 5★ book
+          lives in <code>4.6–5.0</code>, a 4.5★ book in <code>4.1–4.5</code>, and so on. Comparisons
+          only reorder books <em>within</em> a band and can nudge a book <em>down</em> from its star
+          value, never up — so the order by stars is always kept and bands never overlap. The best
+          book in a band stays exactly at its star value; a book with few comparisons stays near the
+          top until enough evidence places it.
+        </div>
+      </div>
 
       {/* --- Compare section --------------------------------------------------------- */}
       <section className="rank-section">
@@ -284,11 +329,13 @@ export function Ranking() {
           <Column header="Title" body={titleBody} />
           <Column header="Stars" body={starsBody} style={{ width: '10rem' }} />
           <Column header="Score" body={scoreBody} style={{ width: '6rem' }} />
+          <Column header="Band" body={bandBody} style={{ width: '7rem' }} />
           <Column
             header="Comparisons"
             field="comparison_count"
             style={{ width: '8rem' }}
           />
+          <Column header="Confidence" body={confidenceBody} style={{ width: '9rem' }} />
           <Column header="±" body={uncertaintyBody} style={{ width: '6rem' }} />
         </DataTable>
       </section>

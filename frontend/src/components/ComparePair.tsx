@@ -1,8 +1,8 @@
 import { Button } from 'primereact/button';
-import { Rating } from 'primereact/rating';
 import { useEffect } from 'react';
 
 import './ComparePair.css';
+import { HalfStarRating } from './HalfStarRating';
 import { formatAuthors } from '../format';
 import { formatScore } from '../ranking';
 import type { Book, Winner } from '../types';
@@ -51,7 +51,14 @@ function Side({
         </span>
         <span className="compare-authors">{formatAuthors(book.authors)}</span>
         <div className="compare-stats">
-          {book.stars != null && <Rating value={Math.round(book.stars)} readOnly cancel={false} />}
+          {book.stars != null && (
+            <HalfStarRating
+              value={book.stars}
+              onChange={() => {}}
+              readOnly
+              ariaLabel={`${book.stars} stars`}
+            />
+          )}
           <span className="compare-score">{formatScore(book)}</span>
         </div>
       </div>

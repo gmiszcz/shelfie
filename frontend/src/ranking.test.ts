@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatScore, newSessionId, rankBooks, shelvesOf } from './ranking';
+import {
+  bandLabel,
+  bandOf,
+  confidenceLabel,
+  confidenceOf,
+  formatScore,
+  newSessionId,
+  rankBooks,
+  scoreBoundsForStars,
+  shelvesOf,
+} from './ranking';
 import type { Book } from './types';
 
 function book(overrides: Partial<Book>): Book {
@@ -97,6 +107,51 @@ describe('shelvesOf', () => {
   });
   it('handles no shelves', () => {
     expect(shelvesOf([book({ shelves: [] })])).toEqual([]);
+  });
+});
+
+describe('scoreBoundsForStars', () => {
+  it('maps 5 stars to 4.5..5.0 per contract (> minScore, <= maxScore)', () => {
+    expect(scoreBoundsForStars(5)).toEqual({ minScore: 4.5, maxScore: 5 });
+  });
+  it('maps 4.5 stars to 4.0..4.5', () => {
+    expect(scoreBoundsForStars(4.5)).toEqual({ minScore: 4, maxScore: 4.5 });
+  });
+  it('maps 1 star to 0.5..1.0', () => {
+    expect(scoreBoundsForStars(1)).toEqual({ minScore: 0.5, maxScore: 1 });
+  });
+});
+
+describe('bandOf / bandLabel', () => {
+  it('5.0 owns 4.6..5.0', () => {
+    expect(bandOf(5)).toEqual({ floor: 4.6, top: 5 });
+  });
+  it('4.5 owns 4.1..4.5', () => {
+    expect(bandOf(4.5)).toEqual({ floor: 4.1, top: 4.5 });
+  });
+  it('labels the band with an en dash', () => {
+    expect(bandLabel(book({ stars: 5 }))).toBe('4.6\u20135.0');
+    expect(bandLabel(book({ stars: null }))).toBe('--');
+  });
+});
+
+describe('confidence', () => {
+  it('is 0 without an uncertainty estimate', () => {
+    expect(confidenceOf(book({ rating_uncertainty: null }))).toBe(0);
+  });
+  it('rises as uncertainty falls', () => {
+    const low = confidenceOf(book({ rating_uncertainty: 2 }));
+    const high = confidenceOf(book({ rating_uncertainty: 0.2 }));
+    expect(high).toBeGreaterThan(low);
+  });
+  it('labels an unrated book and an unrefined one', () => {
+    expect(confidenceLabel(book({ stars: null }))).toBe('--');
+    expect(confidenceLabel(book({ stars: 5, comparison_count: 0 }))).toBe('Unrefined');
+  });
+  it('labels a well-pinned book High', () => {
+    expect(
+      confidenceLabel(book({ stars: 5, comparison_count: 20, rating_uncertainty: 0.2 })),
+    ).toBe('High');
   });
 });
 

@@ -42,11 +42,23 @@ def row_to_book(row: Mapping[str, Any] | sqlite3.Row) -> Book:
     return Book.model_validate(data)
 
 
-async def list_books(conn: aiosqlite.Connection, user_id: int) -> list[Book]:
-    cursor = await conn.execute(
-        "SELECT * FROM books WHERE user_id = ? ORDER BY added_at DESC, id DESC",
-        (user_id,),
-    )
+async def list_books(
+    conn: aiosqlite.Connection,
+    user_id: int,
+    *,
+    min_score: float | None = None,
+    max_score: float | None = None,
+) -> list[Book]:
+    sql = "SELECT * FROM books WHERE user_id = ?"
+    params: list[Any] = [user_id]
+    if min_score is not None:
+        sql += " AND display_score > ?"
+        params.append(min_score)
+    if max_score is not None:
+        sql += " AND display_score <= ?"
+        params.append(max_score)
+    sql += " ORDER BY added_at DESC, id DESC"
+    cursor = await conn.execute(sql, tuple(params))
     return [row_to_book(row) for row in await cursor.fetchall()]
 
 
