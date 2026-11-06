@@ -38,8 +38,10 @@ export function BookCard({ book, onOpen }: Props) {
         </span>
         <div className="card-footer">
           <Tag value={STATUS_LABELS[book.status]} severity={STATUS_SEVERITY[book.status]} />
-          {book.stars != null && (
-            <Rating value={Math.round(book.stars)} readOnly cancel={false} />
+          {book.display_score != null ? (
+            <Tag value={`Score ${book.display_score.toFixed(1)}`} severity="info" />
+          ) : (
+            book.stars != null && <Rating value={Math.round(book.stars)} readOnly cancel={false} />
           )}
         </div>
       </div>

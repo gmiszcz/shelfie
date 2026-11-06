@@ -3,15 +3,23 @@ import { Toast } from 'primereact/toast';
 import { useMemo, useRef, useState } from 'react';
 
 import { BookDetailDialog } from '../components/BookDetailDialog';
+import { BookFormDialog } from '../components/BookFormDialog';
 import { BookGrid } from '../components/BookGrid';
 import { SearchDialog } from '../components/SearchDialog';
 import { useLibrary } from '../hooks/useLibrary';
-import type { Book, ReadingStatus, VolumeSearchResult } from '../types';
+import type { Book, BookInput, ReadingStatus, VolumeSearchResult } from '../types';
+
+interface FormTarget {
+  mode: 'create' | 'edit';
+  bookId?: number;
+  initial?: Partial<BookInput>;
+}
 
 export function Library() {
-  const { books, loading, error, add, update, remove } = useLibrary();
+  const { books, loading, error, add, update, remove, upsert } = useLibrary();
   const [selected, setSelected] = useState<Book | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [formTarget, setFormTarget] = useState<FormTarget | null>(null);
   const toast = useRef<Toast>(null);
 
   const existingVolumeIds = useMemo(
@@ -59,14 +67,31 @@ export function Library() {
     }
   };
 
+  const openEdit = (id: number) => setFormTarget({ mode: 'edit', bookId: id });
+
+  const handleSaved = (book: Book) => {
+    const creating = formTarget?.mode === 'create';
+    upsert(book);
+    // Keep an open detail dialog in sync with the saved book.
+    setSelected((prev) => (prev && prev.id === book.id ? book : prev));
+    setFormTarget(null);
+    toast.current?.show({
+      severity: 'success',
+      summary: creating ? 'Added' : 'Saved',
+      detail: book.title,
+    });
+  };
+
   return (
     <>
       <Toast ref={toast} position="bottom-right" />
       <div className="toolbar">
+        <Button label="Add book" icon="pi pi-plus" onClick={() => setSearchOpen(true)} />
         <Button
-          label="Add book"
-          icon="pi pi-plus"
-          onClick={() => setSearchOpen(true)}
+          label="Add manually"
+          icon="pi pi-pencil"
+          outlined
+          onClick={() => setFormTarget({ mode: 'create' })}
         />
         <span style={{ color: 'var(--app-text-muted)' }}>
           {loading ? 'Loading…' : `${books.length} book${books.length === 1 ? '' : 's'}`}
@@ -83,6 +108,7 @@ export function Library() {
         onStatus={handleStatus}
         onStars={handleStars}
         onDelete={handleDelete}
+        onEdit={openEdit}
       />
 
       <SearchDialog
@@ -90,7 +116,19 @@ export function Library() {
         onHide={() => setSearchOpen(false)}
         onAdd={handleAdd}
         existingVolumeIds={existingVolumeIds}
+        onAddManually={(prefill) => setFormTarget({ mode: 'create', initial: prefill })}
       />
+
+      {formTarget && (
+        <BookFormDialog
+          visible
+          mode={formTarget.mode}
+          bookId={formTarget.bookId}
+          initial={formTarget.initial}
+          onHide={() => setFormTarget(null)}
+          onSaved={handleSaved}
+        />
+      )}
     </>
   );
 }

@@ -14,6 +14,7 @@ interface Props {
   onStatus: (id: number, status: ReadingStatus) => void;
   onStars: (id: number, stars: number | null) => void;
   onDelete: (id: number) => void;
+  onEdit: (id: number) => void;
 }
 
 const STATUS_OPTIONS = (Object.keys(STATUS_LABELS) as ReadingStatus[]).map((value) => ({
@@ -21,7 +22,7 @@ const STATUS_OPTIONS = (Object.keys(STATUS_LABELS) as ReadingStatus[]).map((valu
   label: STATUS_LABELS[value],
 }));
 
-export function BookDetailDialog({ book, onHide, onStatus, onStars, onDelete }: Props) {
+export function BookDetailDialog({ book, onHide, onStatus, onStars, onDelete, onEdit }: Props) {
   if (!book) {
     return null;
   }
@@ -54,6 +55,34 @@ export function BookDetailDialog({ book, onHide, onStatus, onStars, onDelete }: 
             {book.publisher && ` · ${book.publisher}`}
           </div>
 
+          {book.series && (
+            <div>
+              Series: <strong>{book.series}</strong>
+              {book.volume && ` · Vol. ${book.volume}`}
+            </div>
+          )}
+
+          {(book.started_on || book.finished_on) && (
+            <div className="flex gap-3 flex-wrap" style={{ color: 'var(--app-text-muted)' }}>
+              {book.started_on && <span>Started {book.started_on}</span>}
+              {book.finished_on && <span>Finished {book.finished_on}</span>}
+            </div>
+          )}
+
+          {(book.page_count != null || book.pages_read != null) && (
+            <div style={{ color: 'var(--app-text-muted)' }}>
+              {book.pages_read != null && `${book.pages_read} read`}
+              {book.pages_read != null && book.page_count != null && ' / '}
+              {book.page_count != null && `${book.page_count} pages`}
+            </div>
+          )}
+
+          {book.display_score != null && (
+            <div className="flex align-items-center gap-2">
+              <Tag value={`Score ${book.display_score.toFixed(1)}`} severity="info" />
+            </div>
+          )}
+
           <div className="flex align-items-center gap-2">
             <span>Status:</span>
             <Dropdown
@@ -80,6 +109,24 @@ export function BookDetailDialog({ book, onHide, onStatus, onStars, onDelete }: 
               ))}
             </div>
           )}
+
+          {book.shelves.length > 0 && (
+            <div className="flex gap-1 flex-wrap align-items-center">
+              <span style={{ color: 'var(--app-text-muted)' }}>Shelves:</span>
+              {book.shelves.map((s) => (
+                <Tag key={s} value={s} severity="success" />
+              ))}
+            </div>
+          )}
+
+          {book.tags.length > 0 && (
+            <div className="flex gap-1 flex-wrap align-items-center">
+              <span style={{ color: 'var(--app-text-muted)' }}>Tags:</span>
+              {book.tags.map((t) => (
+                <Tag key={t} value={t} severity="warning" />
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -90,7 +137,8 @@ export function BookDetailDialog({ book, onHide, onStatus, onStars, onDelete }: 
         </>
       )}
 
-      <div className="flex justify-content-end mt-3">
+      <div className="flex justify-content-between mt-3">
+        <Button label="Edit" icon="pi pi-pencil" outlined onClick={() => onEdit(book.id)} />
         <Button
           label="Remove from library"
           icon="pi pi-trash"

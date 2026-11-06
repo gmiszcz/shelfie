@@ -11,6 +11,8 @@ export interface UseLibrary {
   add: (volume: VolumeSearchResult, status?: ReadingStatus) => Promise<Book>;
   update: (id: number, changes: { status?: ReadingStatus; stars?: number | null }) => Promise<void>;
   remove: (id: number) => Promise<void>;
+  /** Insert a newly created book, or replace an existing one by id. */
+  upsert: (book: Book) => void;
 }
 
 export function useLibrary(): UseLibrary {
@@ -53,5 +55,13 @@ export function useLibrary(): UseLibrary {
     setBooks((prev) => prev.filter((b) => b.id !== id));
   }, []);
 
-  return { books, loading, error, reload, add, update, remove };
+  const upsert = useCallback((book: Book) => {
+    setBooks((prev) =>
+      prev.some((b) => b.id === book.id)
+        ? prev.map((b) => (b.id === book.id ? book : b))
+        : [book, ...prev],
+    );
+  }, []);
+
+  return { books, loading, error, reload, add, update, remove, upsert };
 }
