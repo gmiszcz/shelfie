@@ -92,22 +92,37 @@ def _engine(fail: bool = False) -> tuple[ChatEngine, list[FakeEntry]]:
 async def test_stream_maps_events_in_order() -> None:
     engine, _ = _engine()
     events = [e async for e in engine.stream("What did I read?", "abc")]
+    # tool_start now expands to a TOOL_CALL_START + TOOL_CALL_ARGS pair (AG-UI).
     assert [e["type"] for e in events] == [
         "session_start",
         "reasoning",
         "tool_start",
+        "tool_args",
         "tool_end",
         "token",
         "token",
         "session_finish",
     ]
+    # Every event carries its canonical AG-UI name.
+    assert [e["agui"] for e in events] == [
+        "RUN_STARTED",
+        "THINKING_TEXT_MESSAGE_CONTENT",
+        "TOOL_CALL_START",
+        "TOOL_CALL_ARGS",
+        "TOOL_CALL_END",
+        "TEXT_MESSAGE_CONTENT",
+        "TEXT_MESSAGE_CONTENT",
+        "RUN_FINISHED",
+    ]
     assert events[0]["session_id"] == "abc"
     assert events[2]["name"] == "search_library"
+    assert events[3]["input"] == {"query": "Dune"}
     assert events[-1] == {
         "type": "session_finish",
         "session_id": "abc",
         "text": "You read Dune.",
         "ok": True,
+        "agui": "RUN_FINISHED",
     }
 
 
@@ -126,6 +141,87 @@ async def test_agent_failure_becomes_error_then_finish() -> None:
     events = [e async for e in engine.stream("hi", "s")]
     assert events[-2]["type"] == "error" and "bedrock down" in events[-2]["message"]
     assert events[-1]["type"] == "session_finish" and events[-1]["ok"] is False
+
+
+class _FakeRegistry:
+    def __init__(self) -> None:
+        self.added: list[object] = []
+
+    def process_tools(self, tools: list[object]) -> None:
+        self.added.extend(tools)
+
+
+class UiEntry:
+    """A fake entry that calls the frontend filter_library tool."""
+
+    def __init__(self, queue: FakeQueue) -> None:
+        self.queue = queue
+        self.tool_registry = _FakeRegistry()
+        self.system_prompt = "base prompt"
+
+    async def invoke_async(self, message: str) -> str:
+        q = self.queue
+        q.put_event(
+            StreamEvent(
+                type="tool_start",
+                agent_name="librarian",
+                data={
+                    "tool_name": "filter_library",
+                    "tool_use_id": "u1",
+                    "tool_input": {"series": "Droga Szamana"},
+                },
+            )
+        )
+        q.put_event(
+            StreamEvent(
+                type="tool_end",
+                agent_name="librarian",
+                data={"tool_name": "filter_library", "tool_use_id": "u1", "status": "success"},
+            )
+        )
+        return "Done."
+
+
+async def test_ui_scope_registers_tools_and_flags_ui_action() -> None:
+    created: list[UiEntry] = []
+
+    def factory(session_id: str) -> ChatSession:
+        queue = FakeQueue()
+        entry = UiEntry(queue)
+        created.append(entry)
+        return ChatSession(session_id=session_id, entry=entry, queue=queue, manifest=None)
+
+    engine = ChatEngine(factory)
+    events = [e async for e in engine.stream("pokaż serię", "ui1", "ui")]
+
+    entry = created[0]
+    # UI tools were registered and the prompt was augmented once.
+    assert len(entry.tool_registry.added) == 4
+    assert "filter_library" in entry.system_prompt
+
+    # The UI tool call carries the args through tool_end and is flagged ui_action.
+    end = next(e for e in events if e["type"] == "tool_end")
+    assert end["ui_action"] is True
+    assert end["agui"] == "TOOL_CALL_RESULT"
+    assert end["input"] == {"series": "Droga Szamana"}
+
+    # A second UI turn does not double-register.
+    [e async for e in engine.stream("again", "ui1", "ui")]
+    assert len(entry.tool_registry.added) == 4
+
+
+async def test_library_scope_does_not_register_ui_tools() -> None:
+    created: list[UiEntry] = []
+
+    def factory(session_id: str) -> ChatSession:
+        queue = FakeQueue()
+        entry = UiEntry(queue)
+        created.append(entry)
+        return ChatSession(session_id=session_id, entry=entry, queue=queue, manifest=None)
+
+    engine = ChatEngine(factory)
+    [e async for e in engine.stream("hi", "lib1", "library")]
+    assert created[0].tool_registry.added == []
 
 
 def test_chat_endpoint_streams_sse(client: TestClient) -> None:

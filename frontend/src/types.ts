@@ -119,14 +119,82 @@ export interface RecomputeResult {
 
 // --- agent chat (SSE wire protocol of POST /api/agent/chat) ------------------------------
 
+/** AG-UI canonical event names carried in the `agui` field of each ChatEvent. */
+export type AgUiEventName =
+  | 'RUN_STARTED'
+  | 'RUN_FINISHED'
+  | 'RUN_ERROR'
+  | 'TEXT_MESSAGE_CONTENT'
+  | 'THINKING_TEXT_MESSAGE_CONTENT'
+  | 'TOOL_CALL_START'
+  | 'TOOL_CALL_ARGS'
+  | 'TOOL_CALL_END'
+  | 'TOOL_CALL_RESULT';
+
+/** Which scope the chat runs in: read-only data assistant, or also UI control. */
+export type ChatScope = 'library' | 'ui';
+
 export type ChatEvent =
-  | { type: 'session_start'; session_id: string }
-  | { type: 'reasoning'; text: string }
-  | { type: 'token'; text: string }
-  | { type: 'tool_start'; id: string; name: string; input: Record<string, unknown> }
-  | { type: 'tool_end'; id: string; name: string; status: string }
-  | { type: 'error'; message: string }
-  | { type: 'session_finish'; session_id?: string; text: string; ok: boolean };
+  | { type: 'session_start'; session_id: string; agui?: 'RUN_STARTED' }
+  | { type: 'reasoning'; text: string; agui?: 'THINKING_TEXT_MESSAGE_CONTENT' }
+  | { type: 'token'; text: string; agui?: 'TEXT_MESSAGE_CONTENT' }
+  | {
+      type: 'tool_start';
+      id: string;
+      name: string;
+      input: Record<string, unknown>;
+      ui_action?: boolean;
+      agui?: 'TOOL_CALL_START';
+    }
+  | {
+      type: 'tool_args';
+      id: string;
+      name: string;
+      input: Record<string, unknown>;
+      ui_action?: boolean;
+      agui?: 'TOOL_CALL_ARGS';
+    }
+  | {
+      type: 'tool_end';
+      id: string;
+      name: string;
+      status: string;
+      input?: Record<string, unknown>;
+      ui_action?: boolean;
+      agui?: 'TOOL_CALL_END' | 'TOOL_CALL_RESULT';
+    }
+  | { type: 'error'; message: string; agui?: 'RUN_ERROR' }
+  | {
+      type: 'session_finish';
+      session_id?: string;
+      text: string;
+      ok: boolean;
+      agui?: 'RUN_FINISHED' | 'RUN_ERROR';
+    };
+
+/**
+ * UI-bus event detail (agent -> frontend), dispatched as
+ * `window.dispatchEvent(new CustomEvent('shelfie:ui', { detail }))`.
+ * Mirrors the wave-2 UI-bus contract; ag-ui-voice dispatches, ui-shell listens.
+ */
+export type UiBusDetail =
+  | {
+      action: 'filter_library';
+      query?: string;
+      series?: string;
+      author?: string;
+      shelf?: string;
+      tag?: string;
+      status?: string;
+      min_stars?: number;
+      book_ids?: number[];
+    }
+  | { action: 'navigate'; tab: 'library' | 'stats' | 'ranking' }
+  | { action: 'open_book'; book_id: number }
+  | { action: 'clear_filter' };
+
+/** Event name for the agent -> frontend UI bus. */
+export const UI_BUS_EVENT = 'shelfie:ui';
 
 // --- labels ------------------------------------------------------------------------------
 

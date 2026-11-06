@@ -121,11 +121,16 @@ export const api = {
     }),
 
   /** POST /api/agent/chat — the response body is an SSE stream; read it with chat/sse.ts. */
-  chat: (message: string, sessionId: string | null, signal?: AbortSignal) =>
+  chat: (
+    message: string,
+    sessionId: string | null,
+    scope: 'library' | 'ui' = 'library',
+    signal?: AbortSignal,
+  ) =>
     fetch(`${BASE}/agent/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-      body: JSON.stringify({ message, session_id: sessionId }),
+      body: JSON.stringify({ message, session_id: sessionId, scope }),
       signal,
     }),
 

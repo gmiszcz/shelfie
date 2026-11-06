@@ -18,6 +18,9 @@ dependencies = [
   "tzdata>=2024.1; sys_platform == 'win32'",
   "strands-compose>=0.12.0",
   "python-multipart>=0.0.33",
+  "amazon-transcribe>=0.6.2",
+  "websockets>=13.0",
+  "boto3>=1.35.0",
 ]
 
 [project.optional-dependencies]

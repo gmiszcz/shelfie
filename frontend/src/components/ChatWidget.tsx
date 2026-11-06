@@ -2,13 +2,18 @@ import { Button } from 'primereact/button';
 import { InputTextarea } from 'primereact/inputtextarea';
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
+import { dispatchUiAction } from '../agui/uiBus';
 import { api } from '../services/api';
 import { type ChatMessage, chatReducer, initialChatState } from '../chat/chatState';
 import { renderMarkdown } from '../chat/markdown';
 import { readChatStream } from '../chat/sse';
+import { type TranscriptLanguage, useVoiceInput } from '../chat/useVoiceInput';
+import type { ChatEvent, ChatScope } from '../types';
 import './ChatWidget.css';
 
 const SESSION_KEY = 'shelfie.chat.sessionId';
+const SCOPE_KEY = 'shelfie.chat.scope';
+const LANG_KEY = 'shelfie.chat.voiceLang';
 
 /** Human labels for the agent's tools, keyed by tool name. */
 const TOOL_LABELS: Record<string, string> = {
@@ -100,6 +105,19 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           </div>
         )}
 
+        {message.uiActions.length > 0 && (
+          <div className="chat-ui-actions">
+            {message.uiActions.map((a) => (
+              <div key={a.id} className="chat-ui-action" role="status">
+                <i className="pi pi-bolt" />
+                <span>
+                  Action: <strong>{a.label}</strong>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
         {message.status === 'error' ? (
           <div className="chat-error">
             <i className="pi pi-exclamation-triangle" />
@@ -123,12 +141,54 @@ export function ChatWidget() {
   const [state, dispatch] = useReducer(chatReducer, initialChatState);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
+  const [scope, setScope] = useState<ChatScope>(() => {
+    const saved = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SCOPE_KEY) : null;
+    return saved === 'ui' ? 'ui' : 'library';
+  });
+  const [voiceLang, setVoiceLang] = useState<TranscriptLanguage>(() => {
+    const saved = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(LANG_KEY) : null;
+    return saved === 'en-US' ? 'en-US' : 'pl-PL';
+  });
 
   const sessionRef = useRef<string | null>(
     typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SESSION_KEY) : null,
   );
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Append each finalized transcript into the input box (user still presses send).
+  const onFinalTranscript = useCallback((text: string) => {
+    setInput((prev) => (prev ? `${prev} ${text}`.replace(/\s+/g, ' ') : text));
+    inputRef.current?.focus();
+  }, []);
+  const voice = useVoiceInput(onFinalTranscript, scope);
+  const voiceState = voice.state;
+
+  // Persist scope and voice language.
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(SCOPE_KEY, scope);
+    } catch {
+      // ignore
+    }
+  }, [scope]);
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(LANG_KEY, voiceLang);
+    } catch {
+      // ignore
+    }
+  }, [voiceLang]);
+
+  // Dispatch a UI tool call onto the shelfie:ui bus as it streams in (the pure
+  // reducer records the "Action" card; the side-effect belongs here).
+  const handleEvent = useCallback((event: ChatEvent) => {
+    if (event.type === 'tool_end' && event.ui_action) {
+      dispatchUiAction(event.name, event.input);
+    }
+    dispatch({ type: 'event', event });
+  }, []);
 
   // Persist the session id whenever the reducer learns a new one.
   useEffect(() => {
@@ -163,8 +223,8 @@ export function ChatWidget() {
       const controller = new AbortController();
       abortRef.current = controller;
       try {
-        const resp = await api.chat(text, sessionRef.current, controller.signal);
-        await readChatStream(resp, (event) => dispatch({ type: 'event', event }), controller.signal);
+        const resp = await api.chat(text, sessionRef.current, scope, controller.signal);
+        await readChatStream(resp, handleEvent, controller.signal);
       } catch (err) {
         if (controller.signal.aborted) {
           // Deliberate Stop: close the stream quietly as a finished turn.
@@ -181,7 +241,7 @@ export function ChatWidget() {
         setStreaming(false);
       }
     },
-    [streaming],
+    [streaming, scope, handleEvent],
   );
 
   const stop = useCallback(() => {
@@ -190,6 +250,7 @@ export function ChatWidget() {
 
   const newChat = useCallback(async () => {
     stop();
+    voice.stop();
     const current = sessionRef.current;
     dispatch({ type: 'reset' });
     sessionRef.current = null;
@@ -205,7 +266,7 @@ export function ChatWidget() {
         // Resetting server state is best-effort; the local chat is already cleared.
       }
     }
-  }, [stop]);
+  }, [stop, voice]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -233,6 +294,22 @@ export function ChatWidget() {
               <i className="pi pi-comments" /> Library assistant
             </span>
             <span className="chat-header-actions">
+              <button
+                type="button"
+                className={`chat-scope-toggle ${scope}`}
+                role="switch"
+                aria-checked={scope === 'ui'}
+                aria-label={
+                  scope === 'ui'
+                    ? 'UI control on: the assistant can drive the interface. Click for library only.'
+                    : 'Library only. Click to let the assistant control the UI.'
+                }
+                title={scope === 'ui' ? 'Library + UI control' : 'Library only'}
+                onClick={() => setScope((s) => (s === 'ui' ? 'library' : 'ui'))}
+              >
+                <i className={`pi ${scope === 'ui' ? 'pi-desktop' : 'pi-book'}`} />
+                <span>{scope === 'ui' ? 'Library + UI control' : 'Library only'}</span>
+              </button>
               <Button
                 icon="pi pi-plus"
                 text
@@ -273,8 +350,66 @@ export function ChatWidget() {
             )}
           </div>
 
+          {voiceState.status === 'recording' && (
+            <div className="chat-voice-banner recording" role="status">
+              <span className="chat-voice-dot" />
+              <span className="chat-voice-label">
+                Listening ({voiceLang === 'pl-PL' ? 'PL' : 'EN'})…
+                {voiceState.partial ? ` ${voiceState.partial}` : ''}
+              </span>
+              <Button
+                icon="pi pi-stop-circle"
+                text
+                rounded
+                severity="danger"
+                aria-label="Stop recording"
+                onClick={voice.stop}
+              />
+            </div>
+          )}
+          {voiceState.status === 'error' && voiceState.error && (
+            <div className="chat-voice-banner error" role="alert">
+              <i className="pi pi-exclamation-triangle" />
+              <span className="chat-voice-label">{voiceState.error}</span>
+              <Button
+                icon="pi pi-times"
+                text
+                rounded
+                aria-label="Dismiss"
+                onClick={voice.stop}
+              />
+            </div>
+          )}
+
           <div className="chat-input">
+            <button
+              type="button"
+              className="chat-lang-toggle"
+              aria-label={`Voice language: ${voiceLang === 'pl-PL' ? 'Polish' : 'English'}. Click to switch.`}
+              title={`Voice language: ${voiceLang === 'pl-PL' ? 'Polish' : 'English'}`}
+              disabled={voiceState.status === 'recording' || voiceState.status === 'requesting'}
+              onClick={() => setVoiceLang((l) => (l === 'pl-PL' ? 'en-US' : 'pl-PL'))}
+            >
+              {voiceLang === 'pl-PL' ? 'PL' : 'EN'}
+            </button>
+            <Button
+              icon={
+                voiceState.status === 'requesting' ? 'pi pi-spin pi-spinner' : 'pi pi-microphone'
+              }
+              rounded
+              text={voiceState.status !== 'recording'}
+              severity={voiceState.status === 'recording' ? 'danger' : undefined}
+              aria-label={
+                voiceState.status === 'recording' ? 'Stop voice input' : 'Start voice input'
+              }
+              aria-pressed={voiceState.status === 'recording'}
+              disabled={streaming || voiceState.status === 'requesting'}
+              onClick={() =>
+                voiceState.status === 'recording' ? voice.stop() : void voice.start(voiceLang)
+              }
+            />
             <InputTextarea
+              ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
