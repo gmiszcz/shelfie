@@ -15,6 +15,31 @@ class ReadingStatus(str, Enum):
     abandoned = "abandoned"
 
 
+class BookInsights(BaseModel):
+    """Structured, model-generated insights about a book (contract 2).
+
+    Every field is nullable: the enrichment model is told to use ``null`` rather than
+    invent. ``source`` records who produced it ("agent" for the enrichment model,
+    "user" once a person edits it).
+    """
+
+    summary: str | None = None
+    main_characters: str | None = None
+    main_plot: str | None = None
+    setting: str | None = None
+    themes: str | None = None
+    tone: str | None = None
+    generated_at: str | None = None
+    source: str | None = None  # "agent" | "user" | None
+
+    @field_validator("source")
+    @classmethod
+    def valid_source(cls, value: object) -> object:
+        if value in (None, "", "agent", "user"):
+            return value or None
+        raise ValueError("source must be 'agent', 'user' or null")
+
+
 class VolumeSearchResult(BaseModel):
     """A metadata hit from Google Books / OpenLibrary, not yet in the library."""
 
@@ -70,6 +95,7 @@ class BookFields(BaseModel):
     review: str | None = None
     notes: str | None = None
     quotes: str | None = None
+    insights: BookInsights | None = None
     signed: bool = False
     condition: str | None = None
     copies: int = Field(default=1, ge=0)
@@ -126,6 +152,7 @@ class BookUpdate(BaseModel):
     review: str | None = None
     notes: str | None = None
     quotes: str | None = None
+    insights: BookInsights | None = None
     signed: bool | None = None
     condition: str | None = None
     copies: int | None = Field(default=None, ge=0)

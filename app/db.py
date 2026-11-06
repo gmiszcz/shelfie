@@ -46,6 +46,7 @@ BOOK_COLUMNS: dict[str, str] = {
     "review": "TEXT",
     "notes": "TEXT",
     "quotes": "TEXT",
+    "insights": "TEXT",
     "signed": "INTEGER NOT NULL DEFAULT 0",
     "condition": "TEXT",
     "copies": "INTEGER NOT NULL DEFAULT 1",
@@ -63,6 +64,9 @@ BOOK_COLUMNS: dict[str, str] = {
 
 # Columns stored as JSON arrays.
 JSON_LIST_COLUMNS = frozenset({"authors", "translators", "categories", "shelves", "tags"})
+
+# Columns stored as a JSON object (``null`` when absent).
+JSON_OBJECT_COLUMNS = frozenset({"insights"})
 
 _BOOK_COLUMNS_SQL = ",\n    ".join(f"{name} {decl}" for name, decl in BOOK_COLUMNS.items())
 

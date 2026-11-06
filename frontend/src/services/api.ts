@@ -79,6 +79,9 @@ export const api = {
 
   deleteBook: (id: number) => request<void>(`/books/${id}`, { method: 'DELETE' }),
 
+  /** Regenerate structured insights for a book (POST /api/books/{id}/enrich). */
+  enrichBook: (id: number) => request<Book>(`/books/${id}/enrich`, { method: 'POST' }),
+
   search: (q: string, lang?: string) => {
     const params = new URLSearchParams({ q });
     if (lang) {

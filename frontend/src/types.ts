@@ -1,5 +1,17 @@
 export type ReadingStatus = 'want' | 'reading' | 'finished' | 'abandoned';
 
+/** Structured, model-generated insights about a book (contract 2). All fields nullable. */
+export interface BookInsights {
+  summary: string | null;
+  main_characters: string | null;
+  main_plot: string | null;
+  setting: string | null;
+  themes: string | null;
+  tone: string | null;
+  generated_at: string | null;
+  source: 'agent' | 'user' | null;
+}
+
 /** A metadata hit from Google Books / OpenLibrary, not yet in the library. */
 export interface VolumeSearchResult {
   google_volume_id: string | null;
@@ -48,6 +60,7 @@ export interface BookInput {
   review?: string | null;
   notes?: string | null;
   quotes?: string | null;
+  insights?: BookInsights | null;
   signed?: boolean;
   condition?: string | null;
   copies?: number;
@@ -60,9 +73,10 @@ export interface BookInput {
 /** Partial update (PATCH /api/books/{id}). */
 export type BookPatch = Partial<Omit<BookInput, 'external_id' | 'metadata_source'>>;
 
-export interface Book extends Required<Omit<BookInput, 'stars'>> {
+export interface Book extends Required<Omit<BookInput, 'stars' | 'insights'>> {
   id: number;
   stars: number | null;
+  insights?: BookInsights | null;
   latent_strength: number | null;
   rating_uncertainty: number | null;
   display_score: number | null;

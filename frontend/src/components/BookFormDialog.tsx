@@ -95,6 +95,9 @@ export function BookFormDialog({ visible, mode, bookId, initial, onHide, onSaved
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
+  const setInsight = (key: 'summary' | 'main_characters' | 'main_plot' | 'setting' | 'themes' | 'tone', value: string) =>
+    setForm((prev) => ({ ...prev, insights: { ...prev.insights, [key]: value } }));
+
   const headerTitle = mode === 'create' ? 'Add a book' : 'Edit book';
 
   const save = async () => {
@@ -395,6 +398,67 @@ export function BookFormDialog({ visible, mode, bookId, initial, onHide, onSaved
                     value={form.review}
                     onChange={(e) => set('review', e.target.value)}
                     rows={3}
+                    autoResize
+                  />
+                </Field>
+              </div>
+            </TabPanel>
+
+            <TabPanel header="Insights">
+              <div className="bf-grid bf-grid-1">
+                {form.insights.source && (
+                  <small className="bf-insights-meta">
+                    Source: {form.insights.source}
+                    {form.insights.generated_at
+                      ? ` · generated ${form.insights.generated_at.slice(0, 10)}`
+                      : ''}
+                  </small>
+                )}
+                <Field label="Summary">
+                  <InputTextarea
+                    value={form.insights.summary}
+                    onChange={(e) => setInsight('summary', e.target.value)}
+                    rows={3}
+                    autoResize
+                  />
+                </Field>
+                <Field label="Main characters">
+                  <InputTextarea
+                    value={form.insights.main_characters}
+                    onChange={(e) => setInsight('main_characters', e.target.value)}
+                    rows={2}
+                    autoResize
+                  />
+                </Field>
+                <Field label="Main plot">
+                  <InputTextarea
+                    value={form.insights.main_plot}
+                    onChange={(e) => setInsight('main_plot', e.target.value)}
+                    rows={3}
+                    autoResize
+                  />
+                </Field>
+                <Field label="Setting">
+                  <InputTextarea
+                    value={form.insights.setting}
+                    onChange={(e) => setInsight('setting', e.target.value)}
+                    rows={2}
+                    autoResize
+                  />
+                </Field>
+                <Field label="Themes">
+                  <InputTextarea
+                    value={form.insights.themes}
+                    onChange={(e) => setInsight('themes', e.target.value)}
+                    rows={2}
+                    autoResize
+                  />
+                </Field>
+                <Field label="Tone">
+                  <InputTextarea
+                    value={form.insights.tone}
+                    onChange={(e) => setInsight('tone', e.target.value)}
+                    rows={2}
                     autoResize
                   />
                 </Field>

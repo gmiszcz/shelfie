@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from pathlib import Path
 
 import aiosqlite
 
+from app.config import Settings, get_settings
+from app.db import connect
 from app.integrations.google_books import GoogleBooksClient
 from app.repositories import books as repo
 from app.schemas.books import Book, BookCreate, BookUpdate, SearchResponse
+
+logger = logging.getLogger(__name__)
 
 ALLOWED_COVER_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 MAX_COVER_BYTES = 5 * 1024 * 1024
@@ -47,6 +52,43 @@ async def change_book(
 
 async def remove_book(conn: aiosqlite.Connection, user_id: int, book_id: int) -> bool:
     return await repo.delete_book(conn, user_id, book_id)
+
+
+async def enrich_book(
+    user_id: int,
+    book_id: int,
+    *,
+    settings: Settings | None = None,
+) -> Book | None:
+    """Generate insights for one book and persist them. Opens its own connection.
+
+    Safe to run as a detached background task after the request connection is closed. Any
+    failure (model, AWS, parsing) leaves the book's insights unchanged — the generator
+    returns ``None`` and we skip the write.
+    """
+    from app.services import enrichment
+
+    settings = settings or get_settings()
+    conn = await connect(settings.database_file)
+    try:
+        book = await repo.get_book(conn, user_id, book_id)
+        if book is None:
+            return None
+        insights = await enrichment.generate_insights(book, settings=settings)
+        if insights is None:
+            logger.info("enrichment produced no insights for book %s", book_id)
+            return book
+        updated = await repo.update_book(conn, user_id, book_id, BookUpdate(insights=insights))
+        return updated
+    finally:
+        await conn.close()
+
+
+def schedule_enrichment(background_tasks: object, user_id: int, book_id: int) -> None:
+    """Queue ``enrich_book`` on a FastAPI ``BackgroundTasks`` (duck-typed for testability)."""
+    add_task = getattr(background_tasks, "add_task", None)
+    if callable(add_task):
+        add_task(enrich_book, user_id, book_id)
 
 
 async def search_external(

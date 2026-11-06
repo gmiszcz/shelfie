@@ -1,4 +1,16 @@
-import type { BookInput, ReadingStatus } from './types';
+import type { BookInput, BookInsights, ReadingStatus } from './types';
+
+/** Editable insights state inside the form. Strings only (no null) for easy binding. */
+export interface InsightsState {
+  summary: string;
+  main_characters: string;
+  main_plot: string;
+  setting: string;
+  themes: string;
+  tone: string;
+  generated_at: string | null;
+  source: 'agent' | 'user' | null;
+}
 
 /**
  * Editable form state for the whole BookInput contract. It is deliberately
@@ -36,6 +48,7 @@ export interface FormState {
   review: string;
   notes: string;
   quotes: string;
+  insights: InsightsState;
   signed: boolean;
   condition: string;
   copies: number | null;
@@ -74,12 +87,27 @@ export function emptyForm(): FormState {
     review: '',
     notes: '',
     quotes: '',
+    insights: emptyInsights(),
     signed: false,
     condition: '',
     copies: 1,
     purchase_date: null,
     purchase_price: null,
     purchase_from: '',
+  };
+}
+
+/** The empty insights block. */
+export function emptyInsights(): InsightsState {
+  return {
+    summary: '',
+    main_characters: '',
+    main_plot: '',
+    setting: '',
+    themes: '',
+    tone: '',
+    generated_at: null,
+    source: null,
   };
 }
 
@@ -103,6 +131,24 @@ function parseDate(value: string | null | undefined): Date | null {
   }
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/** Hydrate an InsightsState from a book's insights (string fields never null in form). */
+function insightsFromBook(value: BookInsights | null | undefined): InsightsState {
+  const base = emptyInsights();
+  if (!value) {
+    return base;
+  }
+  return {
+    summary: str(value.summary),
+    main_characters: str(value.main_characters),
+    main_plot: str(value.main_plot),
+    setting: str(value.setting),
+    themes: str(value.themes),
+    tone: str(value.tone),
+    generated_at: value.generated_at ?? null,
+    source: value.source ?? null,
+  };
 }
 
 /** Hydrate a form from an existing book or a partial prefill. */
@@ -140,6 +186,7 @@ export function fromBook(book: Partial<BookInput> | null | undefined): FormState
     review: str(book.review),
     notes: str(book.notes),
     quotes: str(book.quotes),
+    insights: insightsFromBook(book.insights),
     signed: book.signed ?? false,
     condition: str(book.condition),
     copies: book.copies ?? 1,
@@ -166,6 +213,36 @@ function trimOrNull(value: string): string | null {
 /** Trim every entry of a list and drop the blanks. */
 function cleanList(value: string[]): string[] {
   return value.map((v) => v.trim()).filter((v) => v !== '');
+}
+
+/**
+ * Convert the editable insights block into the API shape, or null when it is
+ * entirely empty. A block that carries any text is sent with its text fields
+ * trimmed (empty -> null). When it was not produced by the agent, `source` is
+ * marked "user"; an agent-produced block keeps its origin and timestamp.
+ */
+function toInsights(i: InsightsState): BookInsights | null {
+  const summary = trimOrNull(i.summary);
+  const main_characters = trimOrNull(i.main_characters);
+  const main_plot = trimOrNull(i.main_plot);
+  const setting = trimOrNull(i.setting);
+  const themes = trimOrNull(i.themes);
+  const tone = trimOrNull(i.tone);
+  const hasText =
+    summary || main_characters || main_plot || setting || themes || tone;
+  if (!hasText) {
+    return null;
+  }
+  return {
+    summary,
+    main_characters,
+    main_plot,
+    setting,
+    themes,
+    tone,
+    generated_at: i.generated_at,
+    source: i.source ?? 'user',
+  };
 }
 
 /** Convert the form into a BookInput payload for create/update. */
@@ -198,6 +275,7 @@ export function toInput(f: FormState): BookInput {
     review: trimOrNull(f.review),
     notes: trimOrNull(f.notes),
     quotes: trimOrNull(f.quotes),
+    insights: toInsights(f.insights),
     signed: f.signed,
     condition: trimOrNull(f.condition),
     copies: f.copies ?? 1,

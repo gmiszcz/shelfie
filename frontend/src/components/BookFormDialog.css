@@ -49,6 +49,11 @@
   color: var(--red-400);
 }
 
+.bf-insights-meta {
+  color: var(--app-text-muted);
+  font-size: 0.8rem;
+}
+
 @media (max-width: 640px) {
   .bf-grid {
     grid-template-columns: 1fr;

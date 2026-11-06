@@ -100,6 +100,43 @@ describe('toInput', () => {
     expect(input.stars).toBeNull();
     expect(input.cover_url).toBeNull();
   });
+
+  it('sends null insights when the block is empty', () => {
+    const f = emptyForm();
+    f.title = 'X';
+    expect(toInput(f).insights).toBeNull();
+  });
+
+  it('marks edited insights as user-authored', () => {
+    const f = emptyForm();
+    f.title = 'X';
+    f.insights.summary = '  A summary  ';
+    f.insights.tone = '';
+    const input = toInput(f);
+    expect(input.insights?.summary).toBe('A summary');
+    expect(input.insights?.tone).toBeNull();
+    expect(input.insights?.source).toBe('user');
+  });
+
+  it('keeps agent origin and timestamp when insights are unchanged', () => {
+    const f = fromBook({
+      title: 'X',
+      insights: {
+        summary: 'Agent summary',
+        main_characters: null,
+        main_plot: null,
+        setting: null,
+        themes: null,
+        tone: null,
+        generated_at: '2026-11-06T00:00:00+00:00',
+        source: 'agent',
+      },
+    });
+    const input = toInput(f);
+    expect(input.insights?.source).toBe('agent');
+    expect(input.insights?.generated_at).toBe('2026-11-06T00:00:00+00:00');
+    expect(input.insights?.summary).toBe('Agent summary');
+  });
 });
 
 describe('toLocalDate', () => {
