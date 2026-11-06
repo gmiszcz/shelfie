@@ -44,9 +44,9 @@ async def recompute(user_id: CurrentUser, conn: DbConn) -> RecomputeResult:
     "/pair", response_model=Pair, responses={204: {"description": "Not enough rated books"}}
 )
 async def next_pair(
-    user_id: CurrentUser, conn: DbConn, focus: int | None = None
+    user_id: CurrentUser, conn: DbConn, focus: int | None = None, group: str | None = None
 ) -> Pair | Response:
-    pair = await ratings.suggest_pair(conn, user_id, focus)
+    pair = await ratings.suggest_pair(conn, user_id, focus, group)
     if pair is None:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     return Pair(left=pair[0], right=pair[1])

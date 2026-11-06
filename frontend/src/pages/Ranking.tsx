@@ -3,6 +3,7 @@ import { Column } from 'primereact/column';
 import { DataTable } from 'primereact/datatable';
 import { Dropdown } from 'primereact/dropdown';
 import { InputSwitch } from 'primereact/inputswitch';
+import { InputText } from 'primereact/inputtext';
 import { ProgressBar } from 'primereact/progressbar';
 import { Skeleton } from 'primereact/skeleton';
 import { Toast } from 'primereact/toast';
@@ -16,7 +17,10 @@ import {
   bandLabel,
   confidenceLabel,
   confidenceOf,
+  defaultGroup,
+  filterBySearch,
   formatScore,
+  groupOptions,
   newSessionId,
   rankBooks,
   shelvesOf,
@@ -25,6 +29,13 @@ import { api } from '../services/api';
 import type { Book, RatingPair, Winner } from '../types';
 
 const ALL_SHELVES = '__all__';
+const UI_BUS_EVENT = 'shelfie:ui';
+const UI_BUS_ACK_EVENT = 'shelfie:ui:ack';
+
+/** A sentinel Dropdown value for the "uncategorised" group (Dropdown cannot use null as a value). */
+const NO_GROUP = '__none__';
+const toGroupValue = (g: string | null): string => (g == null ? NO_GROUP : g);
+const fromGroupValue = (v: string): string | null => (v === NO_GROUP ? null : v);
 
 export function Ranking() {
   const [books, setBooks] = useState<Book[]>([]);
@@ -39,12 +50,20 @@ export function Ranking() {
   const [comparedThisVisit, setComparedThisVisit] = useState(0);
   const [recomputing, setRecomputing] = useState(false);
 
+  // Category (group) the comparison pairs are drawn from. null means uncategorised; undefined
+  // means "not initialised yet" so we can seed it from the data on first load.
+  const [category, setCategory] = useState<string | null | undefined>(undefined);
+
   // Table filters.
   const [shelf, setShelf] = useState<string>(ALL_SHELVES);
   const [onlyTopRated, setOnlyTopRated] = useState(false);
+  const [search, setSearch] = useState('');
 
   const sessionId = useRef<string>(newSessionId());
   const toast = useRef<Toast>(null);
+  // Keep the latest category in a ref so the UI-bus listener (bound once) can read it.
+  const categoryRef = useRef<string | null | undefined>(undefined);
+  categoryRef.current = category;
 
   const loadBooks = useCallback(async () => {
     const data = await api.listBooks();
@@ -52,10 +71,10 @@ export function Ranking() {
     return data;
   }, []);
 
-  const loadPair = useCallback(async (focusId: number | null) => {
+  const loadPair = useCallback(async (focusId: number | null, group: string | null | undefined) => {
     setPairLoading(true);
     try {
-      const next = await api.nextPair(focusId ?? undefined);
+      const next = await api.nextPair(focusId ?? undefined, group ?? undefined);
       setPair(next);
     } catch (err) {
       toast.current?.show({
@@ -74,9 +93,12 @@ export function Ranking() {
       setLoading(true);
       setError(null);
       try {
-        await loadBooks();
+        const data = await loadBooks();
+        // Default category = the one with the most rated books.
+        const initial = defaultGroup(data);
         if (active) {
-          await loadPair(null);
+          setCategory(initial);
+          await loadPair(null, initial);
         }
       } catch (err) {
         if (active) {
@@ -103,7 +125,7 @@ export function Ranking() {
     try {
       await api.compare(pair.left.id, pair.right.id, winner, sessionId.current);
       setComparedThisVisit((n) => n + 1);
-      await Promise.all([loadBooks(), loadPair(focus)]);
+      await Promise.all([loadBooks(), loadPair(focus, category)]);
     } catch (err) {
       toast.current?.show({
         severity: 'error',
@@ -117,14 +139,22 @@ export function Ranking() {
 
   const handleFocusChange = async (value: number | null) => {
     setFocus(value);
-    await loadPair(value);
+    await loadPair(value, category);
+  };
+
+  const handleCategoryChange = async (value: string) => {
+    const group = fromGroupValue(value);
+    setCategory(group);
+    // Changing the category invalidates any book-level focus from the previous category.
+    setFocus(null);
+    await loadPair(null, group);
   };
 
   const handleRecompute = async () => {
     setRecomputing(true);
     try {
       const result = await api.recomputeRatings();
-      await Promise.all([loadBooks(), loadPair(focus)]);
+      await Promise.all([loadBooks(), loadPair(focus, category)]);
       toast.current?.show({
         severity: 'success',
         summary: 'Scores recalculated',
@@ -141,6 +171,28 @@ export function Ranking() {
     }
   };
 
+  // --- UI bus: ranking { action: 'search', query } (brief, wave 3, task 4) --------------
+  // Put the query into the ranking search box, then acknowledge on the ack bus so the agent
+  // knows it was handled. Bound once; reads live state via refs.
+  useEffect(() => {
+    const ack = (ok: boolean, info?: string) => {
+      window.dispatchEvent(
+        new CustomEvent(UI_BUS_ACK_EVENT, { detail: { action: 'ranking', ok, info } }),
+      );
+    };
+    const onBus = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { action?: string; query?: unknown } | null;
+      if (!detail || detail.action !== 'ranking') {
+        return;
+      }
+      const query = typeof detail.query === 'string' ? detail.query : '';
+      setSearch(query);
+      ack(true, query ? `searching for "${query}"` : 'cleared the ranking search');
+    };
+    window.addEventListener(UI_BUS_EVENT, onBus as EventListener);
+    return () => window.removeEventListener(UI_BUS_EVENT, onBus as EventListener);
+  }, []);
+
   const shelfOptions = useMemo(
     () => [
       { value: ALL_SHELVES, label: 'All shelves' },
@@ -149,25 +201,44 @@ export function Ranking() {
     [books],
   );
 
+  const categoryOptions = useMemo(
+    () =>
+      groupOptions(books).map((g) => ({
+        value: toGroupValue(g.value),
+        label: `${g.label} (${g.count})`,
+      })),
+    [books],
+  );
+
+  // Books eligible for focus are those in the selected category (pairs stay within it).
+  const focusCandidates = useMemo(() => {
+    if (category === undefined) {
+      return ratedBooks;
+    }
+    return ratedBooks.filter((b) => {
+      const g = b.shelves[0] ?? b.categories[0] ?? null;
+      return g === category;
+    });
+  }, [ratedBooks, category]);
+
   const focusOptions = useMemo(
     () => [
       { value: null, label: 'No focus (most informative pair)' },
-      ...ratedBooks
+      ...focusCandidates
         .slice()
         .sort((a, b) => a.title.localeCompare(b.title))
         .map((b) => ({ value: b.id, label: b.title })),
     ],
-    [ratedBooks],
+    [focusCandidates],
   );
 
-  const ranked = useMemo(
-    () =>
-      rankBooks(books, {
-        shelf: shelf === ALL_SHELVES ? undefined : shelf,
-        onlyTopRated,
-      }),
-    [books, shelf, onlyTopRated],
-  );
+  const ranked = useMemo(() => {
+    const base = rankBooks(books, {
+      shelf: shelf === ALL_SHELVES ? undefined : shelf,
+      onlyTopRated,
+    });
+    return filterBySearch(base, search);
+  }, [books, shelf, onlyTopRated, search]);
 
   // --- column bodies -------------------------------------------------------------------
   const rankBody = (_row: Book, { rowIndex }: { rowIndex: number }) => (
@@ -225,6 +296,30 @@ export function Ranking() {
   const uncertaintyBody = (row: Book) =>
     row.rating_uncertainty != null ? `± ${row.rating_uncertainty.toFixed(2)}` : '—';
 
+  const focusBody = (row: Book) => {
+    const inCategory =
+      category === undefined || (row.shelves[0] ?? row.categories[0] ?? null) === category;
+    const isFocused = focus === row.id;
+    return (
+      <Button
+        icon={isFocused ? 'pi pi-star-fill' : 'pi pi-crosshairs'}
+        rounded
+        text
+        size="small"
+        aria-label={isFocused ? `Stop focusing ${row.title}` : `Focus comparisons on ${row.title}`}
+        title={
+          inCategory
+            ? isFocused
+              ? 'Focused — click to clear'
+              : 'Focus the next comparisons on this book'
+            : 'Switch to this book’s category to focus it'
+        }
+        disabled={!inCategory}
+        onClick={() => void handleFocusChange(isFocused ? null : row.id)}
+      />
+    );
+  };
+
   return (
     <>
       <Toast ref={toast} position="bottom-right" />
@@ -247,11 +342,10 @@ export function Ranking() {
         <i className="pi pi-info-circle" aria-hidden="true" />
         <div>
           <strong>How the score works.</strong> Your star rating sets a <em>band</em>: a 5★ book
-          lives in <code>4.6–5.0</code>, a 4.5★ book in <code>4.1–4.5</code>, and so on. Comparisons
-          only reorder books <em>within</em> a band and can nudge a book <em>down</em> from its star
-          value, never up — so the order by stars is always kept and bands never overlap. The best
-          book in a band stays exactly at its star value; a book with few comparisons stays near the
-          top until enough evidence places it.
+          lives in <code>4.6–5.0</code>, a 4.5★ book in <code>4.1–4.5</code>, and so on. Each
+          comparison nudges the book you did <em>not</em> pick down by one 0.1 step within its band
+          (never more), so the order by stars is always kept and refinement is gradual. Comparisons
+          are always between two books in the <em>same category</em>.
         </div>
       </div>
 
@@ -261,13 +355,22 @@ export function Ranking() {
           <h2>Refine the ranking</h2>
           <div className="rank-section-controls">
             <Dropdown
+              value={toGroupValue(category ?? null)}
+              options={categoryOptions}
+              onChange={(e) => void handleCategoryChange(e.value)}
+              className="rank-category"
+              aria-label="Category to compare within"
+              placeholder="Category"
+              disabled={loading || categoryOptions.length === 0}
+            />
+            <Dropdown
               value={focus}
               options={focusOptions}
               onChange={(e) => void handleFocusChange(e.value)}
               filter
               placeholder="Focus on a book"
               className="rank-focus"
-              disabled={loading || ratedBooks.length < 2}
+              disabled={loading || focusCandidates.length < 2}
             />
             <span className="rank-counter">
               {comparedThisVisit} comparison{comparedThisVisit === 1 ? '' : 's'} this visit
@@ -289,8 +392,9 @@ export function Ranking() {
         ) : (
           <div className="empty-state">
             <p>
-              No more pairs to compare{focus != null ? ' for this book' : ''}. The ranking is as
-              refined as it gets for now.
+              No more pairs to compare
+              {focus != null ? ' for this book' : ' in this category'}. Pick another category or
+              book, or the ranking is as refined as it gets for now.
             </p>
           </div>
         )}
@@ -301,6 +405,25 @@ export function Ranking() {
         <div className="rank-section-head">
           <h2>Ranking</h2>
           <div className="rank-section-controls">
+            <span className="p-input-icon-left rank-search">
+              <i className="pi pi-search" />
+              <InputText
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search title, author, series"
+                aria-label="Search the ranking"
+              />
+              {search && (
+                <button
+                  type="button"
+                  className="rank-search-clear"
+                  aria-label="Clear search"
+                  onClick={() => setSearch('')}
+                >
+                  <i className="pi pi-times" />
+                </button>
+              )}
+            </span>
             <Dropdown
               value={shelf}
               options={shelfOptions}
@@ -330,13 +453,10 @@ export function Ranking() {
           <Column header="Stars" body={starsBody} style={{ width: '10rem' }} />
           <Column header="Score" body={scoreBody} style={{ width: '6rem' }} />
           <Column header="Band" body={bandBody} style={{ width: '7rem' }} />
-          <Column
-            header="Comparisons"
-            field="comparison_count"
-            style={{ width: '8rem' }}
-          />
+          <Column header="Comparisons" field="comparison_count" style={{ width: '8rem' }} />
           <Column header="Confidence" body={confidenceBody} style={{ width: '9rem' }} />
           <Column header="±" body={uncertaintyBody} style={{ width: '6rem' }} />
+          <Column header="Focus" body={focusBody} style={{ width: '5rem' }} />
         </DataTable>
       </section>
     </>

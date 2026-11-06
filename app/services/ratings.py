@@ -13,6 +13,19 @@ class ComparisonError(Exception):
     """A comparison referenced an unknown or unrated book."""
 
 
+def group_of(book: Book) -> str | None:
+    """A book's comparison group: its primary (first) shelf, falling back to its first category.
+
+    Returns ``None`` when the book has neither a shelf nor a category -- such a book is only ever
+    compared with other uncategorised books, never across categories (brief, wave 3, task 2).
+    """
+    if book.shelves:
+        return book.shelves[0]
+    if book.categories:
+        return book.categories[0]
+    return None
+
+
 async def recompute(conn: aiosqlite.Connection, user_id: int) -> dict[int, rating.Score]:
     """Refit every rated book from its stars and the comparison log, then store the scores."""
     books = await repo.list_books(conn, user_id)
@@ -28,17 +41,36 @@ async def recompute(conn: aiosqlite.Connection, user_id: int) -> dict[int, ratin
 
 
 async def suggest_pair(
-    conn: aiosqlite.Connection, user_id: int, focus: int | None = None
+    conn: aiosqlite.Connection,
+    user_id: int,
+    focus: int | None = None,
+    group: str | None = None,
 ) -> tuple[Book, Book] | None:
-    books = {b.id: b for b in await repo.list_books(conn, user_id) if b.stars is not None}
+    """Suggest the next comparison pair.
+
+    Pairs are always drawn from a single category: each book's group is its primary shelf (or its
+    first category, or ``None`` when it has neither), and a pair must share one group. When
+    ``group`` is given, only books in that group are eligible; otherwise the engine picks the most
+    informative pair that happens to share a group. ``focus`` restricts to pairs containing that
+    book.
+    """
+    all_books = {b.id: b for b in await repo.list_books(conn, user_id) if b.stars is not None}
+    groups = {i: group_of(b) for i, b in all_books.items()}
+
+    if group is not None:
+        books = {i: b for i, b in all_books.items() if groups[i] == group}
+    else:
+        books = all_books
+
     star_map = {i: b.stars for i, b in books.items() if b.stars is not None}
     scores = rating.fit(star_map, await repo.list_comparisons(conn, user_id))
     if focus is not None and focus not in scores:
         focus = None
+    group_map = {i: groups[i] for i in scores}
     asked = {(left, right) for left, right, _ in await repo.list_comparisons(conn, user_id)}
-    pair = rating.next_pair(scores, star_map, focus=focus, exclude=asked) or rating.next_pair(
-        scores, star_map, focus=focus
-    )
+    pair = rating.next_pair(
+        scores, star_map, focus=focus, exclude=asked, groups=group_map
+    ) or rating.next_pair(scores, star_map, focus=focus, groups=group_map)
     if pair is None:
         return None
     return books[pair[0]], books[pair[1]]

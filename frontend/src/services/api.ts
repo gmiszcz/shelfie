@@ -111,9 +111,18 @@ export const api = {
   recomputeRatings: () => request<RecomputeResult>('/ratings/recompute', { method: 'POST' }),
 
   /** Next most informative pair, or null when fewer than two books are rated. */
-  nextPair: async (focus?: number): Promise<RatingPair | null> => {
-    const query = focus != null ? `?focus=${focus}` : '';
-    const pair = await request<RatingPair | undefined>(`/ratings/pair${query}`);
+  nextPair: async (focus?: number, group?: string | null): Promise<RatingPair | null> => {
+    const params = new URLSearchParams();
+    if (focus != null) {
+      params.set('focus', String(focus));
+    }
+    if (group != null) {
+      params.set('group', group);
+    }
+    const query = params.toString();
+    const pair = await request<RatingPair | undefined>(
+      `/ratings/pair${query ? `?${query}` : ''}`,
+    );
     return pair ?? null;
   },
 

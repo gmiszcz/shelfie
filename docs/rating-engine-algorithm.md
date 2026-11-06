@@ -146,8 +146,9 @@ model can change later without losing data.
 ## Implementation (shipped)
 
 The shipped engine lives in `app/services/rating.py`. It is a **regularised Bradley-Terry fit**
-(the recommendation above) followed by a **band-limited, downward-only** mapping. Constants:
-`BAND_WIDTH = 0.4`, `STEP = 0.1`, `PRIOR_WEIGHT = 2.0`, `SHRINK_PRIOR = 2.0`.
+(the recommendation above, used for ordering, pair selection and per-book uncertainty) followed by
+a **band-limited, downward-only, loss-counted** mapping to the display score. Constants:
+`BAND_WIDTH = 0.4`, `STEP = 0.1`, `PRIOR_WEIGHT = 2.0`.
 
 ### Bands
 
@@ -175,53 +176,62 @@ band stays pinned at its star value.
 One global regularised Bradley-Terry model is fitted over **all** rated books by MM iteration
 (`_fit_strengths`). The fit is shared across bands so cross-band comparisons still carry information
 through the graph and the prior `β₀ = stars − 3`. The result is a log-strength `latentᵢ` and a
-Fisher information `infoᵢ` (prior + observed games) per book.
+Fisher information `infoᵢ` (prior + observed games) per book. The fit drives the **within-band
+ordering**, the **next-pair selection**, and the reported **uncertainty**.
 
-### Strength → band offset (the exact formula)
+### Losses → band offset (the exact formula, with the per-comparison step cap)
 
-Inside each band (books sharing the same star value):
+The display offset is driven **directly by a book's in-band loss tally**, not by its relative
+position in the (globally shifting) Bradley-Terry fit. For each book, counting only comparisons
+against another book with the *same* star value (a tie counts as half a loss for each side):
 
 ```
-spread          = max(latent in band) − min(latent in band)
-raw_offsetᵢ     = 0                               if spread ≈ 0 (one book / all equal)
-                = BAND_WIDTH · (latent_max − latentᵢ) / spread      otherwise
-confidenceᵢ     = gamesᵢ / (gamesᵢ + SHRINK_PRIOR)                   ∈ [0, 1)
-offsetᵢ         = round_to_0.1( raw_offsetᵢ · confidenceᵢ )
-displayᵢ        = clamp( round_to_0.1(stars − offsetᵢ),  stars − BAND_WIDTH,  stars )
+band_lossesᵢ  = number of same-band comparisons i lost  (+0.5 per tie)
+offsetᵢ        = floor_to_0.1( min(BAND_WIDTH, STEP · band_lossesᵢ) )
+displayᵢ       = clamp( round_to_0.1(starsᵢ − offsetᵢ),  starsᵢ − BAND_WIDTH,  starsᵢ )
 ```
 
-- **Best in band → `raw_offset = 0` → display = stars** (the band top is always pinned).
-- **Worst in band**, with enough evidence (`confidence → 1`), reaches `raw_offset = BAND_WIDTH` →
-  display = `stars − 0.4` (the band floor).
-- **Uncertainty shrinkage.** A book with few comparisons has a small `games` count, so `confidence`
-  is small and its offset is shrunk toward 0 — it stays near the top of its band until evidence
-  accumulates. With no comparisons `games = 0`, so `confidence = 0` and every book sits at its star
-  value.
-- Everything is quantised to **0.1** and clamped into the band, so `display ∈ [stars − 0.4, stars]`
-  by construction.
+- **No in-band losses → offset 0 → display = stars** (the band top is always pinned).
+- **Each in-band loss pushes a book one 0.1 step down**, to the band floor `stars − 0.4` after
+  four losses.
+- **Per-comparison step cap.** Adding one comparison changes the loss tally of at most the two
+  books involved, each by at most one full loss (or half a loss for a tie). Because the offset is
+  `0.1 · losses` *floored* to 0.1, a single comparison can move a display score by **at most one
+  0.1 step**, never moves a book that was not in the comparison, and needs **four in-band losses to
+  reach the floor** — the refinement is gradual by construction.
+
+> **Why this replaced the earlier mapping.** The previous engine normalised each book's
+> Bradley-Terry strength against the strongest and weakest member of its band
+> (`raw_offset = BAND_WIDTH · (latent_max − latentᵢ) / spread`, shrunk by a confidence factor).
+> That mapping was *relative*, so adding a single comparison could shift the whole band's
+> normalisation and move a book — **even an uninvolved one — by up to 0.5 in one step**. That is
+> the bug users saw ("a book dropped by 0.5 after one comparison"). The loss-counted mapping is
+> local and additive, so the 0.1 step cap holds by construction.
 
 ### Worked example
 
-Band 5.0 holds three books A, B, C with fitted log-strengths
-`latent = {A: 1.0, B: 0.4, C: 0.0}`, all with many comparisons (`confidence ≈ 1`):
+Band 5.0 holds three books A, B, C. A has never lost in-band, B has lost two in-band comparisons,
+C has lost five:
 
 ```
-raw_offset_A = 0.4 · (1.0 − 1.0) / (1.0 − 0.0) = 0.00  → display 5.0
-raw_offset_B = 0.4 · (1.0 − 0.4) / (1.0 − 0.0) = 0.24  → round 0.2 → display 4.8
-raw_offset_C = 0.4 · (1.0 − 0.0) / (1.0 − 0.0) = 0.40  → display 4.6
+offset_A = floor_to_0.1(min(0.4, 0.1 · 0)) = 0.0  → display 5.0
+offset_B = floor_to_0.1(min(0.4, 0.1 · 2)) = 0.2  → display 4.8
+offset_C = floor_to_0.1(min(0.4, 0.1 · 5)) = 0.4  → display 4.6   (capped at the floor)
 ```
 
-If C had only one comparison, so `confidence_C = 1 / (1 + 2) ≈ 0.33`:
-
-```
-offset_C = round_to_0.1(0.40 · 0.33) = round_to_0.1(0.13) = 0.1  → display 4.9
-```
-
-C stays near the top of the band until more comparisons pin it down.
+If C had lost only once so far, `offset_C = 0.1 → display 4.9`; it sinks exactly one 0.1 step per
+loss, so it needs four in-band losses to reach the 4.6 floor.
 
 ### Pair selection
 
-`next_pair` ranks candidate pairs in tiers, highest first:
+Pairs are **always drawn from one category**: a book's group is its *primary (first) shelf*,
+falling back to its *first category*, or `None` when it has neither. `next_pair(..., groups=…)`
+never pairs two books from different groups, and a book with no category (`None`) is only paired
+with other uncategorised books — never across categories. The Ranking page exposes a category
+selector (defaulting to the category with the most rated books) and passes the chosen group to
+`GET /api/ratings/pair?group=…`; `ratings.suggest_pair` restricts the eligible books to that group.
+
+Within the chosen group, `next_pair` ranks candidate pairs in tiers, highest first:
 
 1. **same band** (same star value) — where comparisons actually refine the order;
 2. **adjacent-band boundary** — the bottom of a band versus the top of the band just below it
@@ -229,7 +239,9 @@ C stays near the top of the band until more comparisons pin it down.
 3. everything else.
 
 Within a tier it prefers the pair with the closest predicted outcome (≈50/50) and the largest
-combined uncertainty (the least-pinned-down books), skipping already-asked pairs.
+combined uncertainty (the least-pinned-down books), skipping already-asked pairs. A `focus` book
+id restricts suggestions to pairs containing that book (the Ranking page's per-row **Focus**
+button and the focus dropdown set it).
 
 ### Star filter
 
@@ -244,11 +256,28 @@ stars" shows `4.6..5.0`, "4.5 stars" shows `4.1..4.5`, per contract 1.
 flowchart LR
   stars[books.stars<br/>half steps] --> fit
   log[comparisons log] --> fit[regularised BT fit]
-  fit --> latent[latent + info per book]
-  latent --> band[per-band downward mapping<br/>offset 0..0.4, shrunk by confidence]
+  log --> losses[in-band loss tally<br/>+0.1 per loss, floored]
+  fit --> order[within-band ordering<br/>+ uncertainty + next pair]
+  losses --> band[per-band downward mapping<br/>offset = min 0.4, 0.1·losses]
   band --> display[display_score<br/>in stars-0.4 .. stars]
   display --> api[GET /api/books<br/>min_score / max_score]
 ```
+
+### Ranking page (frontend)
+
+`frontend/src/pages/Ranking.tsx` drives three refinements on top of the engine:
+
+- **Category selector.** `ranking.ts::groupOptions` lists each category (primary shelf, else first
+  category, else "Uncategorised") with its rated-book count; `defaultGroup` picks the busiest one
+  as the default. The selected group is passed to `GET /api/ratings/pair?group=…` so every
+  suggested pair stays within one category.
+- **Search box.** `ranking.ts::filterBySearch` filters the ranking table by title, author(s) and
+  series (case-insensitive). A per-row **Focus** button, and a focus dropdown, pin the next
+  comparisons to one book via `?focus=…`.
+- **UI bus listener.** The page listens for the `shelfie:ui` event
+  `ranking { action: 'search', query }`, puts the query into the search box, and answers with a
+  `shelfie:ui:ack` event `{ action: 'ranking', ok, info }` so the agent knows it was handled
+  (UI bus contract v2).
 
 ## Sources
 

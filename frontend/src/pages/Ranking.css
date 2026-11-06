@@ -29,6 +29,39 @@
   min-width: 240px;
 }
 
+.rank-category {
+  min-width: 200px;
+}
+
+.rank-search {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.rank-search .p-inputtext {
+  min-width: 240px;
+  padding-right: 2rem;
+}
+
+.rank-search-clear {
+  position: absolute;
+  right: 0.4rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--app-text-muted);
+  display: flex;
+  align-items: center;
+  padding: 0.2rem;
+}
+
+.rank-search-clear:hover {
+  color: var(--app-text);
+}
+
 .rank-shelf {
   min-width: 180px;
 }
