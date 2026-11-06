@@ -1,0 +1,8 @@
+.plot-chart {
+  width: 100%;
+  border-radius: var(--custom-border-radius);
+}
+
+.plot-chart .echarts-for-react {
+  border-radius: var(--custom-border-radius);
+}
