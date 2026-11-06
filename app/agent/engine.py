@@ -27,22 +27,6 @@ logger = logging.getLogger(__name__)
 CONFIG_PATH = Path(__file__).resolve().parent / "config.yaml"
 SESSION_TTL_SECONDS = 1800
 
-#: The two scopes the chat widget toggles between. "library" is the default
-#: read-only data assistant; "ui" additionally lets the agent drive the UI.
-Scope = str  # "library" | "ui"
-
-#: Extra system-prompt guidance added to the entry agent when the UI scope is on.
-UI_SYSTEM_PROMPT = """
-
-You can also DRIVE THE USER INTERFACE with these tools: filter_library,
-clear_filter, navigate and open_book. Use them when the user asks you to show,
-filter, open or switch something on screen (e.g. "pokaż książki z serii X",
-"show my 5-star books", "open that book", "go to statistics").
-Always resolve exact values with the data tools first — call search_library to
-get the exact series or author string — and only then call filter_library with
-that value. After calling a UI tool, confirm in one short sentence what you did.
-"""
-
 
 class _Queue(Protocol):
     def flush(self) -> None: ...
@@ -60,9 +44,6 @@ class ChatSession:
     manifest: Any
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     last_used: float = field(default_factory=time.monotonic)
-    #: True once the frontend ("UI") tools have been registered on this session's
-    #: entry agent, so the UI scope is wired in at most once per session.
-    ui_enabled: bool = False
 
 
 class SessionFactory(Protocol):
@@ -120,43 +101,20 @@ class ChatEngine:
     def reset(self, session_id: str) -> bool:
         return self._sessions.pop(session_id, None) is not None
 
-    @staticmethod
-    def _enable_ui(chat: ChatSession) -> None:
-        """Register the frontend UI tools on this session's entry agent (idempotent).
-
-        Adds the four UI tools and appends the UI guidance to the agent's system
-        prompt the first time the UI scope is requested for a session. A plain
-        strands ``Agent`` is the entry here (delegate orchestration); the fakes
-        used in tests have no ``tool_registry`` and are skipped gracefully.
-        """
-        if chat.ui_enabled:
-            return
-        from app.agent.ui_tools import UI_TOOLS
-
-        agent = chat.entry
-        registry = getattr(agent, "tool_registry", None)
-        if registry is not None and hasattr(registry, "process_tools"):
-            registry.process_tools(list(UI_TOOLS))
-            current = getattr(agent, "system_prompt", "") or ""
-            if "filter_library" not in current:
-                agent.system_prompt = current + UI_SYSTEM_PROMPT
-        chat.ui_enabled = True
-
     async def stream(
-        self, message: str, session_id: str | None, scope: Scope = "library"
+        self, message: str, session_id: str | None, scope: str = "library"
     ) -> AsyncIterator[dict[str, Any]]:
         """Run one chat turn and yield AG-UI-annotated wire events.
 
-        ``scope`` selects the agent's capabilities: ``"library"`` (default) is the
-        read-only data assistant; ``"ui"`` additionally registers the frontend
-        tools so the agent can drive the interface. Every yielded event keeps its
-        backward-compatible ``type`` and carries the canonical AG-UI name in
-        ``agui`` (see :mod:`app.agent.agui`).
+        The entry agent is the single librarian assistant, which can both read and
+        change the library's data (it does NOT drive the UI — that is the separate
+        UI agent's job). ``scope`` is accepted for backward compatibility with the
+        SSE route and is ignored: there is no longer a UI-control scope wired here.
+        Every yielded event keeps its backward-compatible ``type`` and carries the
+        canonical AG-UI name in ``agui`` (see :mod:`app.agent.agui`).
         """
         chat = self.session(session_id)
         async with chat.lock:
-            if scope == "ui":
-                self._enable_ui(chat)
             chat.queue.flush()
             chat.queue.emit_session_start(chat.manifest)
             outcome: dict[str, Any] = {}
@@ -175,7 +133,7 @@ class ChatEngine:
             final_text = ""
             errored = False
             # Remember each call's input from tool_start so tool_end can echo it
-            # (the frontend needs a UI tool's arguments to dispatch its action).
+            # (the AG-UI annotation carries a tool's arguments through to the client).
             tool_inputs: dict[str, dict[str, Any]] = {}
 
             try:
