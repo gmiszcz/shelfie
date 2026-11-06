@@ -57,5 +57,11 @@ export const api = {
 
   deleteBook: (id: number) => request<void>(`/books/${id}`, { method: 'DELETE' }),
 
-  search: (q: string) => request<SearchResponse>(`/search?q=${encodeURIComponent(q)}`),
+  search: (q: string, lang?: string) => {
+    const params = new URLSearchParams({ q });
+    if (lang) {
+      params.set('lang', lang);
+    }
+    return request<SearchResponse>(`/search?${params.toString()}`);
+  },
 };

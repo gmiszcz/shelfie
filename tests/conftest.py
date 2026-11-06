@@ -33,7 +33,7 @@ class FakeGoogleBooksClient(GoogleBooksClient):
             )
         ]
 
-    async def search(self, query: str, max_results: int = 20):
+    async def search(self, query: str, max_results: int = 20, lang: str | None = None):
         return len(self.results), list(self.results)
 
 

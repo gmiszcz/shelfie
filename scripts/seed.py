@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import csv
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -86,11 +87,39 @@ def read_csv_titles(data_dir: Path) -> list[tuple[str, str]]:
     return rows
 
 
-def build_query(title: str, author: str) -> str:
-    query = f'intitle:"{title}"'
+def clean_title(title: str) -> str:
+    """Drop series/volume noise that defeats an exact title match.
+
+    Removes trailing ``(Series, #3)`` parentheticals, ``Tom 3`` / ``Book II`` volume markers,
+    and ``T.3`` shorthand, leaving the core title Google/OpenLibrary can match.
+    """
+    cleaned = re.sub(r"\s*\([^)]*\)\s*$", "", title)
+    cleaned = re.sub(
+        r"\s*[,.]?\s*(Tom|Book|Tome|Część|Czesc)\s+[\wIVX]+.*$", "", cleaned, flags=re.I
+    )
+    cleaned = re.sub(r"\s*T\.?\s*\d+.*$", "", cleaned)
+    return cleaned.strip(" .,-") or title
+
+
+def build_queries(title: str, author: str) -> list[str]:
+    """Progressively looser queries: strict title+author, then title+author free text,
+    then cleaned title+author, then just the cleaned title."""
+    core = clean_title(title)
+    queries: list[str] = []
     if author:
-        query += f' inauthor:"{author}"'
-    return query
+        queries.append(f'intitle:"{title}" inauthor:"{author}"')
+        queries.append(f'intitle:"{core}" inauthor:"{author}"')
+        queries.append(f"{core} {author}")
+    queries.append(f'intitle:"{core}"')
+    queries.append(core)
+    # De-duplicate preserving order.
+    seen: set[str] = set()
+    unique: list[str] = []
+    for q in queries:
+        if q not in seen:
+            seen.add(q)
+            unique.append(q)
+    return unique
 
 
 async def _search_with_retry(
@@ -110,6 +139,17 @@ async def _search_with_retry(
     return 0, []
 
 
+async def _search_best(client: GoogleBooksClient, title: str, author: str) -> tuple[int, list]:
+    """Try progressively looser queries, returning the first with a hit."""
+    last: tuple[int, list] = (0, [])
+    for query in build_queries(title, author):
+        total, items = await _search_with_retry(client, query)
+        if items:
+            return total, items
+        last = (total, items)
+    return last
+
+
 async def seed() -> None:
     settings = get_settings()
     data_dir = ROOT / "data"
@@ -118,7 +158,10 @@ async def seed() -> None:
     # Without an API key Google Books throttles aggressively, so cap how many we fetch
     # per run and pace the requests. Override with SEED_LIMIT / SEED_DELAY.
     limit = int(os.environ.get("SEED_LIMIT", "40"))
-    per_request_delay = float(os.environ.get("SEED_DELAY", "1.5"))
+    try:
+        per_request_delay = float(os.environ.get("SEED_DELAY", "1.5").replace(",", "."))
+    except ValueError:
+        per_request_delay = 1.5
 
     titles = read_csv_titles(data_dir)
     if not titles:
@@ -149,7 +192,7 @@ async def seed() -> None:
                 if index:
                     await asyncio.sleep(per_request_delay)
                 try:
-                    _total, items = await _search_with_retry(client, build_query(title, author))
+                    _total, items = await _search_best(client, title, author)
                     consecutive_429 = 0
                 except httpx.HTTPStatusError as exc:
                     failed += 1

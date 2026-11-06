@@ -237,3 +237,21 @@ body {
   color: var(--app-text-muted);
   font-size: 0.85rem;
 }
+
+/* Search input with a left icon that does not overlap the text. */
+.search-input-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.search-input-wrap > i {
+  position: absolute;
+  left: 0.75rem;
+  color: var(--app-text-muted);
+  pointer-events: none;
+}
+
+.search-input-wrap > input {
+  padding-left: 2.25rem;
+}

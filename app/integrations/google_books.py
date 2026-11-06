@@ -91,12 +91,30 @@ class GoogleBooksClient:
         return data
 
     async def search(
-        self, query: str, max_results: int = 20
+        self, query: str, max_results: int = 20, lang: str | None = None
     ) -> tuple[int, list[VolumeSearchResult]]:
-        """Search volumes. ``max_results`` is capped at 40 by the API."""
-        data = await self._get(
-            "/volumes",
-            {"q": query, "maxResults": min(max_results, 40)},
-        )
+        """Search volumes. ``max_results`` is capped at 40 by the API.
+
+        ``lang`` is an ISO-639-1 code (e.g. ``en``, ``pl``) that restricts results by language.
+        Without an API key the keyless Google endpoint is aggressively rate-limited; on a 429
+        we fall back to OpenLibrary (keyless, not quota-gated) so search still works out of the box.
+        """
+        params: dict[str, Any] = {"q": query, "maxResults": min(max_results, 40)}
+        if lang:
+            params["langRestrict"] = lang
+        try:
+            data = await self._get("/volumes", params)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 429 and not self._api_key:
+                from app.integrations.openlibrary import OpenLibraryClient
+
+                return await OpenLibraryClient(self._client).search(query, max_results, lang)
+            raise
         items = [normalize_volume(item) for item in data.get("items", [])]
-        return int(data.get("totalItems", 0)), items
+        total = int(data.get("totalItems", 0))
+        # If Google found nothing, try OpenLibrary as a second source.
+        if not items:
+            from app.integrations.openlibrary import OpenLibraryClient
+
+            return await OpenLibraryClient(self._client).search(query, max_results, lang)
+        return total, items

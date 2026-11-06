@@ -39,6 +39,8 @@ async def remove_book(conn: aiosqlite.Connection, user_id: int, book_id: int) ->
     return await repo.delete_book(conn, user_id, book_id)
 
 
-async def search_external(client: GoogleBooksClient, query: str) -> SearchResponse:
-    total, items = await client.search(query)
+async def search_external(
+    client: GoogleBooksClient, query: str, lang: str | None = None
+) -> SearchResponse:
+    total, items = await client.search(query, lang=lang)
     return SearchResponse(total_items=total, items=items)

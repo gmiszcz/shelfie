@@ -1,5 +1,6 @@
 import { Button } from 'primereact/button';
 import { Dialog } from 'primereact/dialog';
+import { Dropdown } from 'primereact/dropdown';
 import { InputText } from 'primereact/inputtext';
 import { ProgressSpinner } from 'primereact/progressspinner';
 import { useState } from 'react';
@@ -15,8 +16,18 @@ interface Props {
   existingVolumeIds: Set<string>;
 }
 
+const LANG_OPTIONS = [
+  { value: '', label: 'Any language' },
+  { value: 'pl', label: 'Polski' },
+  { value: 'en', label: 'English' },
+  { value: 'de', label: 'Deutsch' },
+  { value: 'fr', label: 'Français' },
+  { value: 'es', label: 'Español' },
+];
+
 export function SearchDialog({ visible, onHide, onAdd, existingVolumeIds }: Props) {
   const [query, setQuery] = useState('');
+  const [lang, setLang] = useState('');
   const [results, setResults] = useState<VolumeSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +40,7 @@ export function SearchDialog({ visible, onHide, onAdd, existingVolumeIds }: Prop
     setError(null);
     setSearched(true);
     try {
-      const resp = await api.search(query.trim());
+      const resp = await api.search(query.trim(), lang || undefined);
       setResults(resp.items);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Search failed');
@@ -57,7 +68,7 @@ export function SearchDialog({ visible, onHide, onAdd, existingVolumeIds }: Prop
       dismissableMask
     >
       <div className="flex gap-2 mb-3">
-        <span className="p-input-icon-left" style={{ flex: 1 }}>
+        <span className="search-input-wrap" style={{ flex: 1 }}>
           <i className="pi pi-search" />
           <InputText
             value={query}
@@ -70,6 +81,12 @@ export function SearchDialog({ visible, onHide, onAdd, existingVolumeIds }: Prop
             autoFocus
           />
         </span>
+        <Dropdown
+          value={lang}
+          options={LANG_OPTIONS}
+          onChange={(e) => setLang(e.value)}
+          aria-label="Language filter"
+        />
         <Button label="Search" icon="pi pi-search" onClick={() => void runSearch()} loading={loading} />
       </div>
 
@@ -82,7 +99,17 @@ export function SearchDialog({ visible, onHide, onAdd, existingVolumeIds }: Prop
       )}
 
       {!loading && searched && results.length === 0 && !error && (
-        <p className="empty-state">No matches. Try a different query.</p>
+        <div className="empty-state">
+          <p>No matches.</p>
+          {lang ? (
+            <p>
+              Try “Any language” — this title may not have a {LANG_OPTIONS.find((o) => o.value === lang)?.label}{' '}
+              edition in the current source.
+            </p>
+          ) : (
+            <p>Try the original-language title or the author’s name.</p>
+          )}
+        </div>
       )}
 
       <div className="search-results">
