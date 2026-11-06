@@ -1,0 +1,116 @@
+.compare {
+  display: flex;
+  flex-direction: column;
+  gap: var(--big-gap);
+}
+
+.compare-pair {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: stretch;
+  gap: var(--big-gap);
+}
+
+.compare-vs {
+  align-self: center;
+  color: var(--app-text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.compare-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--default-gap);
+  padding: var(--card-padding);
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--custom-border-radius);
+}
+
+.compare-cover {
+  aspect-ratio: 2 / 3;
+  max-height: 340px;
+  width: auto;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--app-surface-2);
+  border-radius: var(--custom-border-radius);
+  color: var(--app-text-muted);
+  overflow: hidden;
+}
+
+.compare-cover img {
+  height: 100%;
+  width: 100%;
+  object-fit: contain;
+}
+
+.compare-meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+  flex: 1;
+}
+
+.compare-title {
+  font-weight: 600;
+  font-size: 1.1rem;
+  line-height: 1.25;
+}
+
+.compare-authors {
+  color: var(--app-text-muted);
+  font-size: 0.9rem;
+}
+
+.compare-stats {
+  display: flex;
+  align-items: center;
+  gap: var(--default-gap);
+}
+
+.compare-score {
+  font-weight: 600;
+  color: var(--app-accent);
+}
+
+.compare-pick {
+  width: 100%;
+  justify-content: center;
+}
+
+.compare-tie {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--default-gap);
+  flex-wrap: wrap;
+}
+
+.compare-hint {
+  color: var(--app-text-muted);
+  font-size: 0.85rem;
+}
+
+.compare-hint kbd {
+  background: var(--app-surface-2);
+  border: 1px solid var(--app-border);
+  border-radius: 4px;
+  padding: 0 var(--small-padding);
+  font-family: inherit;
+}
+
+/* Stack the two cards on narrow screens; the "vs" divider drops out of the flow. */
+@media (max-width: 640px) {
+  .compare-pair {
+    grid-template-columns: 1fr;
+  }
+
+  .compare-vs {
+    display: none;
+  }
+}
