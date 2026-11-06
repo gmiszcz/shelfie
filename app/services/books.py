@@ -23,8 +23,14 @@ class CoverError(Exception):
     """An uploaded cover was rejected."""
 
 
-async def list_library(conn: aiosqlite.Connection, user_id: int) -> list[Book]:
-    return await repo.list_books(conn, user_id)
+async def list_library(
+    conn: aiosqlite.Connection,
+    user_id: int,
+    *,
+    min_score: float | None = None,
+    max_score: float | None = None,
+) -> list[Book]:
+    return await repo.list_books(conn, user_id, min_score=min_score, max_score=max_score)
 
 
 async def get(conn: aiosqlite.Connection, user_id: int, book_id: int) -> Book | None:

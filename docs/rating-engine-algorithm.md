@@ -1,11 +1,19 @@
-# Rating Engine — Dynamic Relative Rating System
+# Rating Engine — Band-Limited Dynamic Rating System
 
-Shelfie turns a coarse 1–5 star rating into a **continuous latent score** by asking the user to
-compare their top books pairwise ("left or right?"). When a book earns 5.0, a short comparison
-session places it precisely among the other favorites, so 4.9 and 5.0 can be told apart.
+Shelfie turns a half-star rating into a **band-limited continuous score** by asking the user to
+compare their books pairwise ("left or right?"). The user rates in **half stars** (0.5..5.0 in 0.5
+steps). Each star value owns a narrow **band** on the display scale, and comparisons only reorder
+books *inside* a band and can only push a book *downward* from its star value — so the order by user
+stars is always preserved and bands never overlap.
+
+> **Shipped behaviour (contract 1).** `display_score` is always within `[stars - 0.4, stars]`.
+> A 5.0 book lives in `4.6..5.0`, a 4.5 book in `4.1..4.5`. The star filter "N stars" selects
+> `display_score > N - 0.5` and `<= N`. The exact math is in
+> **[Implementation (shipped)](#implementation-shipped)** below; the sections before it are the
+> research that led to the design.
 
 The core problem: recover a continuous latent strength from sparse, single-rater binary
-comparisons, then map it back to a 1–5 decimal display.
+comparisons, then map it back to a bounded per-band decimal display.
 
 ## Model options
 
@@ -134,6 +142,113 @@ Comparison           # ground-truth event log — kept forever
 **Key principle:** store the raw comparison events, not just derived scores. Every score (BT fit,
 Elo replay, uncertainty, display mapping) is recomputable from the `Comparison` log, so the rating
 model can change later without losing data.
+
+## Implementation (shipped)
+
+The shipped engine lives in `app/services/rating.py`. It is a **regularised Bradley-Terry fit**
+(the recommendation above) followed by a **band-limited, downward-only** mapping. Constants:
+`BAND_WIDTH = 0.4`, `STEP = 0.1`, `PRIOR_WEIGHT = 2.0`, `SHRINK_PRIOR = 2.0`.
+
+### Bands
+
+Every half-star value owns a band on the display scale:
+
+```
+band(stars) = [stars - BAND_WIDTH, stars]          # BAND_WIDTH = 0.4
+```
+
+Consecutive half-star values are 0.5 apart and a band is only 0.4 wide, so **bands never overlap**:
+the top of a band (`stars`) always sits strictly above the top of the band below it (`stars - 0.5`).
+The order by user stars is therefore always preserved; comparisons only reorder books *inside* a
+band and can only move a book **down**, never up and never into a neighbour's band. The top of a
+band stays pinned at its star value.
+
+| stars | band          |
+|-------|---------------|
+| 5.0   | 4.6 .. 5.0    |
+| 4.5   | 4.1 .. 4.5    |
+| 4.0   | 3.6 .. 4.0    |
+| 1.0   | 0.6 .. 1.0    |
+
+### The fit
+
+One global regularised Bradley-Terry model is fitted over **all** rated books by MM iteration
+(`_fit_strengths`). The fit is shared across bands so cross-band comparisons still carry information
+through the graph and the prior `β₀ = stars − 3`. The result is a log-strength `latentᵢ` and a
+Fisher information `infoᵢ` (prior + observed games) per book.
+
+### Strength → band offset (the exact formula)
+
+Inside each band (books sharing the same star value):
+
+```
+spread          = max(latent in band) − min(latent in band)
+raw_offsetᵢ     = 0                               if spread ≈ 0 (one book / all equal)
+                = BAND_WIDTH · (latent_max − latentᵢ) / spread      otherwise
+confidenceᵢ     = gamesᵢ / (gamesᵢ + SHRINK_PRIOR)                   ∈ [0, 1)
+offsetᵢ         = round_to_0.1( raw_offsetᵢ · confidenceᵢ )
+displayᵢ        = clamp( round_to_0.1(stars − offsetᵢ),  stars − BAND_WIDTH,  stars )
+```
+
+- **Best in band → `raw_offset = 0` → display = stars** (the band top is always pinned).
+- **Worst in band**, with enough evidence (`confidence → 1`), reaches `raw_offset = BAND_WIDTH` →
+  display = `stars − 0.4` (the band floor).
+- **Uncertainty shrinkage.** A book with few comparisons has a small `games` count, so `confidence`
+  is small and its offset is shrunk toward 0 — it stays near the top of its band until evidence
+  accumulates. With no comparisons `games = 0`, so `confidence = 0` and every book sits at its star
+  value.
+- Everything is quantised to **0.1** and clamped into the band, so `display ∈ [stars − 0.4, stars]`
+  by construction.
+
+### Worked example
+
+Band 5.0 holds three books A, B, C with fitted log-strengths
+`latent = {A: 1.0, B: 0.4, C: 0.0}`, all with many comparisons (`confidence ≈ 1`):
+
+```
+raw_offset_A = 0.4 · (1.0 − 1.0) / (1.0 − 0.0) = 0.00  → display 5.0
+raw_offset_B = 0.4 · (1.0 − 0.4) / (1.0 − 0.0) = 0.24  → round 0.2 → display 4.8
+raw_offset_C = 0.4 · (1.0 − 0.0) / (1.0 − 0.0) = 0.40  → display 4.6
+```
+
+If C had only one comparison, so `confidence_C = 1 / (1 + 2) ≈ 0.33`:
+
+```
+offset_C = round_to_0.1(0.40 · 0.33) = round_to_0.1(0.13) = 0.1  → display 4.9
+```
+
+C stays near the top of the band until more comparisons pin it down.
+
+### Pair selection
+
+`next_pair` ranks candidate pairs in tiers, highest first:
+
+1. **same band** (same star value) — where comparisons actually refine the order;
+2. **adjacent-band boundary** — the bottom of a band versus the top of the band just below it
+   (e.g. a 4.6-end 5.0 book versus a 4.5-starred book), confirming the bands sit correctly;
+3. everything else.
+
+Within a tier it prefers the pair with the closest predicted outcome (≈50/50) and the largest
+combined uncertainty (the least-pinned-down books), skipping already-asked pairs.
+
+### Star filter
+
+The list endpoint `GET /api/books` takes optional `min_score` / `max_score` floats and applies
+`display_score > min_score AND display_score <= max_score`. The frontend maps a star bucket N to
+`min_score = N − 0.5`, `max_score = N` (`frontend/src/ranking.ts::scoreBoundsForStars`), so "5
+stars" shows `4.6..5.0`, "4.5 stars" shows `4.1..4.5`, per contract 1.
+
+### Data flow
+
+```mermaid
+flowchart LR
+  stars[books.stars<br/>half steps] --> fit
+  log[comparisons log] --> fit[regularised BT fit]
+  fit --> latent[latent + info per book]
+  latent --> band[per-band downward mapping<br/>offset 0..0.4, shrunk by confidence]
+  band --> display[display_score<br/>in stars-0.4 .. stars]
+  display --> api[GET /api/books<br/>min_score / max_score]
+```
 
 ## Sources
 

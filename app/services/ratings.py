@@ -31,15 +31,13 @@ async def suggest_pair(
     conn: aiosqlite.Connection, user_id: int, focus: int | None = None
 ) -> tuple[Book, Book] | None:
     books = {b.id: b for b in await repo.list_books(conn, user_id) if b.stars is not None}
-    scores = rating.fit(
-        {i: b.stars for i, b in books.items() if b.stars is not None},
-        await repo.list_comparisons(conn, user_id),
-    )
+    star_map = {i: b.stars for i, b in books.items() if b.stars is not None}
+    scores = rating.fit(star_map, await repo.list_comparisons(conn, user_id))
     if focus is not None and focus not in scores:
         focus = None
     asked = {(left, right) for left, right, _ in await repo.list_comparisons(conn, user_id)}
-    pair = rating.next_pair(scores, focus=focus, exclude=asked) or rating.next_pair(
-        scores, focus=focus
+    pair = rating.next_pair(scores, star_map, focus=focus, exclude=asked) or rating.next_pair(
+        scores, star_map, focus=focus
     )
     if pair is None:
         return None

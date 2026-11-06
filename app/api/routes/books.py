@@ -13,8 +13,13 @@ router = APIRouter(prefix="/books", tags=["books"])
 
 
 @router.get("", response_model=list[Book])
-async def list_books(user_id: CurrentUser, conn: DbConn) -> list[Book]:
-    return await service.list_library(conn, user_id)
+async def list_books(
+    user_id: CurrentUser,
+    conn: DbConn,
+    min_score: float | None = None,
+    max_score: float | None = None,
+) -> list[Book]:
+    return await service.list_library(conn, user_id, min_score=min_score, max_score=max_score)
 
 
 @router.post("", response_model=Book, status_code=status.HTTP_201_CREATED)
