@@ -12,35 +12,87 @@ widget that renders it.
 
 ## What it is
 
-A single **read-only** librarian agent that answers questions about the user's own
-library. It runs on **AWS Bedrock** (Claude Haiku 5.5, `eu.anthropic.claude-haiku-5-5`,
-region `eu-central-1` by default) through **strands-compose**, configured in
-`app/agent/config.yaml`. Credentials come from the standard AWS chain; the model
-id and region are read from the environment, which the app copies from `.env`
-(`BEDROCK_MODEL_ID`, `AWS_REGION`) before loading the config.
+A single librarian agent that answers questions about the user's own library **and
+manages it** — it can both read and change the library's data. It runs on **AWS
+Bedrock** (Claude Haiku 5.5, `eu.anthropic.claude-haiku-5-5`, region `eu-central-1`
+by default) through **strands-compose**, configured in `app/agent/config.yaml`.
+Credentials come from the standard AWS chain; the model id and region are read from
+the environment, which the app copies from `.env` (`BEDROCK_MODEL_ID`, `AWS_REGION`)
+before loading the config.
+
+The agent **cannot drive the user interface** (navigate, filter the on-screen grid,
+open dialogs, toggle settings/theme). That is the job of a separate UI agent in the
+other chat mode; the librarian only reads and writes library *data*. (The backend
+UI-control tools that used to live here — `filter_library`, `clear_filter`,
+`navigate`, `open_book` and the `scope="ui"` registration hack in `engine.py` — have
+been removed so there is one implementation, not two. The SSE/AG-UI event format,
+including the `ui_action` flag in `app/agent/agui.py`, is unchanged and still drives
+the frontend parser.)
 
 The system prompt instructs it to answer in the user's language, always use tools
 (never invent books/dates/ratings), prefer `display_score` over raw `stars` for
-ranking, and keep answers short. A `MaxToolCallsGuard` caps a turn at **12** tool
-calls. Haiku 5.5 streams adaptive "thinking" (reasoning) before the answer.
+ranking, keep answers short, and — crucially — to run destructive or wide-reaching
+writes **through a confirmation step** (see below). A `MaxToolCallsGuard` caps a turn
+at **12** tool calls. Haiku 5.5 streams adaptive "thinking" (reasoning) before the
+answer.
 
 ## Tools
 
-All tools (`app/agent/tools.py`) are **read-only** queries over the local SQLite
-DB, scoped to the single user, run synchronously in a worker thread using the
-stdlib `sqlite3` driver. Every query is parameterised. Max rows per call is 50.
+All tools live in `app/agent/tools.py`, scoped to the single user. The **read** tools
+query the local SQLite DB directly (stdlib `sqlite3`, worker thread, parameterised,
+max 50 rows). The **write** tools never touch SQL: they go through the same
+`app.services.books` layer the HTTP API uses, so every add/update/delete obeys the
+same validation, duplicate checks and schema rules. Because those services are async
+and strands runs a tool synchronously, each write tool drives the service with
+`asyncio.run` over a fresh `aiosqlite` connection.
+
+### Read tools
 
 | Tool | Purpose | Key args |
 |---|---|---|
-| `search_library` | Free-text search over title, subtitle, authors, series, shelves, tags (all terms must match, case-insensitive) | `query`, `limit` |
-| `get_book_details` | Every stored field for one book | `book_id` |
-| `list_books` | Filtered list | `status`, `shelf`, `tag`, `year`, `sort_by` (`finished_on`/`stars`/`title`), `limit` |
+| `search_library` | Free-text search across every text field (all terms must match, case-insensitive) | `query`, `stars`, `limit` |
+| `get_book_details` / `get_book` | Every stored field for one book | `book_id` |
+| `list_books` | Filtered list | `status`, `shelf`, `tag`, `year`, `stars`, `sort_by` (`finished_on`/`stars`/`title`), `limit` |
 | `reading_stats` | Stats for finished books in a range (reuses `app/services/stats`) | `date_from`, `date_to`, `group_by` |
 | `library_overview` | Totals: per status, per shelf, top tags, rated count | — |
 
 `search_library` / `list_books` return a compact "brief" per book (id, title,
 authors, series, status, stars, display_score, finished_on, shelves, tags);
 `get_book_details` returns the full `Book`.
+
+**Star-band filter.** `search_library` and `list_books` take an optional `stars`
+argument (a whole-star band `1`–`5`; `0` means any). Band N keeps books whose score
+is in `(N-0.5, N+0.5]`, with the ends clamped: `5 → (4.5, 5.0]` and `1 → [0, 1.5]`
+(so 5 matches 4.6–5.0, 4 matches 3.6–4.5). The score used is `display_score` when
+present, else the raw `stars`; unscored books never match a band. The text query and
+the star band are independent and combine with AND. This mirrors the wave-3 UI star
+filter, so "only my 5-star books" from chat and the on-screen filter agree.
+
+### Write tools (through `app.services.books`)
+
+| Tool | Purpose | Key args | Confirmation |
+|---|---|---|---|
+| `add_book` | Add a book: a **Google Books** lookup (via the existing integration — pass `query`) adds the best match with full catalogue metadata; or add **manually** from fields (`title` + the rest) | `query`, `title`, `authors`, `status`, `stars`, `series`, `volume`, `published_date`, `started_on`, `finished_on`, `shelves`, `tags` | immediate |
+| `update_book` | Change `status`, `stars` (0.5 steps), `started_on`, `finished_on`, `shelves`, `tags`, `notes`, `review` for one book (`book_id`) or several (`book_ids` CSV) | `book_id` / `book_ids`, the fields above, `confirm` | immediate for ≤3 books; **confirm for >3** |
+| `set_insights` | Set/replace a book's structured insights (summary, characters, plot, setting, themes, tone); `source="agent"`, `generated_at` stamped | `book_id`, the six sections | immediate |
+| `delete_book` | Delete one book | `book_id`, `confirm` | **always confirm** |
+
+When a search add finds no match, `add_book` returns an error asking to add manually.
+Reading fields the user supplies (status, stars, dates, shelves, tags) are applied on
+top of a search match. A duplicate Google volume returns an error rather than a second
+copy.
+
+### Human-in-the-loop confirmation
+
+`delete_book` (always) and any `update_book` touching **more than three** books are
+two-phase. The first call makes **no change** and returns a result with
+`needs_confirmation: true` plus a summary — for a delete, the book's title/authors;
+for a bulk update, the id list, the count and the described changes. The system prompt
+tells the agent to relay that summary to the user and only call the **same tool again
+with `confirm=true`** once the user has agreed in chat. Single-book updates (≤3) and
+`add_book` apply immediately. This keeps a destructive or wide change behind an
+explicit human yes without adding any server-side session state — the gate is just the
+tool's own two-call contract.
 
 ## The SSE wire protocol
 
@@ -73,7 +125,8 @@ sequenceDiagram
     participant R as POST /api/agent/chat
     participant E as ChatEngine
     participant A as Bedrock agent (Haiku 5.5)
-    participant T as tools.py (SQLite)
+    participant T as tools.py
+    participant S as services.books / SQLite
 
     W->>R: { message, session_id? }
     R->>E: stream(message, session_id)
@@ -81,9 +134,11 @@ sequenceDiagram
     loop model turn
         A-->>E: reasoning / tokens
         E-->>W: data: reasoning | token
-        A->>T: tool call (search_library, …)
+        A->>T: tool call (search_library, add_book, …)
         E-->>W: data: tool_start
-        T-->>A: rows
+        T->>S: read (SQLite) or write (services.books)
+        S-->>T: rows / created-updated-deleted book
+        T-->>A: result (or needs_confirmation)
         E-->>W: data: tool_end
     end
     E-->>W: data: session_finish { text, ok }
@@ -115,7 +170,22 @@ in-memory session.
 - supports **Stop** (aborts the fetch; the abort is treated as a quiet finished
   turn) and **New chat** (clears local state and calls `DELETE /api/agent/sessions/{id}`).
 
-> The `shelfie:ui` event bus (agent → frontend navigation/filtering) and voice
-> input described in the shared contracts are **not** part of the current
-> read-only widget; they belong to the AG-UI / voice workstream documented
-> separately.
+> The `shelfie:ui` event bus and voice input (agent → frontend navigation,
+> filtering, add-book dialogs, settings, theme) are driven by the **separate UI
+> agent** in the other chat mode, not by this librarian. This widget renders the
+> librarian's data reads and writes; the AG-UI annotation format it shares with the
+> UI agent is documented in [../agent-ag-ui-bedrock.md](../agent-ag-ui-bedrock.md).
+
+## Verifying against Bedrock
+
+The unit tests use a fake model/queue (no network). For a real end-to-end check,
+copy the DB to a scratch location (never write the live DB), point `DB_PATH` at the
+copy, and run one turn through `ChatEngine` with the compose factory. A live run of
+*"dodaj książkę Diuna Franka Herberta, przeczytana w 2023, ocena 4.5"* produced the
+event sequence `session_start → tool_start:add_book → tool_end:add_book(success) →
+session_finish(ok)` and inserted the book via `services.books` with
+`status=finished`, `stars=4.5` and `metadata_source=google_books` (the keyless
+Google endpoint falls back to OpenLibrary, so the title/metadata come from whichever
+source answered). The model leaves `finished_on` empty for a year-only phrase rather
+than inventing a day, and asks for the exact date — consistent with the "never invent
+dates" rule.

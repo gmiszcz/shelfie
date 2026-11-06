@@ -143,87 +143,6 @@ async def test_agent_failure_becomes_error_then_finish() -> None:
     assert events[-1]["type"] == "session_finish" and events[-1]["ok"] is False
 
 
-class _FakeRegistry:
-    def __init__(self) -> None:
-        self.added: list[object] = []
-
-    def process_tools(self, tools: list[object]) -> None:
-        self.added.extend(tools)
-
-
-class UiEntry:
-    """A fake entry that calls the frontend filter_library tool."""
-
-    def __init__(self, queue: FakeQueue) -> None:
-        self.queue = queue
-        self.tool_registry = _FakeRegistry()
-        self.system_prompt = "base prompt"
-
-    async def invoke_async(self, message: str) -> str:
-        q = self.queue
-        q.put_event(
-            StreamEvent(
-                type="tool_start",
-                agent_name="librarian",
-                data={
-                    "tool_name": "filter_library",
-                    "tool_use_id": "u1",
-                    "tool_input": {"series": "Droga Szamana"},
-                },
-            )
-        )
-        q.put_event(
-            StreamEvent(
-                type="tool_end",
-                agent_name="librarian",
-                data={"tool_name": "filter_library", "tool_use_id": "u1", "status": "success"},
-            )
-        )
-        return "Done."
-
-
-async def test_ui_scope_registers_tools_and_flags_ui_action() -> None:
-    created: list[UiEntry] = []
-
-    def factory(session_id: str) -> ChatSession:
-        queue = FakeQueue()
-        entry = UiEntry(queue)
-        created.append(entry)
-        return ChatSession(session_id=session_id, entry=entry, queue=queue, manifest=None)
-
-    engine = ChatEngine(factory)
-    events = [e async for e in engine.stream("pokaż serię", "ui1", "ui")]
-
-    entry = created[0]
-    # UI tools were registered and the prompt was augmented once.
-    assert len(entry.tool_registry.added) == 4
-    assert "filter_library" in entry.system_prompt
-
-    # The UI tool call carries the args through tool_end and is flagged ui_action.
-    end = next(e for e in events if e["type"] == "tool_end")
-    assert end["ui_action"] is True
-    assert end["agui"] == "TOOL_CALL_RESULT"
-    assert end["input"] == {"series": "Droga Szamana"}
-
-    # A second UI turn does not double-register.
-    [e async for e in engine.stream("again", "ui1", "ui")]
-    assert len(entry.tool_registry.added) == 4
-
-
-async def test_library_scope_does_not_register_ui_tools() -> None:
-    created: list[UiEntry] = []
-
-    def factory(session_id: str) -> ChatSession:
-        queue = FakeQueue()
-        entry = UiEntry(queue)
-        created.append(entry)
-        return ChatSession(session_id=session_id, entry=entry, queue=queue, manifest=None)
-
-    engine = ChatEngine(factory)
-    [e async for e in engine.stream("hi", "lib1", "library")]
-    assert created[0].tool_registry.added == []
-
-
 def test_chat_endpoint_streams_sse(client: TestClient) -> None:
     engine, _ = _engine()
     app.dependency_overrides[chat_engine] = lambda: engine
@@ -281,3 +200,14 @@ def test_tools_query_the_library(library_db: Path) -> None:
 
     overview = tools.library_overview()
     assert overview["total"] == 2 and overview["by_shelf"] == {"Fantasy": 2}
+
+
+def test_star_band_filter_in_search_and_list(library_db: Path) -> None:
+    # Both seeded books are 5 stars (display_score None -> falls back to stars).
+    assert tools.list_books(stars=5)["count"] == 2
+    # A 4-star band (3.6..4.5) excludes both 5.0 books.
+    assert tools.list_books(stars=4)["count"] == 0
+    # search_library honours the band too (combined with the text query, AND).
+    hit = tools.search_library(query="dune", stars=5)
+    assert hit["count"] == 1 and hit["books"][0]["title"] == "Dune"
+    assert tools.search_library(query="dune", stars=4)["count"] == 0
