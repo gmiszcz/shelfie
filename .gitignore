@@ -36,6 +36,7 @@ __pycache__/
 
 # Data
 data/
+!data/README.md
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm

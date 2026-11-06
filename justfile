@@ -12,7 +12,7 @@ default:
 install:
     uv run python -c "import pathlib, shutil; p = pathlib.Path('.env'); p.exists() or shutil.copy('.env.example', p)"
     uv sync --extra dev
-    npm --prefix frontend install
+    cd frontend && npm install
 
 # Run both services in dev mode (FastAPI + Vite) with hot-reload
 [parallel]
@@ -39,6 +39,10 @@ fix:
 # Run the pytest suite
 test:
     uv run --no-sync python -m pytest
+
+# Seed the database from a CSV in data/ (or a built-in fallback list) via Google Books
+sample:
+    uv run python -m scripts.seed
 
 # Build the production frontend bundle
 build:
