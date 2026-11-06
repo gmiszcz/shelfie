@@ -68,6 +68,20 @@ Full detail: [`docs/architecture-overview.md`](docs/architecture-overview.md).
 | [devops-ci-cd.md](docs/devops-ci-cd.md) | uv/.venv, Justfile gate, multi-stage/multi-arch Docker, GitHub Actions → GHCR |
 | [research-google-books-api.md](docs/research-google-books-api.md) | Google Books API reference: endpoints, response shape, cover resolution, quotas |
 
+### Feature documentation
+
+How the app actually works today, feature by feature, documented from the real
+code. Index: [`docs/features/README.md`](docs/features/README.md).
+
+| Doc | Covers |
+|---|---|
+| [features/data-pipeline.md](docs/features/data-pipeline.md) | `books.json` as source of truth, `build-dbase` / `sample`, the book schema and every field's origin, CSV conversion history |
+| [features/library-and-search.md](docs/features/library-and-search.md) | Library view, search, Google Books → OpenLibrary fallback, language filter, API-key / 429 behaviour |
+| [features/manual-add-and-covers.md](docs/features/manual-add-and-covers.md) | Manual add form, cover search / upload / URL, storage, validation |
+| [features/statistics.md](docs/features/statistics.md) | `/api/stats`, grouping, date range, charts |
+| [features/chatbot.md](docs/features/chatbot.md) | The current library assistant: tools, SSE events, widget |
+| [features/api-reference.md](docs/features/api-reference.md) | Every endpoint with parameters and response shape |
+
 ## Development
 
 Requires [uv](https://docs.astral.sh/uv/), [just](https://github.com/casey/just), Node 22+, and
