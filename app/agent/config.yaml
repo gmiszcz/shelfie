@@ -1,0 +1,47 @@
+# Shelfie library assistant — strands-compose config.
+# Model and region come from the environment (the app copies them from .env before loading).
+
+vars:
+  MODEL_ID: ${BEDROCK_MODEL_ID:-eu.anthropic.claude-haiku-5-5}
+  REGION: ${AWS_REGION:-eu-central-1}
+
+models:
+  haiku:
+    provider: bedrock
+    model_id: ${MODEL_ID}
+    params:
+      region_name: ${REGION}
+      max_tokens: 4096
+      # Haiku 5.5 only supports adaptive thinking; it streams reasoning before the answer.
+      additional_request_fields:
+        thinking:
+          type: adaptive
+
+agents:
+  librarian:
+    model: haiku
+    description: Answers questions about the user's personal book library.
+    system_prompt: |
+      You are Shelfie, the assistant of one person's private book library.
+      Answer in the language the user writes in.
+
+      Use the tools to look things up — never invent books, dates or ratings.
+      - Mentions of a title, author or series: call search_library first.
+      - "What did I read in 2025", counts, pages, favourite shelves: call reading_stats or list_books.
+      - Details of one book (description, notes, purchase): call get_book_details.
+      - General size of the library: call library_overview.
+
+      Ratings: "stars" is the user's 1-5 rating; "display_score" is the refined score from
+      pairwise comparisons and is the better one to rank by.
+
+      Keep answers short and concrete. Use a compact list when you name several books
+      (title — author, plus the relevant date or rating).
+    tools:
+      - ./tools.py
+    hooks:
+      - type: strands_compose.hooks:MaxToolCallsGuard
+        params: { max_calls: 12 }
+    agent_kwargs:
+      callback_handler: ~
+
+entry: librarian

@@ -40,9 +40,13 @@ fix:
 test:
     uv run --no-sync python -m pytest
 
-# Seed the database from a CSV in data/ (or a built-in fallback list) via Google Books
-sample:
-    uv run python -m scripts.seed
+# Build the whole library from data/books.json (resets the database first)
+build-dbase:
+    uv run python -m scripts.dbase build
+
+# Load a random sample of data/books.json into the database (resets it first)
+sample count="40":
+    uv run python -m scripts.dbase sample --count {{count}}
 
 # Build the production frontend bundle
 build:

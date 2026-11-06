@@ -31,12 +31,18 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"  # nosec B104  # container default; bind a real interface in prod
     port: int = Field(default=8000, ge=1, le=65535)
     db_path: str = "data/shelfie.sqlite"
+    dataset_path: str = "data/books.json"
+    covers_dir: str = "data/covers"
     log_level: str = "INFO"
     static_dir: str = "frontend/dist"
 
     # External APIs
     google_books_api_key: str | None = None
     google_books_base_url: str = "https://www.googleapis.com/books/v1"
+
+    # Library assistant (AWS Bedrock via strands-compose). Credentials come from the AWS chain.
+    bedrock_model_id: str = "eu.anthropic.claude-haiku-5-5"
+    aws_region: str = "eu-central-1"
 
     # Auth seam (single-user now, JWT-ready). Not enforced yet in the MVP.
     jwt_secret: str = "change-me-long-random-secret"
@@ -65,6 +71,14 @@ class Settings(BaseSettings):
     @property
     def database_file(self) -> Path:
         return resolve_path(self.db_path)
+
+    @property
+    def dataset_file(self) -> Path:
+        return resolve_path(self.dataset_path)
+
+    @property
+    def covers_path(self) -> Path:
+        return resolve_path(self.covers_dir)
 
     @property
     def static_path(self) -> Path:

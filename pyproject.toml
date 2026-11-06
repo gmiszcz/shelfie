@@ -16,6 +16,8 @@ dependencies = [
   "httpx>=0.27.0",
   "aiosqlite>=0.20.0",
   "tzdata>=2024.1; sys_platform == 'win32'",
+  "strands-compose>=0.12.0",
+  "python-multipart>=0.0.33",
 ]
 
 [project.optional-dependencies]

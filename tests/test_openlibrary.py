@@ -163,26 +163,6 @@ async def test_shaman_language_filter_polish_maps_code() -> None:
         await client.search("Mahanenko", lang="pl")
 
 
-def test_clean_title_strips_series_and_volume() -> None:
-    """The seed's title cleaner removes series/volume noise that defeats exact matching."""
-    from scripts.seed import clean_title
-
-    assert clean_title("Droga Szamana. Etap 1: Początek") == "Droga Szamana. Etap 1: Początek"
-    assert clean_title("Złote enklawy (Scholomance, #3)") == "Złote enklawy"
-    assert clean_title("Percy Jackson T.3 Klątwa") == "Percy Jackson"
-    assert clean_title("Dwór srebrnych płomieni. Część 2") == "Dwór srebrnych płomieni"
-
-
-def test_build_queries_progressive() -> None:
-    """The seed builds strict -> loose queries so a series-tagged title still resolves."""
-    from scripts.seed import build_queries
-
-    queries = build_queries("Survival Quest (The Way of the Shaman Book #1)", "Vasily Mahanenko")
-    assert any("inauthor" in q for q in queries)
-    # The cleaned bare title is one of the fallbacks.
-    assert "Survival Quest" in queries
-
-
 # Keyed Google Books returns the POLISH editions directly (no fallback). This mirrors the
 # verified live response for q="droga szamana"&langRestrict=pl.
 GOOGLE_PL_RESPONSE = {

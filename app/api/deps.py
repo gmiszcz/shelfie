@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from functools import lru_cache
 from typing import Annotated
 
 import aiosqlite
 from fastapi import Depends
 
+from app.agent.engine import ChatEngine, compose_session_factory
 from app.auth import current_user_id
 from app.config import Settings, get_settings
 from app.db import get_connection
@@ -30,6 +32,14 @@ def google_books_client(
     )
 
 
+@lru_cache(maxsize=1)
+def chat_engine() -> ChatEngine:
+    """One engine per process; it owns the chat sessions."""
+    return ChatEngine(compose_session_factory(get_settings()))
+
+
 CurrentUser = Annotated[int, Depends(current_user_id)]
 DbConn = Annotated[aiosqlite.Connection, Depends(db_connection)]
 BooksClient = Annotated[GoogleBooksClient, Depends(google_books_client)]
+AppSettings = Annotated[Settings, Depends(get_settings)]
+Chat = Annotated[ChatEngine, Depends(chat_engine)]
