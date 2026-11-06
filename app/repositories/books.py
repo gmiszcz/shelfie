@@ -10,7 +10,7 @@ from typing import Any
 
 import aiosqlite
 
-from app.db import BOOK_COLUMNS, JSON_LIST_COLUMNS
+from app.db import BOOK_COLUMNS, JSON_LIST_COLUMNS, JSON_OBJECT_COLUMNS
 from app.schemas.books import Book, BookCreate, BookUpdate
 
 # Columns the user supplies (everything except the generated timestamps and derived scores).
@@ -20,6 +20,8 @@ _WRITABLE = [c for c in BOOK_COLUMNS if c not in {"added_at", "updated_at"}]
 def _to_db(column: str, value: Any) -> Any:
     if column in JSON_LIST_COLUMNS:
         return json.dumps(list(value or []), ensure_ascii=False)
+    if column in JSON_OBJECT_COLUMNS:
+        return json.dumps(value, ensure_ascii=False) if value is not None else None
     if isinstance(value, date):
         return value.isoformat()
     if hasattr(value, "value"):  # enums
@@ -35,6 +37,9 @@ def row_to_book(row: Mapping[str, Any] | sqlite3.Row) -> Book:
     for column in JSON_LIST_COLUMNS:
         raw = data.get(column)
         data[column] = json.loads(raw) if raw else []
+    for column in JSON_OBJECT_COLUMNS:
+        raw = data.get(column)
+        data[column] = json.loads(raw) if raw else None
     data["signed"] = bool(data.get("signed"))
     data.pop("user_id", None)
     data["added_at"] = data.get("added_at") or ""

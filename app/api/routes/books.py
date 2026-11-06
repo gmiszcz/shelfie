@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 
 from app.api.deps import CurrentUser, DbConn
 from app.schemas.books import Book, BookCreate, BookUpdate
@@ -23,7 +23,12 @@ async def list_books(
 
 
 @router.post("", response_model=Book, status_code=status.HTTP_201_CREATED)
-async def add_book(data: BookCreate, user_id: CurrentUser, conn: DbConn) -> Book:
+async def add_book(
+    data: BookCreate,
+    user_id: CurrentUser,
+    conn: DbConn,
+    background_tasks: BackgroundTasks,
+) -> Book:
     try:
         book = await service.add_book(conn, user_id, data)
     except service.DuplicateBookError as exc:
@@ -34,6 +39,9 @@ async def add_book(data: BookCreate, user_id: CurrentUser, conn: DbConn) -> Book
     if book.stars is not None:
         await ratings.recompute(conn, user_id)
         book = await service.get(conn, user_id, book.id) or book
+    # Fill structured insights in the background when the book has none yet.
+    if book.insights is None:
+        service.schedule_enrichment(background_tasks, user_id, book.id)
     return book
 
 
@@ -61,3 +69,18 @@ async def delete_book(book_id: int, user_id: CurrentUser, conn: DbConn) -> None:
     removed = await service.remove_book(conn, user_id, book_id)
     if not removed:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
+
+
+@router.post("/{book_id}/enrich", response_model=Book)
+async def enrich_book(book_id: int, user_id: CurrentUser, conn: DbConn) -> Book:
+    """Regenerate structured insights for one book synchronously and return the book.
+
+    Runs the enrichment model now (unlike the background fill on add) so the caller gets
+    the refreshed book back. On any model failure the book is returned with its previous
+    insights unchanged.
+    """
+    book = await service.get(conn, user_id, book_id)
+    if book is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
+    updated = await service.enrich_book(user_id, book_id)
+    return updated or book

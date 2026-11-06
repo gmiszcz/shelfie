@@ -48,6 +48,10 @@ build-dbase:
 sample count="40":
     uv run python -m scripts.dbase sample --count {{count}}
 
+# Fill structured insights on data/books.json book by book (use --force/--limit/--path via args)
+enrich *args:
+    uv run python -m scripts.enrich {{args}}
+
 # Build the production frontend bundle
 build:
     npm --prefix frontend run build

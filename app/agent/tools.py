@@ -54,31 +54,62 @@ def _limit(value: int) -> int:
     return max(1, min(int(value or 10), MAX_LIMIT))
 
 
+def _insights_text(book: Book) -> list[str]:
+    """Every non-empty string inside a book's insights, for full-text search."""
+    if book.insights is None:
+        return []
+    return [
+        value
+        for value in book.insights.model_dump().values()
+        if isinstance(value, str) and value.strip()
+    ]
+
+
+def _haystack(book: Book) -> str:
+    """All searchable text of a book, flattened and lower-cased (accents kept)."""
+    parts: list[str] = [
+        book.title,
+        book.subtitle or "",
+        book.series or "",
+        book.volume or "",
+        book.description or "",
+        book.notes or "",
+        book.review or "",
+        book.quotes or "",
+        book.publisher or "",
+        book.language or "",
+        book.format or "",
+        book.edition or "",
+        book.status.value,
+        *book.authors,
+        *book.translators,
+        *book.categories,
+        *book.shelves,
+        *book.tags,
+        *_insights_text(book),
+    ]
+    return " ".join(parts).lower()
+
+
 @tool
 def search_library(query: str, limit: int = 10) -> dict[str, Any]:
-    """Search the user's own library by free text.
+    """Search the user's own library by free text, across every text field.
 
-    Matches title, subtitle, authors, series, shelves and tags (case-insensitive, accents kept).
-    Use this first whenever the user mentions a book, an author or a series.
+    Matches title, subtitle, authors, translators, series, publisher, language, format,
+    edition, categories, shelves, tags, description, notes, review, quotes and the
+    generated insights (summary, characters, plot, setting, themes, tone). Case-insensitive,
+    accents kept. Use this first whenever the user mentions a book, author, series, a theme,
+    a character or anything that might appear in a book's text.
 
     Args:
-        query: Words to look for, e.g. "Droga Szamana" or "Sanderson".
+        query: Words to look for, e.g. "Droga Szamana", "Sanderson" or "Arlen".
         limit: Maximum number of books to return (1-50).
     """
     needle = query.strip().lower()
     terms = [t for t in needle.split() if t]
     hits: list[Book] = []
     for book in _all_books():
-        haystack = " ".join(
-            [
-                book.title,
-                book.subtitle or "",
-                book.series or "",
-                *book.authors,
-                *book.shelves,
-                *book.tags,
-            ]
-        ).lower()
+        haystack = _haystack(book)
         if all(term in haystack for term in terms):
             hits.append(book)
     hits.sort(key=lambda b: b.finished_on or date.min, reverse=True)
@@ -87,7 +118,8 @@ def search_library(query: str, limit: int = 10) -> dict[str, Any]:
 
 @tool
 def get_book_details(book_id: int) -> dict[str, Any]:
-    """Return every stored field for one book (description, notes, dates, purchase data...).
+    """Return every stored field for one book (description, notes, dates, purchase data,
+    and the generated insights).
 
     Args:
         book_id: The book id returned by search_library or list_books.
@@ -99,6 +131,18 @@ def get_book_details(book_id: int) -> dict[str, Any]:
     if row is None:
         return {"error": f"no book with id {book_id}"}
     return row_to_book(row).model_dump(mode="json")
+
+
+@tool
+def get_book(book_id: int) -> dict[str, Any]:
+    """Return every stored field for one book: all catalogue metadata, reading data,
+    description, notes, review, quotes and the generated ``insights`` object. Use this
+    when the user wants the full detail of a specific book.
+
+    Args:
+        book_id: The book id returned by search_library or list_books.
+    """
+    return get_book_details(book_id)
 
 
 @tool
