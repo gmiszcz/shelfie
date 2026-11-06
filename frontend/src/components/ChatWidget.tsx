@@ -7,7 +7,8 @@ import { api } from '../services/api';
 import { type ChatMessage, chatReducer, initialChatState } from '../chat/chatState';
 import { renderMarkdown } from '../chat/markdown';
 import { readChatStream } from '../chat/sse';
-import { type TranscriptLanguage, useVoiceInput } from '../chat/useVoiceInput';
+import type { FinalMeta, TranscriptLanguage } from '../chat/useVoiceInput';
+import { MicButton } from './MicButton';
 import type { ChatEvent, ChatScope } from '../types';
 import './ChatWidget.css';
 
@@ -157,13 +158,17 @@ export function ChatWidget() {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // Append each finalized transcript into the input box (user still presses send).
-  const onFinalTranscript = useCallback((text: string) => {
+  // onFinal from the mic: a VAD end-of-speech sends immediately; a manual stop
+  // drops the text into the input box for the user to review.
+  const sendRef = useRef<(raw: string) => void>(() => {});
+  const onFinalTranscript = useCallback((text: string, meta: FinalMeta) => {
+    if (meta.autoSend) {
+      sendRef.current(text);
+      return;
+    }
     setInput((prev) => (prev ? `${prev} ${text}`.replace(/\s+/g, ' ') : text));
     inputRef.current?.focus();
   }, []);
-  const voice = useVoiceInput(onFinalTranscript, scope);
-  const voiceState = voice.state;
 
   // Persist scope and voice language.
   useEffect(() => {
@@ -243,14 +248,27 @@ export function ChatWidget() {
     },
     [streaming, scope, handleEvent],
   );
+  sendRef.current = (raw: string) => void send(raw);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
   }, []);
 
+  // Ctrl+M opens the chat when it is closed; MicButton's own window-level
+  // handler then toggles recording once the panel (and the hook) are mounted.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && (e.key === 'm' || e.key === 'M') && !open) {
+        e.preventDefault();
+        setOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
   const newChat = useCallback(async () => {
     stop();
-    voice.stop();
     const current = sessionRef.current;
     dispatch({ type: 'reset' });
     sessionRef.current = null;
@@ -266,7 +284,7 @@ export function ChatWidget() {
         // Resetting server state is best-effort; the local chat is already cleared.
       }
     }
-  }, [stop, voice]);
+  }, [stop]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -350,63 +368,22 @@ export function ChatWidget() {
             )}
           </div>
 
-          {voiceState.status === 'recording' && (
-            <div className="chat-voice-banner recording" role="status">
-              <span className="chat-voice-dot" />
-              <span className="chat-voice-label">
-                Listening ({voiceLang === 'pl-PL' ? 'PL' : 'EN'})…
-                {voiceState.partial ? ` ${voiceState.partial}` : ''}
-              </span>
-              <Button
-                icon="pi pi-stop-circle"
-                text
-                rounded
-                severity="danger"
-                aria-label="Stop recording"
-                onClick={voice.stop}
-              />
-            </div>
-          )}
-          {voiceState.status === 'error' && voiceState.error && (
-            <div className="chat-voice-banner error" role="alert">
-              <i className="pi pi-exclamation-triangle" />
-              <span className="chat-voice-label">{voiceState.error}</span>
-              <Button
-                icon="pi pi-times"
-                text
-                rounded
-                aria-label="Dismiss"
-                onClick={voice.stop}
-              />
-            </div>
-          )}
-
           <div className="chat-input">
             <button
               type="button"
               className="chat-lang-toggle"
               aria-label={`Voice language: ${voiceLang === 'pl-PL' ? 'Polish' : 'English'}. Click to switch.`}
               title={`Voice language: ${voiceLang === 'pl-PL' ? 'Polish' : 'English'}`}
-              disabled={voiceState.status === 'recording' || voiceState.status === 'requesting'}
+              disabled={streaming}
               onClick={() => setVoiceLang((l) => (l === 'pl-PL' ? 'en-US' : 'pl-PL'))}
             >
               {voiceLang === 'pl-PL' ? 'PL' : 'EN'}
             </button>
-            <Button
-              icon={
-                voiceState.status === 'requesting' ? 'pi pi-spin pi-spinner' : 'pi pi-microphone'
-              }
-              rounded
-              text={voiceState.status !== 'recording'}
-              severity={voiceState.status === 'recording' ? 'danger' : undefined}
-              aria-label={
-                voiceState.status === 'recording' ? 'Stop voice input' : 'Start voice input'
-              }
-              aria-pressed={voiceState.status === 'recording'}
-              disabled={streaming || voiceState.status === 'requesting'}
-              onClick={() =>
-                voiceState.status === 'recording' ? voice.stop() : void voice.start(voiceLang)
-              }
+            <MicButton
+              onFinal={onFinalTranscript}
+              scope={scope}
+              language={voiceLang}
+              disabled={streaming}
             />
             <InputTextarea
               ref={inputRef}
