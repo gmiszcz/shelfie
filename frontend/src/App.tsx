@@ -1,12 +1,12 @@
 import { Button } from 'primereact/button';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { ChatWidget } from './components/ChatWidget';
 import { Library } from './pages/Library';
 import { Ranking } from './pages/Ranking';
-import { SettingsProvider } from './settings/SettingsContext';
+import { SettingsProvider, useSettings } from './settings/SettingsContext';
 import { SettingsSidebar } from './settings/SettingsSidebar';
-import { UI_BUS_EVENT, parseUiBusEvent } from './settings/uiBus';
+import { UI_BUS_EVENT, dispatchUiAck, parseUiBusEvent } from './settings/uiBus';
 import type { UiTab } from './settings/uiBus';
 import { Stats } from './pages/Stats';
 
@@ -50,7 +50,14 @@ function initialTheme(): Theme {
   return 'dark';
 }
 
-export default function App() {
+/**
+ * The application shell. Lives inside `SettingsProvider` so the agent UI bus
+ * handler can toggle settings (`set_setting`). It owns the active tab, theme
+ * and settings-sidebar visibility, listens for the App-level bus actions, and
+ * keeps the `tab` / `openDialog` fields of `window.__shelfieUiState` current.
+ */
+function AppShell() {
+  const { setSettingByKey } = useSettings();
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [page, setPage] = useState<UiTab>('library');
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -64,31 +71,80 @@ export default function App() {
     }
   }, [theme]);
 
-  // Agent UI bus (contract 3): switch to the right tab. The Library page
-  // listens for the filter/open_book events itself; here we only make sure
-  // the relevant tab is visible so the user sees the result.
+  const toggleTheme = useCallback(() => setTheme((t) => (t === 'dark' ? 'light' : 'dark')), []);
+
+  // Agent UI bus (contract v2): App-level actions. Library owns the
+  // filter/search/add-book/open_book actions and acks them itself; here we
+  // handle navigation, settings sidebar, theme and set_setting.
   useEffect(() => {
     const onBus = (e: Event) => {
       const detail = parseUiBusEvent((e as CustomEvent).detail);
       if (!detail) {
         return;
       }
-      if (detail.action === 'navigate') {
-        setPage(detail.tab);
-      } else if (
-        detail.action === 'filter_library' ||
-        detail.action === 'open_book' ||
-        detail.action === 'clear_filter'
-      ) {
-        setPage('library');
+      switch (detail.action) {
+        case 'navigate':
+          setPage(detail.tab);
+          dispatchUiAck({ action: 'navigate', ok: true });
+          break;
+        case 'filter_library':
+        case 'open_book':
+        case 'clear_filter':
+        case 'set_search':
+        case 'set_star_filter':
+          // Library handles + acks these; ensure the library tab is visible.
+          setPage('library');
+          break;
+        case 'open_settings':
+          setSettingsOpen(true);
+          dispatchUiAck({ action: 'open_settings', ok: true });
+          break;
+        case 'close_dialogs':
+          setSettingsOpen(false);
+          // Library also closes its dialogs and acks.
+          break;
+        case 'toggle_theme':
+          toggleTheme();
+          dispatchUiAck({ action: 'toggle_theme', ok: true });
+          break;
+        case 'set_setting': {
+          const ok = setSettingByKey(detail.key, detail.value);
+          dispatchUiAck({
+            action: 'set_setting',
+            ok,
+            info: ok ? undefined : `unknown setting key "${detail.key}"`,
+          });
+          break;
+        }
+        case 'ranking':
+          // Navigate to ranking; the ranking page owns its own search box.
+          setPage('ranking');
+          dispatchUiAck({ action: 'ranking', ok: true });
+          break;
+        default:
+          break;
       }
     };
     window.addEventListener(UI_BUS_EVENT, onBus as EventListener);
     return () => window.removeEventListener(UI_BUS_EVENT, onBus as EventListener);
-  }, []);
+  }, [setSettingByKey, toggleTheme]);
+
+  // Keep the tab and settings-dialog fields of the shared snapshot current.
+  useEffect(() => {
+    const prev = window.__shelfieUiState;
+    window.__shelfieUiState = {
+      tab: page,
+      search: prev?.search ?? '',
+      starFilter: prev?.starFilter ?? null,
+      assistantFilter: prev?.assistantFilter ?? null,
+      settings: prev?.settings ?? null,
+      visibleBookIds: prev?.visibleBookIds ?? [],
+      openDialog: settingsOpen ? 'settings' : (prev?.openDialog ?? 'none'),
+    };
+  }, [page, settingsOpen]);
 
   return (
-    <SettingsProvider>
+    <>
       <header className="app-bar">
         <div className="app-brand">
           <i className="pi pi-book" />
@@ -116,7 +172,7 @@ export default function App() {
             rounded
             text
             aria-label="Toggle theme"
-            onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+            onClick={toggleTheme}
           />
           <Button
             icon="pi pi-cog"
@@ -136,6 +192,14 @@ export default function App() {
 
       <SettingsSidebar visible={settingsOpen} onHide={() => setSettingsOpen(false)} />
       <ChatWidget />
+    </>
+  );
+}
+
+export default function App() {
+  return (
+    <SettingsProvider>
+      <AppShell />
     </SettingsProvider>
   );
 }

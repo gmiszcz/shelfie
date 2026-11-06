@@ -3,7 +3,7 @@ import { Dialog } from 'primereact/dialog';
 import { Dropdown } from 'primereact/dropdown';
 import { InputText } from 'primereact/inputtext';
 import { ProgressSpinner } from 'primereact/progressspinner';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { formatAuthors, formatYear, hitKey } from '../format';
 import { api } from '../services/api';
@@ -16,6 +16,8 @@ interface Props {
   existingVolumeIds: Set<string>;
   /** Open the manual form, optionally prefilled (from the query or a hit). */
   onAddManually?: (prefill: Partial<BookInput>) => void;
+  /** Text to seed the search box with when the dialog opens (agent `open_add_book`). */
+  initialQuery?: string;
 }
 
 const LANG_OPTIONS = [
@@ -27,11 +29,25 @@ const LANG_OPTIONS = [
   { value: 'es', label: 'Español' },
 ];
 
-export function SearchDialog({ visible, onHide, onAdd, existingVolumeIds, onAddManually }: Props) {
+export function SearchDialog({
+  visible,
+  onHide,
+  onAdd,
+  existingVolumeIds,
+  onAddManually,
+  initialQuery,
+}: Props) {
   const [query, setQuery] = useState('');
   const [lang, setLang] = useState('');
   const [results, setResults] = useState<VolumeSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Seed the search box when opened via the agent with a query typed in.
+  useEffect(() => {
+    if (visible && initialQuery != null) {
+      setQuery(initialQuery);
+    }
+  }, [visible, initialQuery]);
   const [error, setError] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
   const [adding, setAdding] = useState<string | null>(null);

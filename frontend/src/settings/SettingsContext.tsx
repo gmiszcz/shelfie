@@ -2,13 +2,25 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react';
 
 import type { CardField, DetailSection, Settings } from './settingsTypes';
-import { DEFAULT_SETTINGS, loadSettings, saveSettings } from './settingsTypes';
+import {
+  CARD_FIELDS,
+  DEFAULT_SETTINGS,
+  DETAIL_SECTIONS,
+  loadSettings,
+  saveSettings,
+} from './settingsTypes';
 
 export interface SettingsContextValue {
   settings: Settings;
   toggleCardField: (field: CardField) => void;
   toggleDetailSection: (section: DetailSection) => void;
   setShowAllDetails: (value: boolean) => void;
+  /**
+   * Set any setting to an explicit boolean by its key (agent `set_setting`).
+   * Resolves the key against card fields, detail sections and `showAllDetails`.
+   * Returns true when the key was recognised and applied.
+   */
+  setSettingByKey: (key: string, value: boolean) => boolean;
   reset: () => void;
 }
 
@@ -40,11 +52,40 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setSettings((prev) => ({ ...prev, showAllDetails: value }));
   }, []);
 
+  const setSettingByKey = useCallback((key: string, value: boolean): boolean => {
+    if (key === 'showAllDetails') {
+      setSettings((prev) => ({ ...prev, showAllDetails: value }));
+      return true;
+    }
+    if ((CARD_FIELDS as string[]).includes(key)) {
+      setSettings((prev) => ({
+        ...prev,
+        cardFields: { ...prev.cardFields, [key as CardField]: value },
+      }));
+      return true;
+    }
+    if ((DETAIL_SECTIONS as string[]).includes(key)) {
+      setSettings((prev) => ({
+        ...prev,
+        detailSections: { ...prev.detailSections, [key as DetailSection]: value },
+      }));
+      return true;
+    }
+    return false;
+  }, []);
+
   const reset = useCallback(() => setSettings(DEFAULT_SETTINGS), []);
 
   const value = useMemo<SettingsContextValue>(
-    () => ({ settings, toggleCardField, toggleDetailSection, setShowAllDetails, reset }),
-    [settings, toggleCardField, toggleDetailSection, setShowAllDetails, reset],
+    () => ({
+      settings,
+      toggleCardField,
+      toggleDetailSection,
+      setShowAllDetails,
+      setSettingByKey,
+      reset,
+    }),
+    [settings, toggleCardField, toggleDetailSection, setShowAllDetails, setSettingByKey, reset],
   );
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;

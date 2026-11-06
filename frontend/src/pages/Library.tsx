@@ -8,13 +8,15 @@ import { BookDetailDialog } from '../components/BookDetailDialog';
 import { BookFormDialog } from '../components/BookFormDialog';
 import { BookGrid } from '../components/BookGrid';
 import { SearchDialog } from '../components/SearchDialog';
-import { StarFilter } from '../components/StarFilter';
-import type { ScoreBounds } from '../components/StarFilter';
+import { StarFilter, boundsForStarBucket } from '../components/StarFilter';
+import type { ScoreBounds, StarBucket } from '../components/StarFilter';
 import { useLibrary } from '../hooks/useLibrary';
+import { useSettings } from '../settings/SettingsContext';
 import { filterByScore } from '../ranking';
 import { applyFilter, describeFilter, isEmptyFilter } from '../settings/libraryFilter';
 import type { LibraryFilter } from '../settings/libraryFilter';
-import { UI_BUS_EVENT, parseUiBusEvent } from '../settings/uiBus';
+import { UI_BUS_EVENT, dispatchUiAck, parseUiBusEvent } from '../settings/uiBus';
+import type { StarValue } from '../settings/uiBus';
 import type { Book, BookInput, ReadingStatus, VolumeSearchResult } from '../types';
 
 interface FormTarget {
@@ -25,15 +27,17 @@ interface FormTarget {
 
 export function Library() {
   const { books, loading, error, add, update, remove, upsert } = useLibrary();
+  const { settings } = useSettings();
   const [selected, setSelected] = useState<Book | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchInitialQuery, setSearchInitialQuery] = useState<string | undefined>(undefined);
   const [formTarget, setFormTarget] = useState<FormTarget | null>(null);
   // Free-text search box (client-side filtering).
   const [query, setQuery] = useState('');
   // Structured filter pushed by the agent over the UI bus (contract 3).
   const [assistantFilter, setAssistantFilter] = useState<LibraryFilter | null>(null);
-  // Star band filter (rating contract 1): "5 stars" keeps scores 4.6..5.0.
-  const [starBucket, setStarBucket] = useState<number | null>(null);
+  // Whole-star band filter (wave-3): "5" keeps scores 4.6..5.0, etc.
+  const [starBucket, setStarBucket] = useState<StarBucket | null>(null);
   const [starBounds, setStarBounds] = useState<ScoreBounds | null>(null);
   const toast = useRef<Toast>(null);
 
@@ -42,21 +46,66 @@ export function Library() {
     [books],
   );
 
-  // Agent UI bus: apply a filter, open a book, or clear the filter.
+  const applyStarValue = (stars: StarValue) => {
+    if (stars == null) {
+      setStarBucket(null);
+      setStarBounds(null);
+    } else {
+      setStarBucket(stars);
+      setStarBounds(boundsForStarBucket(stars));
+    }
+  };
+
+  // Agent UI bus v2: filters, search box, star filter, add-book, dialogs.
   useEffect(() => {
     const onBus = (e: Event) => {
       const detail = parseUiBusEvent((e as CustomEvent).detail);
       if (!detail) {
         return;
       }
-      if (detail.action === 'filter_library') {
-        const { action: _action, ...filter } = detail;
-        setAssistantFilter(isEmptyFilter(filter) ? null : filter);
-      } else if (detail.action === 'clear_filter') {
-        setAssistantFilter(null);
-      } else if (detail.action === 'open_book') {
-        setSelected(books.find((b) => b.id === detail.book_id) ?? null);
+      let ok = true;
+      let info: string | undefined;
+      switch (detail.action) {
+        case 'filter_library': {
+          const { action: _action, ...filter } = detail;
+          setAssistantFilter(isEmptyFilter(filter) ? null : filter);
+          break;
+        }
+        case 'clear_filter':
+          setAssistantFilter(null);
+          break;
+        case 'open_book': {
+          const book = books.find((b) => b.id === detail.book_id) ?? null;
+          setSelected(book);
+          ok = book != null;
+          info = ok ? undefined : `no book #${detail.book_id}`;
+          break;
+        }
+        case 'set_search':
+          setQuery(detail.query);
+          break;
+        case 'set_star_filter':
+          applyStarValue(detail.stars);
+          break;
+        case 'open_add_book':
+          if (detail.mode === 'manual') {
+            setFormTarget({ mode: 'create', initial: detail.prefill });
+          } else {
+            setSearchInitialQuery(detail.query ?? '');
+            setSearchOpen(true);
+          }
+          break;
+        case 'close_dialogs':
+          setSelected(null);
+          setSearchOpen(false);
+          setFormTarget(null);
+          break;
+        default:
+          // Actions handled elsewhere (App): navigate, open_settings,
+          // toggle_theme, set_setting, ranking. Ignore here.
+          return;
       }
+      dispatchUiAck({ action: detail.action, ok, info });
     };
     window.addEventListener(UI_BUS_EVENT, onBus as EventListener);
     return () => window.removeEventListener(UI_BUS_EVENT, onBus as EventListener);
@@ -68,6 +117,34 @@ export function Library() {
     const afterQuery = query.trim() ? applyFilter(afterAssistant, { query }) : afterAssistant;
     return starBounds ? filterByScore(afterQuery, starBounds) : afterQuery;
   }, [books, assistantFilter, query, starBounds]);
+
+  // Keep the read-only state snapshot up to date for the agent (ui-agent reads it).
+  useEffect(() => {
+    const openDialog = formTarget
+      ? 'form'
+      : searchOpen
+        ? 'search'
+        : selected
+          ? 'detail'
+          : 'none';
+    window.__shelfieUiState = {
+      ...(window.__shelfieUiState ?? {
+        tab: 'library',
+        search: '',
+        starFilter: null,
+        assistantFilter: null,
+        settings: null,
+        visibleBookIds: [],
+        openDialog: 'none',
+      }),
+      search: query,
+      starFilter: starBucket,
+      assistantFilter,
+      settings,
+      visibleBookIds: visibleBooks.map((b) => b.id),
+      openDialog,
+    };
+  }, [query, starBucket, assistantFilter, settings, visibleBooks, formTarget, searchOpen, selected]);
 
   const notifyError = (message: string) =>
     toast.current?.show({ severity: 'error', summary: 'Error', detail: message });
@@ -139,7 +216,14 @@ export function Library() {
 
       <div className="library-toolbar">
         <div className="library-toolbar-left">
-          <Button label="Add book" icon="pi pi-plus" onClick={() => setSearchOpen(true)} />
+          <Button
+            label="Add book"
+            icon="pi pi-plus"
+            onClick={() => {
+              setSearchInitialQuery(undefined);
+              setSearchOpen(true);
+            }}
+          />
           <Button
             label="Add manually"
             icon="pi pi-pencil"
@@ -150,13 +234,6 @@ export function Library() {
         </div>
 
         <div className="library-toolbar-right">
-          <StarFilter
-            value={starBucket}
-            onChange={(stars, bounds) => {
-              setStarBucket(stars);
-              setStarBounds(bounds);
-            }}
-          />
           <span className="p-input-icon-left library-search">
             <i className="pi pi-search" />
             <InputText
@@ -174,6 +251,14 @@ export function Library() {
               />
             )}
           </span>
+
+          <StarFilter
+            value={starBucket}
+            onChange={(stars, bounds) => {
+              setStarBucket(stars);
+              setStarBounds(bounds);
+            }}
+          />
         </div>
       </div>
 
@@ -217,6 +302,7 @@ export function Library() {
         onAdd={handleAdd}
         existingVolumeIds={existingVolumeIds}
         onAddManually={(prefill) => setFormTarget({ mode: 'create', initial: prefill })}
+        initialQuery={searchInitialQuery}
       />
 
       {formTarget && (
