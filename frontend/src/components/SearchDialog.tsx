@@ -7,13 +7,15 @@ import { useState } from 'react';
 
 import { formatAuthors, formatYear, hitKey } from '../format';
 import { api } from '../services/api';
-import type { VolumeSearchResult } from '../types';
+import type { BookInput, VolumeSearchResult } from '../types';
 
 interface Props {
   visible: boolean;
   onHide: () => void;
   onAdd: (volume: VolumeSearchResult) => Promise<void>;
   existingVolumeIds: Set<string>;
+  /** Open the manual form, optionally prefilled (from the query or a hit). */
+  onAddManually?: (prefill: Partial<BookInput>) => void;
 }
 
 const LANG_OPTIONS = [
@@ -25,7 +27,7 @@ const LANG_OPTIONS = [
   { value: 'es', label: 'Español' },
 ];
 
-export function SearchDialog({ visible, onHide, onAdd, existingVolumeIds }: Props) {
+export function SearchDialog({ visible, onHide, onAdd, existingVolumeIds, onAddManually }: Props) {
   const [query, setQuery] = useState('');
   const [lang, setLang] = useState('');
   const [results, setResults] = useState<VolumeSearchResult[]>([]);
@@ -57,6 +59,27 @@ export function SearchDialog({ visible, onHide, onAdd, existingVolumeIds }: Prop
     } finally {
       setAdding(null);
     }
+  };
+
+  const prefillFromHit = (hit: VolumeSearchResult): Partial<BookInput> => ({
+    google_volume_id: hit.google_volume_id,
+    title: hit.title,
+    subtitle: hit.subtitle,
+    authors: hit.authors,
+    publisher: hit.publisher,
+    published_date: hit.published_date,
+    description: hit.description,
+    page_count: hit.page_count,
+    categories: hit.categories,
+    language: hit.language,
+    isbn_10: hit.isbn_10,
+    isbn_13: hit.isbn_13,
+    cover_url: hit.cover_url,
+  });
+
+  const addManually = (prefill: Partial<BookInput>) => {
+    onAddManually?.(prefill);
+    onHide();
   };
 
   return (
@@ -109,6 +132,13 @@ export function SearchDialog({ visible, onHide, onAdd, existingVolumeIds }: Prop
           ) : (
             <p>Try the original-language title or the author’s name.</p>
           )}
+          {onAddManually && (
+            <Button
+              label="Can't find it? Add it manually"
+              icon="pi pi-pencil"
+              onClick={() => addManually({ title: query.trim() })}
+            />
+          )}
         </div>
       )}
 
@@ -131,17 +161,38 @@ export function SearchDialog({ visible, onHide, onAdd, existingVolumeIds }: Prop
                   {formatYear(hit.published_date) && ` · ${formatYear(hit.published_date)}`}
                 </div>
               </div>
-              <Button
-                label={already ? 'In library' : 'Add'}
-                icon={already ? 'pi pi-check' : 'pi pi-plus'}
-                disabled={already}
-                loading={adding === (hit.google_volume_id ?? hit.title)}
-                onClick={() => void add(hit)}
-              />
+              <div className="hit-actions flex gap-2">
+                {onAddManually && (
+                  <Button
+                    label="Edit before adding"
+                    icon="pi pi-pencil"
+                    outlined
+                    onClick={() => addManually(prefillFromHit(hit))}
+                  />
+                )}
+                <Button
+                  label={already ? 'In library' : 'Add'}
+                  icon={already ? 'pi pi-check' : 'pi pi-plus'}
+                  disabled={already}
+                  loading={adding === (hit.google_volume_id ?? hit.title)}
+                  onClick={() => void add(hit)}
+                />
+              </div>
             </div>
           );
         })}
       </div>
+
+      {onAddManually && (searched || results.length > 0) && (
+        <div className="flex justify-content-center mt-3">
+          <Button
+            label="Can't find it? Add manually"
+            icon="pi pi-pencil"
+            text
+            onClick={() => addManually({ title: query.trim() })}
+          />
+        </div>
+      )}
     </Dialog>
   );
 }

@@ -1,0 +1,56 @@
+.bf-api-error {
+  background: var(--app-surface-2);
+  border: 1px solid var(--red-400);
+  color: var(--red-400);
+  border-radius: var(--custom-border-radius);
+  padding: var(--default-padding) var(--big-padding);
+  margin-bottom: var(--default-gap);
+}
+
+.bf-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--default-gap);
+  padding-top: var(--default-gap);
+}
+
+.bf-grid-1 {
+  grid-template-columns: 1fr;
+}
+
+.bf-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+  min-width: 0;
+}
+
+.bf-field > label {
+  font-size: 0.85rem;
+  color: var(--app-text-muted);
+}
+
+/* Make the form controls fill their grid cell. */
+.bf-field .p-inputtext,
+.bf-field .p-inputtextarea,
+.bf-field .p-dropdown,
+.bf-field .p-inputnumber,
+.bf-field .p-calendar,
+.bf-field .p-chips,
+.bf-field .p-chips-multiple-container {
+  width: 100%;
+}
+
+.bf-field .p-inputnumber-input {
+  width: 100%;
+}
+
+.bf-error {
+  color: var(--red-400);
+}
+
+@media (max-width: 640px) {
+  .bf-grid {
+    grid-template-columns: 1fr;
+  }
+}
