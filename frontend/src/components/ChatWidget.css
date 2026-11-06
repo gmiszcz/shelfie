@@ -1,0 +1,285 @@
+/* Floating library-assistant chat. Spacing uses the shared :root variables;
+   colours use the --app-* theme tokens so it tracks the dark/light switch. */
+
+.chat-fab {
+  position: fixed;
+  right: var(--content-padding);
+  bottom: var(--content-padding);
+  width: 3.5rem;
+  height: 3.5rem;
+  z-index: 1000;
+  background: var(--app-accent) !important;
+  border-color: var(--app-accent) !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.chat-panel {
+  position: fixed;
+  right: var(--content-padding);
+  bottom: calc(var(--content-padding) + 4rem);
+  width: 380px;
+  height: 560px;
+  max-height: calc(100vh - 2 * var(--content-padding) - 4rem);
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--custom-border-radius);
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+@media (max-width: 640px) {
+  .chat-panel {
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    max-height: 100vh;
+    border-radius: 0;
+    border: none;
+  }
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--small-gap);
+  padding: var(--default-padding) var(--big-padding);
+  background: var(--app-surface-2);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.chat-title {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+  font-weight: 600;
+  color: var(--app-text);
+}
+
+.chat-title i {
+  color: var(--app-accent);
+}
+
+.chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+}
+
+.chat-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--big-padding);
+  display: flex;
+  flex-direction: column;
+  gap: var(--default-gap);
+}
+
+.chat-row {
+  display: flex;
+}
+
+.chat-row.user {
+  justify-content: flex-end;
+}
+
+.chat-row.assistant {
+  justify-content: flex-start;
+}
+
+.chat-bubble {
+  max-width: 85%;
+  padding: var(--default-padding) var(--big-padding);
+  border-radius: var(--custom-border-radius);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.chat-bubble.user {
+  background: var(--app-accent);
+  color: #fff;
+  border-bottom-right-radius: var(--small-padding);
+}
+
+.chat-bubble.assistant {
+  background: var(--app-surface-2);
+  color: var(--app-text);
+  border: 1px solid var(--app-border);
+  border-bottom-left-radius: var(--small-padding);
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+}
+
+.chat-bubble.assistant.error {
+  border-color: var(--red-400, #f87171);
+}
+
+/* Reasoning (thinking) block */
+.chat-reasoning {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-padding);
+}
+
+.chat-reasoning-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-padding);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--app-text-muted);
+  font-size: 0.8rem;
+}
+
+.chat-reasoning-body {
+  color: var(--app-text-muted);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  border-left: 2px solid var(--app-border);
+  padding-left: var(--default-padding);
+}
+
+/* Tool chips */
+.chat-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--small-gap);
+}
+
+.chat-tool-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-padding);
+  font-size: 0.75rem;
+  padding: var(--small-padding) var(--default-padding);
+  border-radius: 999px;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  color: var(--app-text-muted);
+}
+
+.chat-tool-chip.success i {
+  color: var(--green-400, #4ade80);
+}
+
+.chat-tool-chip.error i {
+  color: var(--red-400, #f87171);
+}
+
+.chat-tool-chip.running i {
+  color: var(--app-accent);
+}
+
+/* Streaming tokens + blinking caret */
+.chat-stream-text {
+  white-space: pre-wrap;
+}
+
+.chat-caret {
+  display: inline-block;
+  width: 0.5rem;
+  height: 1rem;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--app-accent);
+  animation: chat-caret-blink 1s steps(2, start) infinite;
+}
+
+@keyframes chat-caret-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+/* Final answer markdown */
+.chat-markdown p {
+  margin: 0 0 var(--small-gap);
+}
+
+.chat-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.chat-markdown ul,
+.chat-markdown ol {
+  margin: 0 0 var(--small-gap);
+  padding-left: var(--content-padding);
+}
+
+.chat-markdown code {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: 4px;
+  padding: 0 var(--small-padding);
+  font-size: 0.85em;
+}
+
+/* Error inside the bubble */
+.chat-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--small-gap);
+  color: var(--red-400, #f87171);
+  font-size: 0.85rem;
+}
+
+/* Empty state */
+.chat-empty {
+  margin: auto;
+  text-align: center;
+  color: var(--app-text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--default-gap);
+}
+
+.chat-empty i {
+  font-size: 1.75rem;
+  color: var(--app-accent);
+}
+
+.chat-examples {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+  width: 100%;
+}
+
+.chat-example {
+  text-align: left;
+  cursor: pointer;
+  background: var(--app-surface-2);
+  border: 1px solid var(--app-border);
+  border-radius: var(--custom-border-radius);
+  padding: var(--default-padding) var(--big-padding);
+  color: var(--app-text);
+  font-size: 0.85rem;
+  transition: border-color 0.12s ease;
+}
+
+.chat-example:hover {
+  border-color: var(--app-accent);
+}
+
+/* Input */
+.chat-input {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--small-gap);
+  padding: var(--default-padding) var(--big-padding);
+  border-top: 1px solid var(--app-border);
+  background: var(--app-surface-2);
+}
+
+.chat-textarea {
+  flex: 1;
+  resize: none;
+  max-height: 8rem;
+}
