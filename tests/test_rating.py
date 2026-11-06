@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from app.services import rating
-from app.services.rating import BAND_WIDTH
+from app.services import rating, ratings
+from app.services.rating import BAND_WIDTH, STEP
 
 
 def test_no_comparisons_keeps_star_rating() -> None:
@@ -45,6 +45,68 @@ def test_worst_in_band_can_reach_floor_with_evidence() -> None:
     assert scores[3].display >= 5.0 - BAND_WIDTH
 
 
+def test_single_comparison_moves_display_by_at_most_one_step() -> None:
+    """Regression for the user's report: one comparison dropped a book by 0.5, not 0.1.
+
+    The engine must never move a display score by more than ``STEP`` (0.1) for a single
+    comparison, in a band of any size. We replay a growing comparison log one comparison at a
+    time and assert every per-step delta is within one 0.1 step.
+    """
+    stars = {i: 5.0 for i in range(1, 9)}  # an 8-book band, like the real 5.0 shelf
+    log: list[tuple[int, int, str]] = []
+    prev = {i: s.display for i, s in rating.fit(stars, log).items()}
+    # A varied sequence of outcomes so band strengths genuinely reshuffle.
+    sequence = [
+        (1, 2, "left"),
+        (3, 4, "left"),
+        (5, 6, "left"),
+        (7, 8, "left"),
+        (2, 3, "left"),
+        (4, 5, "right"),
+        (6, 7, "tie"),
+        (1, 8, "left"),
+        (2, 5, "left"),
+        (3, 6, "right"),
+        (4, 7, "left"),
+        (1, 5, "left"),
+    ]
+    for left, right, winner in sequence:
+        log.append((left, right, winner))
+        scores = rating.fit(stars, log)
+        for i, score in scores.items():
+            step = abs(score.display - prev[i])
+            assert step <= STEP + 1e-9, (
+                f"book {i} moved {step:.2f} (> {STEP}) on comparison {(left, right, winner)}"
+            )
+        prev = {i: s.display for i, s in scores.items()}
+
+
+def test_reaching_the_band_floor_is_gradual() -> None:
+    """A clear worst-in-band needs several comparisons to reach ``stars - 0.4``, never one.
+
+    With the per-comparison cap ``max_offset = min(0.4, 0.1 * games)`` the loser can fall at most
+    0.1 per comparison, so four comparisons are needed to reach the 0.4-below floor.
+    """
+    # Book 2 loses every comparison to book 1 inside the 5.0 band.
+    depth_by_count = {}
+    for k in range(0, 6):
+        scores = rating.fit({1: 5.0, 2: 5.0}, [(1, 2, "left")] * k)
+        depth_by_count[k] = round(5.0 - scores[2].display, 1)
+    assert depth_by_count[0] == 0.0
+    assert depth_by_count[1] == 0.1  # one comparison -> exactly one 0.1 step
+    assert depth_by_count[2] == 0.2
+    assert depth_by_count[3] == 0.3
+    assert depth_by_count[4] == 0.4  # floor reached only after four comparisons
+    assert depth_by_count[5] == 0.4  # and never past it
+
+
+def test_offset_cap_grows_by_one_step_per_comparison() -> None:
+    """The max offset a book can hold equals ``0.1 * games`` until it saturates at 0.4."""
+    for games, expected_cap in [(0, 0.0), (1, 0.1), (2, 0.2), (3, 0.3), (4, 0.4), (10, 0.4)]:
+        scores = rating.fit({1: 5.0, 2: 5.0}, [(1, 2, "left")] * games)
+        assert round(5.0 - scores[2].display, 1) <= expected_cap + 1e-9
+
+
 def test_bands_do_not_overlap() -> None:
     # Make the 4.5 winner strong and the 5.0 loser weak; order by stars must still hold.
     comparisons = [(2, 1, "left")] * 50  # book 2 (4.5) keeps "beating" book 1 (5.0)
@@ -75,7 +137,9 @@ def test_few_comparisons_stay_near_the_top() -> None:
     # One comparison should not drag the loser all the way to the band floor.
     one = rating.fit({1: 5.0, 2: 5.0}, [(1, 2, "left")])
     many = rating.fit({1: 5.0, 2: 5.0}, [(1, 2, "left")] * 40)
-    assert one[2].display >= many[2].display  # shrinkage keeps the low-evidence book higher
+    assert (
+        one[2].display >= many[2].display
+    )  # the per-comparison cap keeps the low-evidence book higher
 
 
 def test_ties_and_unknown_books_are_handled() -> None:
@@ -110,8 +174,53 @@ def test_next_pair_prefers_same_band_then_boundary() -> None:
     assert boundary is not None and 4 not in boundary
 
 
-def _add(client: TestClient, title: str, stars: float | None, vol: str) -> int:
-    body = {"title": title, "google_volume_id": vol, "stars": stars, "status": "finished"}
+def test_next_pair_only_pairs_within_the_same_group() -> None:
+    stars = {1: 5.0, 2: 5.0, 3: 5.0, 4: 5.0}
+    scores = rating.fit(stars, [])
+    groups: dict[int, str | None] = {1: "Fantasy", 2: "Fantasy", 3: "Thriller", 4: "Thriller"}
+    pair = rating.next_pair(scores, stars, groups=groups)
+    assert pair is not None
+    assert groups[pair[0]] == groups[pair[1]]  # never crosses categories
+
+
+def test_next_pair_never_pairs_an_uncategorised_book_across_categories() -> None:
+    stars = {1: 5.0, 2: 5.0, 3: 5.0}
+    scores = rating.fit(stars, [])
+    # Book 3 has no category; it may only pair with another None-group book, of which there is none.
+    groups: dict[int, str | None] = {1: "Fantasy", 2: "Fantasy", 3: None}
+    pair = rating.next_pair(scores, stars, groups=groups, focus=3)
+    assert pair is None  # 3 cannot be paired with a Fantasy book
+
+
+def test_group_of_prefers_shelf_then_category() -> None:
+    from types import SimpleNamespace
+    from typing import cast
+
+    from app.schemas.books import Book
+
+    def mk(shelves: list[str], categories: list[str]) -> Book:
+        # group_of only reads .shelves and .categories; a lightweight stub keeps the test focused.
+        return cast(Book, SimpleNamespace(shelves=shelves, categories=categories))
+
+    assert ratings.group_of(mk(["Fantasy"], ["Fiction"])) == "Fantasy"
+    assert ratings.group_of(mk([], ["Fiction"])) == "Fiction"
+    assert ratings.group_of(mk([], [])) is None
+
+
+def _add(
+    client: TestClient,
+    title: str,
+    stars: float | None,
+    vol: str,
+    shelves: list[str] | None = None,
+) -> int:
+    body = {
+        "title": title,
+        "google_volume_id": vol,
+        "stars": stars,
+        "status": "finished",
+        "shelves": shelves or [],
+    }
     return int(client.post("/api/books", json=body).json()["id"])
 
 
@@ -134,6 +243,23 @@ def test_compare_flow(client: TestClient) -> None:
 
     recompute = client.post("/api/ratings/recompute").json()
     assert recompute == {"rated_books": 2, "comparisons": 1}
+
+
+def test_pair_respects_selected_group(client: TestClient) -> None:
+    f1 = _add(client, "F1", 5, "f1", shelves=["Fantasy"])
+    f2 = _add(client, "F2", 5, "f2", shelves=["Fantasy"])
+    _add(client, "T1", 5, "t1", shelves=["Thriller"])
+    _add(client, "T2", 5, "t2", shelves=["Thriller"])
+
+    # Asking for the Fantasy group only ever returns the two Fantasy books.
+    pair = client.get("/api/ratings/pair?group=Fantasy").json()
+    assert {pair["left"]["id"], pair["right"]["id"]} == {f1, f2}
+
+    # And every suggested pair shares one shelf even with no group pinned.
+    pair = client.get("/api/ratings/pair").json()
+    left_shelves = set(pair["left"]["shelves"])
+    right_shelves = set(pair["right"]["shelves"])
+    assert left_shelves & right_shelves
 
 
 def test_compare_rejects_unrated_or_same_book(client: TestClient) -> None:

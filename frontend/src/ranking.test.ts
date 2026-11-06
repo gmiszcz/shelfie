@@ -5,8 +5,12 @@ import {
   bandOf,
   confidenceLabel,
   confidenceOf,
+  defaultGroup,
+  filterBySearch,
   filterByScore,
   formatScore,
+  groupOf,
+  groupOptions,
   newSessionId,
   rankBooks,
   scoreBoundsForStars,
@@ -19,6 +23,8 @@ function book(overrides: Partial<Book>): Book {
     id: 1,
     title: 'Untitled',
     authors: [],
+    series: null,
+    categories: [],
     shelves: [],
     stars: null,
     display_score: null,
@@ -180,5 +186,70 @@ describe('filterByScore', () => {
     expect(filterByScore([mk(null, 4.5), mk(null, null)], scoreBoundsForStars(4.5))).toEqual([
       mk(null, 4.5),
     ]);
+  });
+});
+
+describe('groupOf', () => {
+  it('prefers the primary (first) shelf', () => {
+    expect(groupOf(book({ shelves: ['Fantasy', 'Owned'], categories: ['Fiction'] }))).toBe(
+      'Fantasy',
+    );
+  });
+  it('falls back to the first category when there is no shelf', () => {
+    expect(groupOf(book({ shelves: [], categories: ['Fiction'] }))).toBe('Fiction');
+  });
+  it('is null when the book has neither', () => {
+    expect(groupOf(book({ shelves: [], categories: [] }))).toBeNull();
+  });
+});
+
+describe('groupOptions / defaultGroup', () => {
+  const library = [
+    book({ id: 1, stars: 5, shelves: ['Fantasy'] }),
+    book({ id: 2, stars: 4, shelves: ['Fantasy'] }),
+    book({ id: 3, stars: 5, shelves: ['Thriller'] }),
+    book({ id: 4, stars: null, shelves: ['Fantasy'] }), // unrated, ignored
+    book({ id: 5, stars: 3, shelves: [], categories: [] }), // uncategorised
+  ];
+
+  it('counts only rated books, ordered by count desc', () => {
+    expect(groupOptions(library)).toEqual([
+      { value: 'Fantasy', label: 'Fantasy', count: 2 },
+      { value: 'Thriller', label: 'Thriller', count: 1 },
+      { value: null, label: 'Uncategorised', count: 1 },
+    ]);
+  });
+
+  it('defaults to the category with the most rated books', () => {
+    expect(defaultGroup(library)).toBe('Fantasy');
+  });
+
+  it('is null when there are no rated books', () => {
+    expect(defaultGroup([book({ stars: null })])).toBeNull();
+  });
+});
+
+describe('filterBySearch', () => {
+  const library = [
+    book({ id: 1, title: 'Dune', authors: ['Frank Herbert'], series: 'Dune' }),
+    book({ id: 2, title: 'Mistborn', authors: ['Brandon Sanderson'], series: 'Mistborn' }),
+    book({ id: 3, title: 'The Way of Kings', authors: ['Brandon Sanderson'], series: 'Stormlight' }),
+  ];
+
+  it('keeps everything for an empty or whitespace query', () => {
+    expect(filterBySearch(library, '').map((b) => b.id)).toEqual([1, 2, 3]);
+    expect(filterBySearch(library, '   ').map((b) => b.id)).toEqual([1, 2, 3]);
+  });
+  it('matches on title (case-insensitive)', () => {
+    expect(filterBySearch(library, 'dune').map((b) => b.id)).toEqual([1]);
+  });
+  it('matches on author', () => {
+    expect(filterBySearch(library, 'sanderson').map((b) => b.id)).toEqual([2, 3]);
+  });
+  it('matches on series', () => {
+    expect(filterBySearch(library, 'stormlight').map((b) => b.id)).toEqual([3]);
+  });
+  it('returns nothing when no field matches', () => {
+    expect(filterBySearch(library, 'tolkien')).toEqual([]);
   });
 });

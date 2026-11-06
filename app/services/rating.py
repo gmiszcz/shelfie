@@ -17,55 +17,51 @@ overlap**: the top of one band (``stars``) always sits above the top of the band
 books *inside* a band and can only push a book **downward** from its star value, never up and never
 into a neighbour's band. The top of a band always stays pinned at its star value.
 
-## From Bradley-Terry strength to a band offset
+## From comparisons to a band offset
 
 Comparisons refine the order *within* a band. For each band we:
 
 1. Fit one global regularised Bradley-Terry model over all rated books (the fit is shared so that
-   comparisons across bands still carry information through the prior and the graph).
-2. Inside each band, look only at the books that share that star value and rank them by fitted
-   log-strength ``latent``.
-3. Map each book's rank/strength to a downward offset in ``[0, BAND_WIDTH]``:
+   comparisons across bands still carry information through the prior and the graph). The fit drives
+   the within-band *ordering* and the next-pair selection, and yields a per-book uncertainty.
+2. Count each book's **in-band losses**: how many comparisons against a book of the *same* star
+   value it has lost (a tie counts as half a loss for each side). Cross-band comparisons never
+   shape a band's offsets.
+3. Turn the loss tally straight into a downward offset, one 0.1 step per loss, capped at the band
+   width:
 
-       best in band      -> offset 0.0        -> display = stars
-       worst in band      -> offset up to 0.4  -> display = stars - 0.4   (only with enough evidence)
+       offset_i  = min( BAND_WIDTH, STEP * band_losses_i )
+       display_i = round_to_0.1( stars_i - offset_i )
 
-   The raw offset is the book's strength position within the band, normalised so the strongest book
-   in the band gets 0 and the weakest gets ``BAND_WIDTH``:
+   * **No in-band losses -> offset 0 -> display = stars** (the band top is always pinned at the
+     star value).
+   * Each in-band loss pushes a book one 0.1 step lower, down to the band floor ``stars - 0.4``
+     after four losses.
 
-       raw_offset_i = BAND_WIDTH * (latent_max_band - latent_i) / (latent_max_band - latent_min_band)
+4. **Per-comparison step cap (why this shape).** Adding one comparison changes the in-band loss
+   tally of at most the two books involved, each by at most one. The offset is ``STEP`` (0.1) per
+   loss, so **a single comparison can move a display score by at most one 0.1 step, and never
+   moves a book that was not in the comparison.** Reaching the band floor therefore always takes at
+   least four in-band losses -- the refinement is gradual by construction. This is a deliberate
+   replacement for an earlier *relative* mapping (normalising each book's Bradley-Terry strength
+   against the band's strongest and weakest member): that mapping was not local, so one comparison
+   could shift the whole band's normalisation and move a book -- even an uninvolved one -- by up to
+   0.5 at once, which is the bug this engine was changed to fix.
 
-   (a band with one book, or with all-equal strengths, gives every member offset 0 -> display =
-   stars, which is the correct "no evidence yet" behaviour).
-
-4. **Uncertainty shrinkage.** A book with few comparisons should stay near the top of its band
-   (we are not yet sure it is worse than its band-mates). We shrink the raw offset toward 0 by a
-   confidence factor that grows with the amount of evidence (the number of comparisons ``games``
-   involving the book):
-
-       confidence_i = games_i / (games_i + SHRINK_PRIOR)     in [0, 1)
-       offset_i      = round_to_0.1( raw_offset_i * confidence_i )
-
-   With no comparisons ``games = 0``, ``confidence = 0``, and the book stays at ``stars``. As
-   comparisons accumulate, ``confidence -> 1`` and the book can reach its full raw offset, down to
-   ``stars - 0.4`` for the clear worst-in-band.
-
-5. ``display = round_to_0.1(stars - offset)``, clamped to the band ``[stars - 0.4, stars]`` and to
-   the global ``[0.1, 5.0]`` range. The final value is guaranteed to lie within
-   ``[stars - BAND_WIDTH, stars]`` (contract 1).
+5. ``display`` is clamped to the band ``[stars - 0.4, stars]`` and to the global ``[0.1, 5.0]``
+   range, so ``display in [stars - BAND_WIDTH, stars]`` by construction (contract 1).
 
 ### Worked example
 
-Band 5.0 holds three books A, B, C with fitted log-strengths ``latent = {A: 1.0, B: 0.4, C: 0.0}``,
-all with many comparisons (``confidence ~= 1``):
+Band 5.0 holds three books A, B, C. A never loses in-band, B has lost two in-band comparisons and
+C has lost five:
 
-    raw_offset_A = 0.4 * (1.0 - 1.0) / (1.0 - 0.0) = 0.00  -> display 5.0
-    raw_offset_B = 0.4 * (1.0 - 0.4) / (1.0 - 0.0) = 0.24  -> round 0.2 -> display 4.8
-    raw_offset_C = 0.4 * (1.0 - 0.0) / (1.0 - 0.0) = 0.40  -> display 4.6
+    offset_A = min(0.4, 0.1 * 0) = 0.0  -> display 5.0
+    offset_B = min(0.4, 0.1 * 2) = 0.2  -> display 4.8
+    offset_C = min(0.4, 0.1 * 5) = 0.4  -> display 4.6   (capped at the 0.4 floor)
 
-If C had only one comparison so ``confidence_C = 1 / (1 + 2) ~= 0.33``:
-
-    offset_C = round_to_0.1(0.40 * 0.33) = round_to_0.1(0.13) = 0.1 -> display 4.9
+If C had only lost once so far, ``offset_C = 0.1 -> display 4.9``; it sinks exactly one 0.1 step
+per loss, so it needs four in-band losses to reach the 4.6 floor.
 
 Everything is recomputable from ``books.stars`` and the ``comparisons`` log, which is why the
 recompute endpoint can be triggered manually at any time.
@@ -82,13 +78,22 @@ MAX_ITERATIONS = 500
 TOLERANCE = 1e-9
 
 BAND_WIDTH = 0.4  # how far below its star value a book's display score may sink
-STEP = 0.1  # display scores are quantised to this step
-SHRINK_PRIOR = 2.0  # Fisher-information scale for the uncertainty-shrinkage confidence factor
+STEP = 0.1  # display scores are quantised to this step; also the max per-comparison offset step
 
 
 def _round_step(value: float, step: float = STEP) -> float:
     """Round to the nearest ``step`` (e.g. 0.1), avoiding binary-float surprises."""
     return round(round(value / step) * step, 10)
+
+
+def _floor_step(value: float, step: float = STEP) -> float:
+    """Floor to a multiple of ``step`` (e.g. 0.1), avoiding binary-float surprises.
+
+    Used for the band offset so that evidence only ever *crosses* a 0.1 step boundary when it has
+    fully accumulated it -- a half-loss (tie) can never round an offset up past a step, which keeps
+    the per-comparison change at most one step.
+    """
+    return round(math.floor(round(value / step, 9)) * step, 10)
 
 
 @dataclass(frozen=True)
@@ -170,6 +175,30 @@ def fit(
 
     info_by_id = {i: information(i) for i in ids}
 
+    # In-band loss tally per book. A book's display offset is driven directly by how many
+    # *in-band* comparisons it has lost (a tie counts as half a loss each way), NOT by its
+    # relative position in the shifting Bradley-Terry fit. This keeps the mapping LOCAL and
+    # GRADUAL: adding one comparison changes the loss tally of at most the two books involved,
+    # each by at most one, so a single comparison can move a display score by at most one 0.1
+    # step and can never move a book that was not in the comparison. Reaching the band floor
+    # (0.4 below the star value) therefore always takes at least four in-band losses. The
+    # Bradley-Terry fit above still drives the ordering and the next-pair selection; here it only
+    # breaks ties between books with equal loss tallies so the within-band order stays monotone
+    # in strength.
+    band_losses: dict[int, float] = defaultdict(float)
+    for left, right, winner in comparisons:
+        if left not in known or right not in known or left == right:
+            continue
+        if abs(stars[left] - stars[right]) > 1e-9:
+            continue  # only same-band (same star value) comparisons shape a band's offsets
+        if winner == "left":
+            band_losses[right] += 1.0
+        elif winner == "right":
+            band_losses[left] += 1.0
+        else:  # tie
+            band_losses[left] += 0.5
+            band_losses[right] += 0.5
+
     # Group books by their (quantised) star value: these are the bands.
     bands: dict[float, list[int]] = defaultdict(list)
     for i in ids:
@@ -177,21 +206,15 @@ def fit(
 
     display: dict[int, float] = {}
     for star_value, members in bands.items():
-        latents = [latent[i] for i in members]
-        lat_max, lat_min = max(latents), min(latents)
-        spread = lat_max - lat_min
         for i in members:
-            if spread <= 1e-12:
-                raw_offset = 0.0  # one book, or all equal -> nothing to refine
-            else:
-                raw_offset = BAND_WIDTH * (lat_max - latent[i]) / spread
-            # Uncertainty shrinkage: few comparisons -> stay near the top of the band. Confidence
-            # grows with the amount of evidence (comparisons involving this book), so a book with
-            # no comparisons gets ~0 offset (sits at its star value) and a well-compared one can
-            # reach its full raw offset, down to the band floor.
-            confidence = games[i] / (games[i] + SHRINK_PRIOR)
-            offset = _round_step(raw_offset * confidence)
-            offset = max(0.0, min(BAND_WIDTH, offset))
+            # offset = 0.1 per in-band loss, FLOORED to the 0.1 step and capped at the band width
+            # (0.4). A single comparison changes a book's loss tally by at most one full loss (a
+            # win/loss) or half a loss (a tie), so the floored offset advances by at most one 0.1
+            # step per comparison -- and a book not in the comparison keeps its tally, so it never
+            # moves. Flooring (rather than rounding) keeps the step cap exact: two half-losses
+            # (ties) are needed to cross one 0.1 step, so a tie can never cause a jump.
+            raw_offset = min(BAND_WIDTH, STEP * band_losses[i])
+            offset = _floor_step(max(0.0, raw_offset))
             value = _round_step(star_value - offset)
             # Clamp into the band and the global display range.
             value = max(star_value - BAND_WIDTH, min(star_value, value))
@@ -223,6 +246,7 @@ def next_pair(
     *,
     focus: int | None = None,
     exclude: set[tuple[int, int]] | None = None,
+    groups: dict[int, str | None] | None = None,
 ) -> tuple[int, int] | None:
     """Pick the most informative pair to ask the user about next.
 
@@ -238,11 +262,21 @@ def next_pair(
     Within a tier the pair with the closest predicted outcome and the largest combined uncertainty
     (the least-pinned-down books) wins. ``focus`` restricts to pairs containing that book;
     ``exclude`` holds already-asked pairs (order-insensitive) to avoid repeats in a session.
+
+    ``groups`` maps each book id to its category group (its primary shelf, falling back to its
+    first category, or ``None`` when it has neither). When given, a pair must share the same group:
+    books are only ever compared within one category, and a book with no category (group ``None``)
+    is only paired with other uncategorised books -- never across categories.
     """
     ids = sorted(scores)
     if len(ids) < 2:
         return None
     done = {tuple(sorted(p)) for p in (exclude or set())}
+
+    def same_group(a: int, b: int) -> bool:
+        if groups is None:
+            return True
+        return groups.get(a) == groups.get(b)
 
     def tier(a: int, b: int) -> int:
         if stars is None:
@@ -262,6 +296,8 @@ def next_pair(
             if focus is not None and focus not in (a, b):
                 continue
             if (a, b) in done:
+                continue
+            if not same_group(a, b):
                 continue
             sa, sb = scores[a], scores[b]
             p = 1.0 / (1.0 + math.exp(sb.latent - sa.latent))
