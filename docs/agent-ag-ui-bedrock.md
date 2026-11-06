@@ -1,193 +1,165 @@
-# Agent Layer — Strands Compose, AG-UI, AWS Bedrock, AWS Transcribe
+# Agent Layer — AG-UI frontend tools, AWS Bedrock, AWS Transcribe
 
-Shelfie's AI layer lets the user search the library **and drive the UI by chat**, with optional
-**voice input**. It runs on **AWS Bedrock** (Claude Haiku 5.5) via **Strands Compose** (declarative
-YAML orchestration), exposes the work as agent tools, streams a live **AG-UI**-style event stream to
-the browser over SSE, and transcribes speech with **Amazon Transcribe** streaming.
+Shelfie has **two chat agents**, switched in the chat widget header:
 
-## Pieces
+- **Library agent** — a read-only data assistant that answers questions about the library. It runs
+  **on the server** (Strands Compose + Bedrock) with database tools, and streams its answer to the
+  browser over SSE. Endpoint: `POST /api/agent/chat`. (Unchanged; see "Library agent" below.)
+- **UI agent** — an assistant that **drives the user interface**. It follows the **AG-UI
+  frontend-tools** pattern (as in CopilotKit / the AG-UI client): **its tools are defined and
+  executed in the browser**. The only server part is a thin LLM runner, because Bedrock credentials
+  cannot live in the browser. Endpoint: `POST /api/agui/run`.
 
-| Piece | Role |
-|---|---|
-| **AWS Bedrock** | Hosts the model the agent runs on (Haiku 5.5, region `eu-central-1`) |
-| **Strands Compose** | YAML orchestration: one entry agent (`librarian`) with tools + hooks |
-| **Agent tools** | Two scopes: read-only **data tools** and frontend **UI tools** (below) |
-| **AG-UI** | Frontend event protocol: run lifecycle, token/thinking deltas, tool calls |
-| **AWS Transcribe** | Streaming speech-to-text for voice input (pl-PL default, en-US toggle) |
+Both run on **AWS Bedrock** (Claude Haiku 5.5, `eu-central-1`). Voice input (AWS Transcribe) works
+in either mode.
 
-## Two scopes: Library only vs Library + UI control
+## Why frontend tools (what changed)
 
-The chat widget header has a toggle:
+The previous design put "UI tools" on the **server** as stub functions and tried to turn the model's
+tool call into a UI event after the fact. In the real app the agent often just **said it could not
+change the UI**. The UI agent fixes this by making the browser the source of truth:
 
-- **Library only** (default) — the agent answers from the read-only data tools:
-  `search_library`, `get_book_details`, `list_books`, `reading_stats`, `library_overview`.
-- **Library + UI control** — the agent *additionally* gets the four **UI tools**. The scope is sent
-  per request as `POST /api/agent/chat {"scope": "library" | "ui"}`. On the first `ui` turn the
-  engine registers the UI tools on the entry agent and appends UI guidance to its system prompt
-  (idempotent, once per session).
-
-### UI tools (frontend-executed)
-
-The UI tools do **not** touch the server. Each is a thin stub whose arguments mirror the UI-bus
-`detail` shapes; the real effect happens in the browser (see the voice/UI bus below).
-
-| Tool | Arguments | Effect in the browser |
-|---|---|---|
-| `filter_library` | `query?, series?, author?, shelf?, tag?, status?, min_stars?` | filter the Library grid |
-| `clear_filter` | — | remove the assistant filter |
-| `navigate` | `tab: library \| stats \| ranking` | switch the active tab |
-| `open_book` | `book_id: int` | open the book detail dialog |
-
-The agent is told to resolve real values with the data tools first (e.g. `search_library` to get the
-exact series string) and only then call a UI tool.
-
-## AG-UI event protocol (the real wire)
-
-The backend streams a small wire protocol over SSE. Each frame keeps a **backward-compatible
-`type`** (the existing frontend parser/reducer in `frontend/src/chat/` is unchanged) **and** carries
-the canonical **AG-UI** name in an extra `agui` field. An AG-UI-aware client can switch on `agui`.
-
-The mapping lives in `app/agent/agui.py`:
-
-| wire `type` | `agui` name(s) | notes |
-|---|---|---|
-| `session_start` | `RUN_STARTED` | carries `session_id` |
-| `reasoning` | `THINKING_TEXT_MESSAGE_CONTENT` | adaptive-thinking delta |
-| `token` | `TEXT_MESSAGE_CONTENT` | answer delta |
-| `tool_start` | `TOOL_CALL_START` then `tool_args` → `TOOL_CALL_ARGS` | one wire `tool_start` fans out to two AG-UI frames: name first, then args |
-| `tool_end` | `TOOL_CALL_END` (data tool) / `TOOL_CALL_RESULT` (UI tool) | UI tools echo their args on this frame and set `ui_action: true` |
-| `error` | `RUN_ERROR` | |
-| `session_finish` | `RUN_FINISHED` (ok) / `RUN_ERROR` (not ok) | carries final `text` + `ok` |
-
-`RUN_STARTED` / `RUN_FINISHED` map the existing `session_start` / `session_finish` lifecycle, so the
-old stream contract still holds while the richer AG-UI names ride alongside.
-
-### Verified live event sequence
-
-Live against Bedrock (`eu-central-1`, Haiku 5.5) for the prompt
-**“pokaż książki z serii droga szamana”** in `ui` scope:
-
-```
-RUN_STARTED
-TOOL_CALL_START  search_library            (data)
-TOOL_CALL_ARGS   search_library  {query: "Droga Szamana"}
-TOOL_CALL_END    search_library            (ui_action: false)
-TOOL_CALL_START  filter_library            (ui, ui_action: true)
-TOOL_CALL_ARGS   filter_library  {series: "Droga Szamana"}
-TOOL_CALL_RESULT filter_library  {series: "Droga Szamana"}  (ui_action: true)
-TEXT_MESSAGE_CONTENT ... (answer tokens) ...
-RUN_FINISHED
-```
-
-The agent first finds the series with the data tool, then calls `filter_library(series=...)` — the
-acceptance criterion.
-
-## UI bus (agent → frontend)
-
-When a UI tool's `TOOL_CALL_RESULT` arrives (`ui_action: true`), the ChatWidget event handler calls
-`dispatchUiAction()` (`frontend/src/agui/uiBus.ts`), which dispatches the wave-2 UI-bus event:
-
-```js
-window.dispatchEvent(new CustomEvent('shelfie:ui', { detail }));
-```
-
-`detail` matches the UI-bus contract
-(`{ action: 'filter_library', series?, author?, ... } | { action: 'navigate', tab } |
-{ action: 'open_book', book_id } | { action: 'clear_filter' }`). **ag-ui-voice dispatches; ui-shell
-listens** (App switches tab, Library applies the filter and shows a removable chip). The reducer also
-records a small **“Action: filtered library by series Droga Szamana”** card in the chat.
+- The browser **owns** every UI tool — both its JSON-Schema definition (sent to the model) and its
+  **executor** (run locally). The tool's effect is a real DOM action: it dispatches a `shelfie:ui`
+  bus event, waits for the listener's ack, reads `window.__shelfieUiState`, or searches the books the
+  app already loaded.
+- The server **never** runs a tool and has **no database access**. It only relays the browser's tool
+  schemas to Bedrock and streams events back.
 
 ```mermaid
-sequenceDiagram
-    participant U as User
-    participant W as ChatWidget
-    participant A as Agent (Bedrock)
-    participant B as shelfie:ui bus
-    participant S as ui-shell (App/Library)
-
-    U->>W: "pokaż książki z serii droga szamana" (scope=ui)
-    W->>A: POST /api/agent/chat {scope:"ui"}
-    A->>W: TOOL_CALL_* search_library (finds series)
-    A->>W: TOOL_CALL_RESULT filter_library {series} (ui_action)
-    W->>B: dispatch shelfie:ui {action:"filter_library", series}
-    B->>S: event
-    S-->>U: Library tab, grid filtered + "Filtered by assistant" chip
-    A->>W: TEXT_MESSAGE_CONTENT ... / RUN_FINISHED
-    W-->>U: answer + "Action" card
+flowchart LR
+    U[User] --> CW[ChatWidget\nUI agent mode]
+    CW -->|POST /api/agui/run\n{messages, tools, state}| R[Thin runner\napp/agent/ui_agent.py]
+    R -->|converse_stream| B[(Bedrock\nHaiku 5.5)]
+    B -->|AG-UI events| R --> CW
+    CW -->|model called a tool| EX[Browser tool executor\nfrontend/src/agui/tools.ts]
+    EX -->|shelfie:ui CustomEvent| L[App / Library listeners]
+    L -->|shelfie:ui:ack| EX
+    EX -->|tool result message| CW
+    CW -->|next POST /api/agui/run| R
 ```
+
+## The run loop (one message → many turns)
+
+`frontend/src/agui/client.ts` (`runAgent`) drives the loop:
+
+1. POST `{threadId, runId, messages, tools, state}` to `/api/agui/run`.
+   - `messages` is the running AG-UI conversation (`user` / `assistant` / `tool`).
+   - `tools` is the JSON-Schema list from `frontend/src/agui/tools.ts`.
+   - `state` is a snapshot of `window.__shelfieUiState`.
+2. The runner streams AG-UI events; the client collects streamed text and **at most one tool call**.
+3. If the model answered with **text only** → the run is done.
+4. If the model emitted a **tool call** → the browser **executes it**, appends the result as a
+   `tool` message, and goes back to step 1.
+
+The loop stops on a text answer, on `RUN_ERROR`, on abort, or at a `maxTurns` safety cap.
+
+### AG-UI events (the wire, `POST /api/agui/run`)
+
+The runner (`app/agent/ui_agent.py`) emits, per turn:
+
+| Event | When |
+|---|---|
+| `RUN_STARTED` | first, carries `threadId` / `runId` |
+| `TEXT_MESSAGE_START` / `TEXT_MESSAGE_CONTENT` / `TEXT_MESSAGE_END` | the model writes prose (`delta` carries the text) |
+| `TOOL_CALL_START` / `TOOL_CALL_ARGS` / `TOOL_CALL_END` | the model calls a browser tool; `TOOL_CALL_END` carries the full JSON `args` |
+| `RUN_FINISHED` | last (success) |
+| `RUN_ERROR` | last (failure, carries `message`) — e.g. missing Bedrock credentials |
+
+A turn that emits a tool call **ends right after it** (`TOOL_CALL_END` → `RUN_FINISHED`); the browser
+runs the tool and starts the next turn. This is the AG-UI frontend-tools contract.
+
+The system prompt tells the model to answer in the user's language, to **act instead of describing**,
+to resolve names with `find_books` first, and to confirm briefly what it did.
+
+## Browser tools (`frontend/src/agui/tools.ts`)
+
+Every tool runs in the browser. `navigate`, `set_search`, `set_star_filter`, `filter_library`,
+`clear_filter`, `open_book`, `open_add_book`, `open_settings`, `set_setting`, `toggle_theme` and
+`ranking_search` dispatch a `shelfie:ui` event and await its ack; `get_ui_state` reads
+`window.__shelfieUiState`; `find_books` searches the **already-loaded** books (title / author /
+series / shelf / tags / insights) and returns ids + titles so the model can then filter or open them.
+
+| Tool | Effect |
+|---|---|
+| `navigate(tab)` | switch tab: `library` / `stats` / `ranking` |
+| `set_search(query)` | type into the library search box (navigates to library) |
+| `set_star_filter(stars)` | whole-star filter 1..5, or `null` to clear |
+| `filter_library(query?, series?, author?, shelf?, tag?, status?, min_stars?, book_ids?)` | filter the grid |
+| `clear_filter()` | remove the assistant filter |
+| `open_book(book_id)` | open the detail dialog |
+| `open_add_book(mode, query?, prefill?)` | open the Google-search dialog (query typed) or the manual form (prefilled) |
+| `open_settings()` | open the settings sidebar |
+| `set_setting(key, value)` | toggle a card field / detail section / `showAllDetails` |
+| `toggle_theme()` | dark ↔ light |
+| `ranking_search(query)` | type into the ranking search box (navigates to ranking) |
+| `get_ui_state()` | read the current UI state snapshot |
+| `find_books(query, limit?)` | search the loaded books → `{ id, title, authors, series, stars, display_score }[]` |
+
+## UI bus contract v2 (`frontend/src/agui/bus.ts`)
+
+A tool drives the app with a `window` CustomEvent `shelfie:ui` whose `detail` is one of the
+`UiBusDetail` shapes (the wave-2 events plus `set_search`, `set_star_filter`, `open_add_book`,
+`open_settings`, `close_dialogs`, `set_setting`, `toggle_theme`, `ranking`). The listener (App /
+Library, owned by library-fixes) handles it and **must answer** with a `shelfie:ui:ack` CustomEvent
+carrying `{ action, ok, info? }`. `dispatchAndWait()` resolves on the ack, or after a short timeout
+treats the action as done (so a missing listener degrades gracefully rather than hanging the loop).
+A read-only snapshot lives on `window.__shelfieUiState = { tab, search, starFilter, assistantFilter,
+settings, visibleBookIds, openDialog }`.
+
+## Chat widget (`frontend/src/components/ChatWidget.tsx`)
+
+The header has a clear **mode switch**: **Library agent** vs **UI agent**. Switching starts a fresh
+conversation (the two agents keep separate histories). In UI mode the widget runs `runAgent`, renders
+streamed text, and shows each executed tool as a small **action card** (running → success/error). It
+keeps a cached book list for `find_books` and the AG-UI message history across turns. In Library mode
+it uses the existing backend SSE stream unchanged.
+
+## Verified live against Bedrock
+
+A dev server on port 8099 (`uv run python -m uvicorn app.main:app --port 8099`) and the live
+integration test `frontend/src/agui/live.test.ts` (run with `AGUI_LIVE=1 AGUI_BASE=http://127.0.0.1:8099
+npx vitest run src/agui/live.test.ts`) drive the **full browser loop** against **real Bedrock**. The
+observed tool/event sequences:
+
+| Prompt (Polish) | Tool sequence | Final text |
+|---|---|---|
+| „pokaż książki z serii Droga Szamana” | `find_books{query:"Droga Szamana"}` → `filter_library{series:"Droga Szamana"}` | „Pokazuję 3 książki z serii Droga Szamana.” |
+| „chcę dodać książkę Diuna” | `open_add_book{mode:"search", query:"Diuna"}` | „Otworzyłem wyszukiwarkę książek z hasłem „Diuna”…” |
+| „pokaż tylko 5 gwiazdek” | `set_star_filter{stars:5}` | „Pokazuję tylko książki z oceną 5 gwiazdek.” |
+| „przejdź do rankingu” | `navigate{tab:"ranking"}` | „Przeszedłem do rankingu.” |
+
+Each run streamed `RUN_STARTED → TOOL_CALL_START/ARGS/END → RUN_FINISHED`, the browser executed the
+tool and acked it, the tool result was fed back, and a final turn produced
+`RUN_STARTED → TEXT_MESSAGE_* → RUN_FINISHED` with the Polish confirmation above.
+
+The live test is skipped unless `AGUI_LIVE` is set, so it never runs in `just check`. The client loop
+is also unit-tested with a **fake fetch** (`frontend/src/agui/client.test.ts`): a scripted
+find_books → filter_library → answer sequence, a `RUN_ERROR` stop, and the `maxTurns` cap.
+
+## Library agent (unchanged, `POST /api/agent/chat`)
+
+The library agent is the existing Strands Compose assistant (`app/agent/engine.py`,
+`app/agent/tools.py`, `app/agent/config.yaml`). It runs on the server with read-only database tools
+(`search_library`, `get_book_details`, `list_books`, `reading_stats`, `library_overview`) and streams
+a small wire protocol annotated with AG-UI names (`app/agent/agui.py`). The chat widget's **Library
+agent** mode uses it with `scope: "library"`.
 
 ## Voice input (AWS Transcribe streaming)
 
-A microphone button in the chat input records audio in the browser, downsamples it to **16 kHz
-16-bit mono PCM**, and streams it to a backend WebSocket, which drives **Amazon Transcribe streaming**
-and sends partial + final transcripts back. The **final** text is appended to the input box; the
-user still presses send. Language defaults to **pl-PL** (both pl-PL and en-US are supported for
-streaming); a `PL`/`EN` toggle switches it.
-
-### WebSocket protocol — `/api/transcribe/stream`
-
-Client → server:
-
-1. `{"action": "start", "language": "pl-PL"}` (language optional)
-2. binary frames of raw PCM (16-bit LE, 16 kHz, mono)
-3. `{"action": "stop"}` (or just close)
-
-Server → client (JSON text frames):
-
-```
-{"type": "ready",   "language": "pl-PL"}
-{"type": "partial", "text": "..."}   # interim, keeps changing — drives the "Listening…" indicator
-{"type": "final",   "text": "..."}   # stabilised segment — appended to the input box
-{"type": "error",   "message": "..."}
-```
-
-The browser pipeline (`frontend/src/chat/useVoiceInput.ts`) handles permission-denied (a clear error
-toast), a stop button, and a live recording indicator with the partial transcript. The backend
-(`app/api/routes/transcribe.py` + `app/services/transcribe.py`) puts the real AWS streamer behind a
-`TranscribeStreamer` seam so it can be unit-tested with a mock and injected per connection.
-
-Credentials come from the standard AWS chain. The amazon-transcribe SDK's own resolver does not read
-boto3's cached SSO credentials, so the service resolves them with **boto3** (SSO-aware) and hands the
-SDK a static resolver, falling back to the SDK default chain (EC2 role / env vars) when boto3 has
-none. Only `AWS_REGION` is configured in the app; no secrets live in `.env`.
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant M as Mic (AudioContext → 16kHz PCM)
-    participant WS as WebSocket /api/transcribe/stream
-    participant T as Amazon Transcribe (streaming)
-    participant I as Chat input box
-
-    U->>M: click microphone (permission prompt)
-    M->>WS: {action:"start", language:"pl-PL"}
-    WS-->>M: {type:"ready", language}
-    loop while recording
-        M->>WS: PCM frames (100ms)
-        WS->>T: audio events
-        T-->>WS: partial / final results
-        WS-->>M: {type:"partial"|"final", text}
-        M-->>I: final text appended; partial shown as "Listening…"
-    end
-    U->>M: stop (or send)
-    M->>WS: {action:"stop"} / close
-```
-
-## Sessions & deployment
-
-Strands Compose resolves one session per `session_id` (isolated agent + conversation memory). The
-`ChatEngine` evicts idle sessions (TTL) and reuses a session across turns. For production the layer
-deploys to **Bedrock AgentCore** via `strands-compose-agentcore`; AWS credentials always come from
-the standard chain (SSO / `aws configure`), never from `.env`.
+Unchanged from wave 2: a mic button records audio, downsamples to 16 kHz 16-bit mono PCM and streams
+it to `/api/transcribe/stream` (WebSocket), which drives Amazon Transcribe and returns partial/final
+transcripts; the final text is appended to the input box (pl-PL default, en-US toggle). See
+`frontend/src/chat/useVoiceInput.ts`, `app/api/routes/transcribe.py`, `app/services/transcribe.py`.
 
 ## Files
 
-- `app/agent/engine.py` — session factory, per-turn `stream(scope=...)`, AG-UI annotation.
-- `app/agent/agui.py` — wire→AG-UI event-name mapping.
-- `app/agent/ui_tools.py` — the four frontend UI tool stubs.
-- `app/agent/tools.py` — read-only data tools.
-- `app/api/routes/agent.py` — `POST /api/agent/chat` (SSE), `DELETE /api/agent/sessions/{id}`.
-- `app/api/routes/transcribe.py` + `app/services/transcribe.py` — voice WebSocket + Transcribe.
-- `frontend/src/agui/uiBus.ts` — dispatch a UI tool call onto `shelfie:ui`.
-- `frontend/src/chat/useVoiceInput.ts` — mic capture + transcribe WebSocket client.
-- `frontend/src/components/ChatWidget.tsx` — scope toggle, mic button, action cards.
+- `app/agent/ui_agent.py` — thin Bedrock runner (`run_stream`): request → `converse_stream` → AG-UI events. **No DB tools.**
+- `app/api/routes/agui.py` — `POST /api/agui/run` (SSE).
+- `frontend/src/agui/client.ts` — the browser run loop (`runAgent`).
+- `frontend/src/agui/tools.ts` — browser tool definitions + executors.
+- `frontend/src/agui/bus.ts` — UI bus v2 types, `dispatchAndWait` (+ ack), `readUiState`.
+- `frontend/src/agui/events.ts` — AG-UI event types + SSE parser.
+- `frontend/src/agui/labels.ts` — action-card labels.
+- `frontend/src/components/ChatWidget.tsx` — Library-vs-UI mode switch, action cards.
+- `app/agent/engine.py` / `app/agent/agui.py` / `app/agent/tools.py` — the Library agent (backend-owned).

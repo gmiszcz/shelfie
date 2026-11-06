@@ -2,20 +2,25 @@ import { Button } from 'primereact/button';
 import { InputTextarea } from 'primereact/inputtextarea';
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
-import { dispatchUiAction } from '../agui/uiBus';
+import { runAgent, type AgUiMessage } from '../agui/client';
+import { describeAction } from '../agui/labels';
+import { createTools } from '../agui/tools';
 import { api } from '../services/api';
 import { type ChatMessage, chatReducer, initialChatState } from '../chat/chatState';
 import { renderMarkdown } from '../chat/markdown';
 import { readChatStream } from '../chat/sse';
 import { type TranscriptLanguage, useVoiceInput } from '../chat/useVoiceInput';
-import type { ChatEvent, ChatScope } from '../types';
+import type { Book, ChatEvent } from '../types';
 import './ChatWidget.css';
 
+/** The two chat agents the widget switches between. */
+type AgentMode = 'library' | 'ui';
+
 const SESSION_KEY = 'shelfie.chat.sessionId';
-const SCOPE_KEY = 'shelfie.chat.scope';
+const MODE_KEY = 'shelfie.chat.mode';
 const LANG_KEY = 'shelfie.chat.voiceLang';
 
-/** Human labels for the agent's tools, keyed by tool name. */
+/** Human labels for the LIBRARY agent's backend data tools. */
 const TOOL_LABELS: Record<string, string> = {
   search_library: 'Searching your library',
   list_books: 'Listing books',
@@ -24,11 +29,18 @@ const TOOL_LABELS: Record<string, string> = {
   library_overview: 'Library overview',
 };
 
-const EXAMPLE_PROMPTS = [
-  'How many books have I finished this year?',
-  'Recommend something from my unread shelf',
-  'Which author do I own the most of?',
-];
+const EXAMPLE_PROMPTS: Record<AgentMode, string[]> = {
+  library: [
+    'How many books have I finished this year?',
+    'Recommend something from my unread shelf',
+    'Which author do I own the most of?',
+  ],
+  ui: [
+    'Pokaż książki z serii Droga Szamana',
+    'Pokaż tylko 5 gwiazdek',
+    'Przejdź do rankingu',
+  ],
+};
 
 function toolLabel(name: string): string {
   return TOOL_LABELS[name] ?? name;
@@ -44,7 +56,6 @@ function ReasoningBlock({ text, streaming }: { text: string; streaming: boolean 
   const prevStreaming = useRef(streaming);
 
   useEffect(() => {
-    // Auto-collapse once the turn stops streaming.
     if (prevStreaming.current && !streaming) {
       setOpen(false);
     }
@@ -80,6 +91,28 @@ function ToolChip({ name, status }: { name: string; status: 'running' | 'success
   );
 }
 
+/** A small card for a UI-agent action executed in the browser. */
+function ActionCard({
+  label,
+  status,
+}: {
+  label: string;
+  status: 'running' | 'success' | 'error';
+}) {
+  const icon =
+    status === 'running'
+      ? 'pi pi-spin pi-spinner'
+      : status === 'success'
+        ? 'pi pi-bolt'
+        : 'pi pi-times';
+  return (
+    <div className={`chat-ui-action ${status}`} role="status">
+      <i className={`pi ${icon}`} />
+      <span>{label}</span>
+    </div>
+  );
+}
+
 function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === 'user';
   const streaming = message.status === 'streaming';
@@ -105,15 +138,10 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           </div>
         )}
 
-        {message.uiActions.length > 0 && (
+        {message.actions.length > 0 && (
           <div className="chat-ui-actions">
-            {message.uiActions.map((a) => (
-              <div key={a.id} className="chat-ui-action" role="status">
-                <i className="pi pi-bolt" />
-                <span>
-                  Action: <strong>{a.label}</strong>
-                </span>
-              </div>
+            {message.actions.map((a) => (
+              <ActionCard key={a.id} label={a.label ?? a.name} status={a.status} />
             ))}
           </div>
         )}
@@ -141,8 +169,8 @@ export function ChatWidget() {
   const [state, dispatch] = useReducer(chatReducer, initialChatState);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
-  const [scope, setScope] = useState<ChatScope>(() => {
-    const saved = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SCOPE_KEY) : null;
+  const [mode, setMode] = useState<AgentMode>(() => {
+    const saved = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(MODE_KEY) : null;
     return saved === 'ui' ? 'ui' : 'library';
   });
   const [voiceLang, setVoiceLang] = useState<TranscriptLanguage>(() => {
@@ -156,23 +184,26 @@ export function ChatWidget() {
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // The UI agent keeps the full conversation (AG-UI messages) across turns, and
+  // a cache of the loaded books for its browser-side find_books tool.
+  const uiMessagesRef = useRef<AgUiMessage[]>([]);
+  const booksRef = useRef<Book[]>([]);
 
-  // Append each finalized transcript into the input box (user still presses send).
   const onFinalTranscript = useCallback((text: string) => {
     setInput((prev) => (prev ? `${prev} ${text}`.replace(/\s+/g, ' ') : text));
     inputRef.current?.focus();
   }, []);
-  const voice = useVoiceInput(onFinalTranscript, scope);
+  // Voice is driven in whichever mode is active (both support pl-PL/en-US).
+  const voice = useVoiceInput(onFinalTranscript, mode);
   const voiceState = voice.state;
 
-  // Persist scope and voice language.
   useEffect(() => {
     try {
-      sessionStorage.setItem(SCOPE_KEY, scope);
+      sessionStorage.setItem(MODE_KEY, mode);
     } catch {
       // ignore
     }
-  }, [scope]);
+  }, [mode]);
   useEffect(() => {
     try {
       sessionStorage.setItem(LANG_KEY, voiceLang);
@@ -181,34 +212,94 @@ export function ChatWidget() {
     }
   }, [voiceLang]);
 
-  // Dispatch a UI tool call onto the shelfie:ui bus as it streams in (the pure
-  // reducer records the "Action" card; the side-effect belongs here).
-  const handleEvent = useCallback((event: ChatEvent) => {
-    if (event.type === 'tool_end' && event.ui_action) {
-      dispatchUiAction(event.name, event.input);
+  // Keep a fresh book list for the UI agent's find_books tool while in UI mode.
+  useEffect(() => {
+    if (mode !== 'ui' || !open) {
+      return;
     }
+    let cancelled = false;
+    void api
+      .listBooks()
+      .then((books) => {
+        if (!cancelled) {
+          booksRef.current = books;
+        }
+      })
+      .catch(() => {
+        // find_books degrades to "no books loaded"; the agent reports it.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, open]);
+
+  // Library agent: dispatch each backend wire event into the reducer.
+  const handleLibraryEvent = useCallback((event: ChatEvent) => {
     dispatch({ type: 'event', event });
   }, []);
 
-  // Persist the session id whenever the reducer learns a new one.
   useEffect(() => {
     if (state.sessionId) {
       sessionRef.current = state.sessionId;
       try {
         sessionStorage.setItem(SESSION_KEY, state.sessionId);
       } catch {
-        // sessionStorage unavailable: keep the in-memory ref only.
+        // ignore
       }
     }
   }, [state.sessionId]);
 
-  // Auto-scroll to the newest content on any change.
   useEffect(() => {
     const el = scrollRef.current;
     if (el) {
       el.scrollTop = el.scrollHeight;
     }
   }, [state.messages, open]);
+
+  /** Run the LIBRARY agent (existing backend strands-compose over SSE). */
+  const sendLibrary = useCallback(
+    async (text: string, controller: AbortController) => {
+      const resp = await api.chat(text, sessionRef.current, 'library', controller.signal);
+      await readChatStream(resp, handleLibraryEvent, controller.signal);
+    },
+    [handleLibraryEvent],
+  );
+
+  /** Run the UI agent (browser-side frontend-tools loop). */
+  const sendUi = useCallback(async (text: string, controller: AbortController) => {
+    const tools = createTools({ getBooks: () => booksRef.current });
+    const history = uiMessagesRef.current;
+    history.push({ role: 'user', content: text });
+
+    const result = await runAgent({
+      threadId: sessionRef.current ?? (sessionRef.current = newId('t')),
+      messages: history,
+      tools,
+      signal: controller.signal,
+      callbacks: {
+        onTextDelta: (delta) => dispatch({ type: 'text_delta', text: delta }),
+        onToolCall: (call) =>
+          dispatch({
+            type: 'action_start',
+            id: call.id,
+            name: call.name,
+            label: describeAction(call.name, call.args),
+            args: call.args,
+          }),
+        onToolResult: (id, _result, ok) => dispatch({ type: 'action_result', id, ok }),
+        onError: (message) => dispatch({ type: 'error', message }),
+        onRunFinish: () => dispatch({ type: 'finish', ok: true }),
+      },
+    });
+
+    // Persist the full conversation (assistant + tool turns) for the next message.
+    uiMessagesRef.current = result.messages;
+    if (result.error) {
+      dispatch({ type: 'finish', ok: false, error: result.error });
+    } else {
+      dispatch({ type: 'finish', ok: true });
+    }
+  }, []);
 
   const send = useCallback(
     async (raw: string) => {
@@ -223,16 +314,18 @@ export function ChatWidget() {
       const controller = new AbortController();
       abortRef.current = controller;
       try {
-        const resp = await api.chat(text, sessionRef.current, scope, controller.signal);
-        await readChatStream(resp, handleEvent, controller.signal);
+        if (mode === 'ui') {
+          await sendUi(text, controller);
+        } else {
+          await sendLibrary(text, controller);
+        }
       } catch (err) {
         if (controller.signal.aborted) {
-          // Deliberate Stop: close the stream quietly as a finished turn.
-          dispatch({ type: 'event', event: { type: 'session_finish', text: '', ok: true } });
+          dispatch({ type: 'finish', ok: true });
         } else {
           const message = err instanceof Error ? err.message : 'Request failed';
-          dispatch({ type: 'event', event: { type: 'error', message } });
-          dispatch({ type: 'event', event: { type: 'session_finish', text: '', ok: false } });
+          dispatch({ type: 'error', message });
+          dispatch({ type: 'finish', ok: false, error: message });
         }
       } finally {
         if (abortRef.current === controller) {
@@ -241,7 +334,7 @@ export function ChatWidget() {
         setStreaming(false);
       }
     },
-    [streaming, scope, handleEvent],
+    [streaming, mode, sendUi, sendLibrary],
   );
 
   const stop = useCallback(() => {
@@ -252,21 +345,36 @@ export function ChatWidget() {
     stop();
     voice.stop();
     const current = sessionRef.current;
+    const wasLibrary = mode === 'library';
     dispatch({ type: 'reset' });
     sessionRef.current = null;
+    uiMessagesRef.current = [];
     try {
       sessionStorage.removeItem(SESSION_KEY);
     } catch {
       // ignore
     }
-    if (current) {
+    // Only the library agent has server-side session state to reset.
+    if (current && wasLibrary) {
       try {
         await api.resetChat(current);
       } catch {
-        // Resetting server state is best-effort; the local chat is already cleared.
+        // best-effort
       }
     }
-  }, [stop, voice]);
+  }, [stop, voice, mode]);
+
+  // Switching agents starts a clean conversation (their histories differ).
+  const switchMode = useCallback(
+    (next: AgentMode) => {
+      if (next === mode) {
+        return;
+      }
+      setMode(next);
+      void newChat();
+    },
+    [mode, newChat],
+  );
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -276,6 +384,7 @@ export function ChatWidget() {
   };
 
   const empty = state.messages.length === 0;
+  const title = mode === 'ui' ? 'UI agent' : 'Library agent';
 
   return (
     <>
@@ -283,33 +392,17 @@ export function ChatWidget() {
         className="chat-fab"
         icon="pi pi-comments"
         rounded
-        aria-label={open ? 'Close chat' : 'Open library assistant'}
+        aria-label={open ? 'Close chat' : 'Open assistant'}
         onClick={() => setOpen((o) => !o)}
       />
 
       {open && (
-        <div className="chat-panel" role="dialog" aria-label="Library assistant">
+        <div className="chat-panel" role="dialog" aria-label="Shelfie assistant">
           <header className="chat-header">
             <span className="chat-title">
-              <i className="pi pi-comments" /> Library assistant
+              <i className={`pi ${mode === 'ui' ? 'pi-desktop' : 'pi-book'}`} /> {title}
             </span>
             <span className="chat-header-actions">
-              <button
-                type="button"
-                className={`chat-scope-toggle ${scope}`}
-                role="switch"
-                aria-checked={scope === 'ui'}
-                aria-label={
-                  scope === 'ui'
-                    ? 'UI control on: the assistant can drive the interface. Click for library only.'
-                    : 'Library only. Click to let the assistant control the UI.'
-                }
-                title={scope === 'ui' ? 'Library + UI control' : 'Library only'}
-                onClick={() => setScope((s) => (s === 'ui' ? 'library' : 'ui'))}
-              >
-                <i className={`pi ${scope === 'ui' ? 'pi-desktop' : 'pi-book'}`} />
-                <span>{scope === 'ui' ? 'Library + UI control' : 'Library only'}</span>
-              </button>
               <Button
                 icon="pi pi-plus"
                 text
@@ -327,13 +420,40 @@ export function ChatWidget() {
             </span>
           </header>
 
+          <div className="chat-mode-switch" role="tablist" aria-label="Agent mode">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'library'}
+              className={`chat-mode-btn ${mode === 'library' ? 'active' : ''}`}
+              onClick={() => switchMode('library')}
+            >
+              <i className="pi pi-book" />
+              <span>Library agent</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'ui'}
+              className={`chat-mode-btn ${mode === 'ui' ? 'active' : ''}`}
+              onClick={() => switchMode('ui')}
+            >
+              <i className="pi pi-desktop" />
+              <span>UI agent</span>
+            </button>
+          </div>
+
           <div className="chat-scroll" ref={scrollRef}>
             {empty ? (
               <div className="chat-empty">
                 <i className="pi pi-sparkles" />
-                <p>Ask about your books, reading stats or recommendations.</p>
+                <p>
+                  {mode === 'ui'
+                    ? 'Ask me to filter, open, add or navigate — I drive the interface.'
+                    : 'Ask about your books, reading stats or recommendations.'}
+                </p>
                 <div className="chat-examples">
-                  {EXAMPLE_PROMPTS.map((p) => (
+                  {EXAMPLE_PROMPTS[mode].map((p) => (
                     <button
                       type="button"
                       key={p}
@@ -371,13 +491,7 @@ export function ChatWidget() {
             <div className="chat-voice-banner error" role="alert">
               <i className="pi pi-exclamation-triangle" />
               <span className="chat-voice-label">{voiceState.error}</span>
-              <Button
-                icon="pi pi-times"
-                text
-                rounded
-                aria-label="Dismiss"
-                onClick={voice.stop}
-              />
+              <Button icon="pi pi-times" text rounded aria-label="Dismiss" onClick={voice.stop} />
             </div>
           )}
 
@@ -413,7 +527,7 @@ export function ChatWidget() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
-              placeholder="Message the assistant…"
+              placeholder={mode === 'ui' ? 'Tell me what to do…' : 'Message the assistant…'}
               autoResize
               rows={1}
               className="chat-textarea"
