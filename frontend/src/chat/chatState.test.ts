@@ -84,4 +84,53 @@ describe('chatReducer', () => {
     state = chatReducer(state, { type: 'reset' });
     expect(state).toEqual(initialChatState);
   });
+
+  it('records a UI tool call as a UI action, not a tool chip', () => {
+    let state = send(initialChatState, 'pokaż serię');
+    state = feed(state, [
+      { type: 'tool_start', id: 'u1', name: 'filter_library', input: {}, ui_action: true },
+      { type: 'tool_args', id: 'u1', name: 'filter_library', input: { series: 'Droga Szamana' }, ui_action: true },
+      {
+        type: 'tool_end',
+        id: 'u1',
+        name: 'filter_library',
+        status: 'success',
+        input: { series: 'Droga Szamana' },
+        ui_action: true,
+      },
+    ]);
+    const assistant = state.messages[1];
+    expect(assistant.tools).toEqual([]);
+    expect(assistant.uiActions).toEqual([
+      {
+        id: 'u1',
+        detail: { action: 'filter_library', series: 'Droga Szamana' },
+        label: 'filtered library by series Droga Szamana',
+      },
+    ]);
+  });
+
+  it('keeps a data tool chip alongside a UI action in the same turn', () => {
+    let state = send(initialChatState, 'pokaż książki z serii droga szamana');
+    state = feed(state, [
+      { type: 'tool_start', id: 't1', name: 'search_library', input: {} },
+      { type: 'tool_end', id: 't1', name: 'search_library', status: 'success' },
+      { type: 'tool_start', id: 'u1', name: 'filter_library', input: {}, ui_action: true },
+      {
+        type: 'tool_end',
+        id: 'u1',
+        name: 'filter_library',
+        status: 'success',
+        input: { series: 'Droga Szamana' },
+        ui_action: true,
+      },
+    ]);
+    const assistant = state.messages[1];
+    expect(assistant.tools).toEqual([{ id: 't1', name: 'search_library', status: 'success' }]);
+    expect(assistant.uiActions).toHaveLength(1);
+    expect(assistant.uiActions[0].detail).toEqual({
+      action: 'filter_library',
+      series: 'Droga Szamana',
+    });
+  });
 });

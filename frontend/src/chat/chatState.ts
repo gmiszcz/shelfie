@@ -1,4 +1,5 @@
-import type { ChatEvent } from '../types';
+import type { ChatEvent, UiBusDetail } from '../types';
+import { describeUiAction, toUiBusDetail } from '../agui/uiBus';
 
 export type MessageRole = 'user' | 'assistant';
 export type MessageStatus = 'streaming' | 'done' | 'error';
@@ -10,12 +11,20 @@ export interface ToolCall {
   status: ToolStatus;
 }
 
+/** A UI action the agent performed this turn, shown as an "Action" card. */
+export interface UiAction {
+  id: string;
+  detail: UiBusDetail;
+  label: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: MessageRole;
   text: string;
   reasoning: string;
   tools: ToolCall[];
+  uiActions: UiAction[];
   status: MessageStatus;
   error?: string;
 }
@@ -68,6 +77,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         text: action.text,
         reasoning: '',
         tools: [],
+        uiActions: [],
         status: 'done',
       };
       const assistantMsg: ChatMessage = {
@@ -76,6 +86,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         text: '',
         reasoning: '',
         tools: [],
+        uiActions: [],
         status: 'streaming',
       };
       return { ...state, messages: [...state.messages, userMsg, assistantMsg] };
@@ -97,13 +108,38 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           return patchLastAssistant(state, (m) => ({ ...m, text: m.text + event.text }));
 
         case 'tool_start':
+          // A UI (frontend) tool is shown as an "Action" card on tool_end, not
+          // as a running data-tool chip.
+          if (event.ui_action) {
+            return state;
+          }
           return patchLastAssistant(state, (m) => ({
             ...m,
             tools: [...m.tools, { id: event.id, name: event.name, status: 'running' }],
           }));
 
+        case 'tool_args':
+          // AG-UI TOOL_CALL_ARGS: arguments are carried again on tool_end, so
+          // nothing to accumulate here for the current UI.
+          return state;
+
         case 'tool_end':
           return patchLastAssistant(state, (m) => {
+            // UI tool: append a UI action card (dispatching to the bus happens
+            // in the ChatWidget event handler, not in this pure reducer).
+            if (event.ui_action) {
+              const detail = toUiBusDetail(event.name, event.input);
+              if (!detail) {
+                return m;
+              }
+              return {
+                ...m,
+                uiActions: [
+                  ...m.uiActions,
+                  { id: event.id, detail, label: describeUiAction(detail) },
+                ],
+              };
+            }
             const nextStatus: ToolStatus = event.status === 'error' ? 'error' : 'success';
             let matched = false;
             const tools = m.tools.map((t) => {
