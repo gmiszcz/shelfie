@@ -2,12 +2,12 @@ import { Button } from 'primereact/button';
 import { Dialog } from 'primereact/dialog';
 import { Dropdown } from 'primereact/dropdown';
 import { InputSwitch } from 'primereact/inputswitch';
-import { Rating } from 'primereact/rating';
 import { Tag } from 'primereact/tag';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { formatAuthors, formatYear } from '../format';
+import { HalfStarRating } from './HalfStarRating';
 import { useSettings } from '../settings/SettingsContext';
 import type { DetailSection } from '../settings/settingsTypes';
 import type { Book, BookInsights, ReadingStatus } from '../types';
@@ -154,10 +154,10 @@ export function BookDetailDialog({ book, onHide, onStatus, onStars, onDelete, on
           {on('rating') && (
             <div className="flex align-items-center gap-2">
               <span>Rating:</span>
-              <Rating
-                value={book.stars ?? 0}
-                onChange={(e) => onStars(book.id, e.value ?? null)}
-                cancel
+              <HalfStarRating
+                value={book.stars}
+                onChange={(value) => onStars(book.id, value)}
+                ariaLabel="Your rating"
               />
             </div>
           )}

@@ -21,6 +21,20 @@ export function scoreBoundsForStars(stars: number): { minScore: number; maxScore
   return { minScore: Math.round((top - 0.5) * 10) / 10, maxScore: top };
 }
 
+/**
+ * Keep books whose score falls in a star band: ``minScore < score <= maxScore``.
+ * The score is ``display_score``, falling back to the user's ``stars`` when not computed yet.
+ */
+export function filterByScore<T extends { display_score: number | null; stars: number | null }>(
+  books: T[],
+  bounds: { minScore: number; maxScore: number },
+): T[] {
+  return books.filter((b) => {
+    const score = b.display_score ?? b.stars;
+    return score != null && score > bounds.minScore + 1e-9 && score <= bounds.maxScore + 1e-9;
+  });
+}
+
 export interface RankOptions {
   /** Keep only books on this shelf. */
   shelf?: string;

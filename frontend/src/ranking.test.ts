@@ -5,6 +5,7 @@ import {
   bandOf,
   confidenceLabel,
   confidenceOf,
+  filterByScore,
   formatScore,
   newSessionId,
   rankBooks,
@@ -164,5 +165,20 @@ describe('newSessionId', () => {
   });
   it('is different each call', () => {
     expect(newSessionId()).not.toBe(newSessionId());
+  });
+});
+
+describe('filterByScore', () => {
+  const mk = (display_score: number | null, stars: number | null) => ({ display_score, stars });
+
+  it('5-star band keeps 4.6..5.0 and drops 4.5', () => {
+    const books = [mk(5, 5), mk(4.6, 5), mk(4.5, 4.5), mk(4.1, 4.5)];
+    expect(filterByScore(books, scoreBoundsForStars(5))).toEqual([mk(5, 5), mk(4.6, 5)]);
+  });
+
+  it('falls back to stars when display_score is missing', () => {
+    expect(filterByScore([mk(null, 4.5), mk(null, null)], scoreBoundsForStars(4.5))).toEqual([
+      mk(null, 4.5),
+    ]);
   });
 });

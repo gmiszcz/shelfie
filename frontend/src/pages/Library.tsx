@@ -8,7 +8,10 @@ import { BookDetailDialog } from '../components/BookDetailDialog';
 import { BookFormDialog } from '../components/BookFormDialog';
 import { BookGrid } from '../components/BookGrid';
 import { SearchDialog } from '../components/SearchDialog';
+import { StarFilter } from '../components/StarFilter';
+import type { ScoreBounds } from '../components/StarFilter';
 import { useLibrary } from '../hooks/useLibrary';
+import { filterByScore } from '../ranking';
 import { applyFilter, describeFilter, isEmptyFilter } from '../settings/libraryFilter';
 import type { LibraryFilter } from '../settings/libraryFilter';
 import { UI_BUS_EVENT, parseUiBusEvent } from '../settings/uiBus';
@@ -29,6 +32,9 @@ export function Library() {
   const [query, setQuery] = useState('');
   // Structured filter pushed by the agent over the UI bus (contract 3).
   const [assistantFilter, setAssistantFilter] = useState<LibraryFilter | null>(null);
+  // Star band filter (rating contract 1): "5 stars" keeps scores 4.6..5.0.
+  const [starBucket, setStarBucket] = useState<number | null>(null);
+  const [starBounds, setStarBounds] = useState<ScoreBounds | null>(null);
   const toast = useRef<Toast>(null);
 
   const existingVolumeIds = useMemo(
@@ -59,8 +65,9 @@ export function Library() {
   // The assistant filter is applied first, then the free-text box narrows further.
   const visibleBooks = useMemo(() => {
     const afterAssistant = applyFilter(books, assistantFilter);
-    return query.trim() ? applyFilter(afterAssistant, { query }) : afterAssistant;
-  }, [books, assistantFilter, query]);
+    const afterQuery = query.trim() ? applyFilter(afterAssistant, { query }) : afterAssistant;
+    return starBounds ? filterByScore(afterQuery, starBounds) : afterQuery;
+  }, [books, assistantFilter, query, starBounds]);
 
   const notifyError = (message: string) =>
     toast.current?.show({ severity: 'error', summary: 'Error', detail: message });
@@ -119,7 +126,7 @@ export function Library() {
 
   const total = books.length;
   const shown = visibleBooks.length;
-  const filtered = !!query.trim() || assistantFilter != null;
+  const filtered = !!query.trim() || assistantFilter != null || starBounds != null;
   const countLabel = loading
     ? 'Loading…'
     : filtered
@@ -143,6 +150,13 @@ export function Library() {
         </div>
 
         <div className="library-toolbar-right">
+          <StarFilter
+            value={starBucket}
+            onChange={(stars, bounds) => {
+              setStarBucket(stars);
+              setStarBounds(bounds);
+            }}
+          />
           <span className="p-input-icon-left library-search">
             <i className="pi pi-search" />
             <InputText
