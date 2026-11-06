@@ -1,0 +1,147 @@
+/* Microphone button with a live input-level glow ring.
+   Colours use the shared --app-* theme tokens so it tracks the dark/light
+   switch; the ring size/opacity is driven by the --mic-level custom property
+   (0..1) the component sets from the hook's smoothed RMS level. */
+
+.mic-button-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.mic-button {
+  position: relative;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--app-border);
+  background: transparent;
+  color: var(--app-text-muted, inherit);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.mic-button:hover:not(:disabled) {
+  border-color: var(--app-accent);
+  color: var(--app-accent);
+}
+
+.mic-button:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+}
+
+.mic-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mic-button i {
+  position: relative;
+  z-index: 1;
+  font-size: 1.05rem;
+}
+
+/* Recording: red button, and the ring becomes a live glow. */
+.mic-button.recording {
+  --mic-color: #e5484d;
+  border-color: var(--mic-color);
+  background: color-mix(in srgb, var(--mic-color) 16%, transparent);
+  color: var(--mic-color);
+}
+
+.mic-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0;
+}
+
+/* The glow scales and brightens with --mic-level while recording. The width of
+   the glow is animated smoothly by the rAF-updated custom property, not by a
+   keyframe, so it tracks the voice in real time. */
+.mic-button.recording .mic-ring {
+  --mic-color: #e5484d;
+  opacity: calc(0.35 + 0.65 * var(--mic-level, 0));
+  box-shadow:
+    0 0 0 calc(1px + 3px * var(--mic-level, 0)) color-mix(in srgb, var(--mic-color) 55%, transparent),
+    0 0 calc(6px + 18px * var(--mic-level, 0)) calc(1px + 4px * var(--mic-level, 0))
+      color-mix(in srgb, var(--mic-color) 45%, transparent);
+  transition:
+    box-shadow 0.08s linear,
+    opacity 0.08s linear;
+}
+
+/* A gentle steady pulse as a floor so an idle-but-recording mic still reads as
+   live. Suppressed under reduced motion. */
+.mic-button.recording .mic-ring::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--mic-color) 50%, transparent);
+  animation: mic-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.1;
+    transform: scale(1.35);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mic-button.recording .mic-ring {
+    transition: none;
+  }
+  .mic-button.recording .mic-ring::after {
+    animation: none;
+    opacity: 0.4;
+  }
+}
+
+/* Live partial transcript, floated just above the button. */
+.mic-partial {
+  position: absolute;
+  bottom: calc(100% + 0.4rem);
+  left: 0;
+  max-width: 16rem;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.78rem;
+  line-height: 1.3;
+  color: var(--app-text);
+  background: var(--app-surface-2);
+  border: 1px solid var(--app-border);
+  border-radius: var(--custom-border-radius, 8px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  z-index: 2;
+}
+
+.mic-error {
+  position: absolute;
+  bottom: calc(100% + 0.4rem);
+  left: 0;
+  max-width: 16rem;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.76rem;
+  color: #e5484d;
+  background: color-mix(in srgb, #e5484d 10%, var(--app-surface-2));
+  border: 1px solid #e5484d;
+  border-radius: var(--custom-border-radius, 8px);
+  z-index: 2;
+}

@@ -191,3 +191,68 @@ the standard chain (SSO / `aws configure`), never from `.env`.
 - `frontend/src/agui/uiBus.ts` — dispatch a UI tool call onto `shelfie:ui`.
 - `frontend/src/chat/useVoiceInput.ts` — mic capture + transcribe WebSocket client.
 - `frontend/src/components/ChatWidget.tsx` — scope toggle, mic button, action cards.
+
+## Voice input (hands-free, wave 3)
+
+The microphone is now **hands-free and self-stopping** — it no longer records until you manually
+stop. It lives in a dedicated `MicButton` component; `ChatWidget` only mounts `<MicButton … />` and
+wires one callback.
+
+### Controls
+
+| Action | Effect |
+| --- | --- |
+| Click the mic (idle) | Start recording |
+| Click the mic (recording) | **Stop** — the transcript drops into the input box for review |
+| `Ctrl+M` | Toggle start/stop. Works while the app is focused even when the chat is closed — the panel opens first, then recording starts. |
+| `Esc` (while recording) | **Cancel** — stop and discard, send nothing |
+| Stop talking (after speech) | Auto-stop **and auto-send** after ~1.5 s of silence |
+| Say nothing | Auto-stop (no send) after ~8 s of silence |
+
+### End-of-speech detection — the VAD state machine
+
+The stop/send decision is a **pure state machine** in `frontend/src/chat/voiceMachine.ts`
+(`voiceMachineStep(state, input, config)`), with no browser or React dependency, so it is unit-tested
+by feeding synthetic RMS frames and transcript events (`frontend/src/chat/voiceMachine.test.ts`).
+
+Inputs are `start` / `stop` / `cancel`, audio `frame`s (each carrying the frame's **RMS level** from
+a local VAD), `transcript` events (partial/final from the backend), and a periodic `tick`. Each step
+returns the next state plus `effect`s (`teardown`, or `final { text, autoSend }`). Rules, all driven
+by configurable constants:
+
+- A frame with `rms >= VAD_RMS_THRESHOLD` (0.015) counts as speech and refreshes the silence timer.
+- With at least one **final** transcript, `SILENCE_AFTER_SPEECH_MS` (1500 ms) of silence ends the
+  utterance and emits `final { autoSend: true }` → ChatWidget sends immediately.
+- With nothing ever said, `SILENCE_NO_SPEECH_MS` (8000 ms) stops recording with no `final` effect.
+- A manual stop emits `final { autoSend: false }` (text goes to the input box); `cancel` emits none.
+
+`useVoiceInput` is the impure shell: it computes `frameRms` per audio frame, feeds the machine on a
+150 ms clock tick, and translates the machine's effects into side effects. It exposes
+`onFinal(text, { autoSend })`, `start`, `stop`, `cancel` and `toggle`.
+
+### Visual feedback
+
+- A **live glow ring** around the mic button, driven by a CSS custom property `--mic-level` (0..1)
+  that the hook updates from a smoothed RMS level via `requestAnimationFrame`. The ring uses theme
+  colours and the recording state is red. Under `prefers-reduced-motion: reduce` the rAF loop is not
+  started and the pulse animation is disabled, so the ring simply holds steady.
+- The **partial transcript** is shown live just above the input while recording.
+- A tooltip surfaces the `Ctrl+M` (and `Esc` to cancel) hints.
+
+### Clean teardown (no dangling stream, mic released)
+
+`useVoiceInput`'s `cleanup` runs on every stop/cancel/error and on unmount. It clears the tick and
+rAF loops, disconnects the `ScriptProcessor` and source nodes, closes the `AudioContext`, stops every
+`MediaStreamTrack` (so the browser's recording indicator turns off), sends `{"action":"stop"}` and
+closes the WebSocket. On the backend, the `/api/transcribe/stream` route feeds a `None` sentinel into
+the audio generator on stop/disconnect and awaits the transcription task with a 10 s timeout before
+cancelling it, so the Amazon Transcribe stream is always ended — verified by
+`tests/test_transcribe.py` (clean close on stop, clean close on disconnect, cancellation of a hanging
+stream).
+
+### Files (wave 3)
+
+- `frontend/src/chat/voiceMachine.ts` (+`.test.ts`) — pure VAD + stop/send state machine.
+- `frontend/src/chat/useVoiceInput.ts` (+`.test.ts`) — mic capture, VAD driving, teardown.
+- `frontend/src/components/MicButton.tsx` (+`.css`) — the mic button, glow ring and shortcuts.
+- `frontend/src/components/ChatWidget.tsx` — mounts `<MicButton>` and wires `onFinal`.
