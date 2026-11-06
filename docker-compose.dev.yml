@@ -1,0 +1,10 @@
+# Local image build override for a dev machine.
+# Deliberately NOT named docker-compose.override.yml, so a bare
+# `docker compose up` pulls the published image instead of building.
+# Use via `just docker`.
+services:
+  app:
+    build:
+      context: .
+      args:
+        NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=900}

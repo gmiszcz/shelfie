@@ -21,3 +21,21 @@ Thumbs.db
 # Editor
 .vscode/
 .idea/
+
+# Python / uv
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Tooling caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Data
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
