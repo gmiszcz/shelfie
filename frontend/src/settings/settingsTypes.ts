@@ -107,6 +107,12 @@ export interface Settings {
   detailSections: Record<DetailSection, boolean>;
   /** Default state of the detail dialog "Show details" (extended) toggle. */
   showAllDetails: boolean;
+  /**
+   * Show the floating voice (microphone) button on the main view, next to the
+   * chat bubble, so the user can talk to the UI agent without opening the chat.
+   * Default on.
+   */
+  showVoiceButton: boolean;
 }
 
 function allOn<K extends string>(keys: K[]): Record<K, boolean> {
@@ -117,6 +123,7 @@ export const DEFAULT_SETTINGS: Settings = {
   cardFields: allOn(CARD_FIELDS),
   detailSections: allOn(DETAIL_SECTIONS),
   showAllDetails: false,
+  showVoiceButton: true,
 };
 
 const STORAGE_KEY = 'shelfie.settings.v1';
@@ -137,6 +144,10 @@ export function mergeSettings(stored: unknown): Settings {
       typeof s.showAllDetails === 'boolean'
         ? s.showAllDetails
         : DEFAULT_SETTINGS.showAllDetails,
+    showVoiceButton:
+      typeof s.showVoiceButton === 'boolean'
+        ? s.showVoiceButton
+        : DEFAULT_SETTINGS.showVoiceButton,
   };
 }
 

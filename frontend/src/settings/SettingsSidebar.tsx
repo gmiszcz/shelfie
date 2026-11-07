@@ -18,8 +18,14 @@ interface Props {
 }
 
 export function SettingsSidebar({ visible, onHide }: Props) {
-  const { settings, toggleCardField, toggleDetailSection, setShowAllDetails, reset } =
-    useSettings();
+  const {
+    settings,
+    toggleCardField,
+    toggleDetailSection,
+    setShowAllDetails,
+    setShowVoiceButton,
+    reset,
+  } = useSettings();
 
   return (
     <Sidebar
@@ -82,6 +88,22 @@ export function SettingsSidebar({ visible, onHide }: Props) {
           </label>
           <p className="settings-hint">
             Expand the extended sections (insights, notes, purchase…) whenever a book is opened.
+          </p>
+        </section>
+
+        <Divider />
+
+        <section className="settings-section">
+          <label className="settings-option">
+            <InputSwitch
+              checked={settings.showVoiceButton}
+              onChange={(e) => setShowVoiceButton(!!e.value)}
+            />
+            <span>Show voice button</span>
+          </label>
+          <p className="settings-hint">
+            A floating microphone on the main view, next to the chat bubble, so you can talk to the
+            assistant without opening the chat.
           </p>
         </section>
 

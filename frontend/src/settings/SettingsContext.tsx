@@ -15,6 +15,7 @@ export interface SettingsContextValue {
   toggleCardField: (field: CardField) => void;
   toggleDetailSection: (section: DetailSection) => void;
   setShowAllDetails: (value: boolean) => void;
+  setShowVoiceButton: (value: boolean) => void;
   /**
    * Set any setting to an explicit boolean by its key (agent `set_setting`).
    * Resolves the key against card fields, detail sections and `showAllDetails`.
@@ -52,9 +53,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setSettings((prev) => ({ ...prev, showAllDetails: value }));
   }, []);
 
+  const setShowVoiceButton = useCallback((value: boolean) => {
+    setSettings((prev) => ({ ...prev, showVoiceButton: value }));
+  }, []);
+
   const setSettingByKey = useCallback((key: string, value: boolean): boolean => {
     if (key === 'showAllDetails') {
       setSettings((prev) => ({ ...prev, showAllDetails: value }));
+      return true;
+    }
+    if (key === 'showVoiceButton') {
+      setSettings((prev) => ({ ...prev, showVoiceButton: value }));
       return true;
     }
     if ((CARD_FIELDS as string[]).includes(key)) {
@@ -82,10 +91,19 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       toggleCardField,
       toggleDetailSection,
       setShowAllDetails,
+      setShowVoiceButton,
       setSettingByKey,
       reset,
     }),
-    [settings, toggleCardField, toggleDetailSection, setShowAllDetails, setSettingByKey, reset],
+    [
+      settings,
+      toggleCardField,
+      toggleDetailSection,
+      setShowAllDetails,
+      setShowVoiceButton,
+      setSettingByKey,
+      reset,
+    ],
   );
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
