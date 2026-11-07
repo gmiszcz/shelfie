@@ -33,7 +33,7 @@ interface Option<T> {
 const PRESETS: Option<PresetRange>[] = [
   { label: 'This year', value: 'thisYear' },
   { label: 'Last year', value: 'lastYear' },
-  { label: 'Last 12 months', value: 'last12Months' },
+  { label: '12 months', value: 'last12Months' },
   { label: 'All time', value: 'allTime' },
 ];
 
@@ -226,7 +226,7 @@ export function Stats() {
 
       {error && <Message severity="error" text={error} className="stats-error" />}
 
-      <Panel label="Signals · this range">
+      <Panel label="Summary · this range">
         <div className="stats-summary">
           {loading || !summary ? (
             Array.from({ length: 4 }).map((_, i) => (

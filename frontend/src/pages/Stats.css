@@ -119,4 +119,31 @@
   .stats-range .p-calendar .p-inputtext {
     width: 100%;
   }
+
+  /* Compact one-row segmented controls: each option shares the row equally, no wrapping,
+     smaller text. 40px stays comfortable to tap without the oversized pills. */
+  .stats-control .p-selectbutton {
+    display: flex;
+    flex-wrap: nowrap;
+    width: 100%;
+    gap: var(--small-padding);
+  }
+  .stats-control .p-selectbutton .p-button {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 40px;
+    padding: var(--small-padding);
+    font-size: 0.8rem;
+    white-space: nowrap;
+    justify-content: center;
+  }
+  .stats-control .p-selectbutton .p-button .p-button-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .stats-range .p-calendar .p-inputtext {
+    min-height: 40px;
+    padding: var(--small-padding) var(--big-padding);
+    font-size: 0.85rem;
+  }
 }
