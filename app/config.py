@@ -30,6 +30,10 @@ class Settings(BaseSettings):
 
     host: str = "0.0.0.0"  # nosec B104  # container default; bind a real interface in prod
     port: int = Field(default=8000, ge=1, le=65535)
+    # The data root holds the shared auth DB and the per-user folders (data/users/<id>/).
+    data_dir: str = "data"
+    # Legacy single-user paths. The bootstrap command moves these into data/users/1/ and
+    # the server never reads them again; they stay here only so bootstrap can find them.
     db_path: str = "data/shelfie.sqlite"
     dataset_path: str = "data/books.json"
     covers_dir: str = "data/covers"
@@ -57,10 +61,23 @@ class Settings(BaseSettings):
     # production; the test suite sets it false so no test ever calls Bedrock or the network.
     enrichment_enabled: bool = True
 
-    # Auth seam (single-user now, JWT-ready). Not enforced yet in the MVP.
-    jwt_secret: str = "change-me-long-random-secret"
-    jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = Field(default=10_080, ge=1)
+    # --- Accounts, login and per-user data (see docs/features/auth.md) ---
+    # Shared auth database: accounts, sessions, setup tokens, login attempts.
+    auth_db_path: str = "data/auth.sqlite"
+    # Session cookie lifetime (days) and the sliding-renewal floor: when fewer than
+    # ``session_renew_days`` remain the expiry is pushed back to ``session_days``.
+    session_days: int = Field(default=30, ge=1)
+    session_renew_days: int = Field(default=15, ge=0)
+    # Whether the session cookie carries ``Secure``. "auto" sets it only on an HTTPS
+    # request (scheme or X-Forwarded-Proto); "true"/"false" force it on/off.
+    cookie_secure: str = "auto"
+    # Setup/reset link lifetime in hours.
+    setup_token_hours: int = Field(default=24, ge=1)
+    # Login throttle window (minutes) and the failed-attempt ceiling per e-mail/IP.
+    login_window_minutes: int = Field(default=15, ge=1)
+    login_max_attempts: int = Field(default=5, ge=1)
+    # Minimum password length.
+    password_min_length: int = Field(default=10, ge=1)
 
     # Permissive by default for local dev (Vite on :5173 -> API on :8000).
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
@@ -81,17 +98,43 @@ class Settings(BaseSettings):
             raise ValueError(f"LOG_LEVEL must be one of {sorted(allowed)}")
         return normalized
 
+    @field_validator("cookie_secure")
+    @classmethod
+    def normalize_cookie_secure(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"auto", "true", "false"}:
+            raise ValueError("COOKIE_SECURE must be one of 'auto', 'true', 'false'")
+        return normalized
+
+    @property
+    def data_path(self) -> Path:
+        """The data root: holds auth.sqlite, the shared caches and data/users/<id>/."""
+        return resolve_path(self.data_dir)
+
+    @property
+    def users_root(self) -> Path:
+        """``data/users`` — the parent of every per-user data folder."""
+        return self.data_path / "users"
+
+    @property
+    def auth_database_file(self) -> Path:
+        return resolve_path(self.auth_db_path)
+
+    # --- Legacy single-user paths. Read only by the bootstrap command, which moves them
+    #     into data/users/1/. Derived from the data root so they follow DATA_DIR (and so
+    #     bootstrap/tests that point DATA_DIR at a temp dir see the right files). The running
+    #     server resolves per-user paths via UserData, never these. ---
     @property
     def database_file(self) -> Path:
-        return resolve_path(self.db_path)
+        return self.data_path / "shelfie.sqlite"
 
     @property
     def dataset_file(self) -> Path:
-        return resolve_path(self.dataset_path)
+        return self.data_path / "books.json"
 
     @property
     def covers_path(self) -> Path:
-        return resolve_path(self.covers_dir)
+        return self.data_path / "covers"
 
     @property
     def google_books_cache_path(self) -> Path:

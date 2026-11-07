@@ -13,6 +13,7 @@ from app.db import connect
 from app.integrations.google_books import GoogleBooksClient
 from app.repositories import books as repo
 from app.schemas.books import Book, BookCreate, BookUpdate, SearchResponse
+from app.userdata import UserData, get_current_user_data, using_user_data
 
 logger = logging.getLogger(__name__)
 
@@ -65,41 +66,52 @@ async def enrich_book(
     book_id: int,
     *,
     settings: Settings | None = None,
+    user_data: UserData | None = None,
 ) -> Book | None:
     """Generate insights for one book and persist them. Opens its own connection.
 
-    Safe to run as a detached background task after the request connection is closed. Any
-    failure (model, AWS, parsing) leaves the book's insights unchanged — the generator
-    returns ``None`` and we skip the write.
+    Safe to run as a detached background task after the request connection is closed. The
+    target user's library is resolved from ``user_data`` when given (a background task
+    captures it at schedule time), else from the current context var. Any failure (model,
+    AWS, parsing) leaves the book's insights unchanged.
     """
     from app.services import enrichment
 
     settings = settings or get_settings()
-    conn = await connect(settings.database_file)
-    try:
-        if not settings.enrichment_enabled:
-            logger.info("enrichment disabled (ENRICHMENT_ENABLED=false); skipping book %s", book_id)
-            return await repo.get_book(conn, user_id, book_id)
-        book = await repo.get_book(conn, user_id, book_id)
-        if book is None:
-            return None
-        insights = await enrichment.generate_insights(book, settings=settings)
-        if insights is None:
-            logger.info("enrichment produced no insights for book %s", book_id)
-            return book
-        updated = await repo.update_book(conn, user_id, book_id, BookUpdate(insights=insights))
-        return updated
-    finally:
-        await conn.close()
+    data = user_data or get_current_user_data()
+    with using_user_data(data):
+        conn = await connect(data.database_file)
+        try:
+            if not settings.enrichment_enabled:
+                logger.info(
+                    "enrichment disabled (ENRICHMENT_ENABLED=false); skipping book %s", book_id
+                )
+                return await repo.get_book(conn, user_id, book_id)
+            book = await repo.get_book(conn, user_id, book_id)
+            if book is None:
+                return None
+            insights = await enrichment.generate_insights(book, settings=settings)
+            if insights is None:
+                logger.info("enrichment produced no insights for book %s", book_id)
+                return book
+            updated = await repo.update_book(conn, user_id, book_id, BookUpdate(insights=insights))
+            return updated
+        finally:
+            await conn.close()
 
 
 def schedule_enrichment(background_tasks: object, user_id: int, book_id: int) -> None:
-    """Queue ``enrich_book`` on a FastAPI ``BackgroundTasks`` (duck-typed for testability)."""
+    """Queue ``enrich_book`` on a FastAPI ``BackgroundTasks`` (duck-typed for testability).
+
+    The current user's :class:`UserData` is captured now and handed to the task, so the
+    detached run resolves the right per-user library even though it has no request context.
+    """
     if not get_settings().enrichment_enabled:
         return
+    captured = get_current_user_data()
     add_task = getattr(background_tasks, "add_task", None)
     if callable(add_task):
-        add_task(enrich_book, user_id, book_id)
+        add_task(enrich_book, user_id, book_id, user_data=captured)
 
 
 async def search_external(

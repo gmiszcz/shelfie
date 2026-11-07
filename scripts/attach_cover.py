@@ -81,12 +81,14 @@ def attach(
     dry_run: bool,
     client: httpx.Client | None = None,
     make_backup: bool = True,
+    user: str = "1",
 ) -> int:
     """Attach ``url`` as the cover for the book with ``external_id``. Returns a process exit code."""
-    data_dir = root / "data"
-    dataset_file = data_dir / "books.json"
-    db_file = data_dir / "shelfie.sqlite"
-    covers_dir = data_dir / "covers"
+    paths = _dataio.resolve_user_paths(root, user)
+    data_dir = paths.data_dir
+    dataset_file = paths.dataset_file
+    db_file = paths.db_file
+    covers_dir = paths.covers_dir
 
     payload = _dataio.load_dataset(dataset_file)
     books: list[dict[str, Any]] = payload["books"]
@@ -184,9 +186,14 @@ def main() -> None:
         default=None,
         help="repository root whose data/ to edit (default: this script's repo)",
     )
+    parser.add_argument(
+        "--user",
+        default="1",
+        help="user id or e-mail whose library to edit (default: 1, the first admin)",
+    )
     args = parser.parse_args()
     root = args.root or Path(__file__).resolve().parents[1]
-    sys.exit(attach(root, args.external_id, args.url, dry_run=args.dry_run))
+    sys.exit(attach(root, args.external_id, args.url, dry_run=args.dry_run, user=args.user))
 
 
 if __name__ == "__main__":

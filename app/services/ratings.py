@@ -92,7 +92,9 @@ async def suggest_pairs(
     all_books = {b.id: b for b in await repo.list_books(conn, user_id) if b.stars is not None}
     groups = {i: group_of(b) for i, b in all_books.items()}
     books = (
-        {i: b for i, b in all_books.items() if groups[i] == group} if group is not None else all_books
+        {i: b for i, b in all_books.items() if groups[i] == group}
+        if group is not None
+        else all_books
     )
     star_map = {i: b.stars for i, b in books.items() if b.stars is not None}
     comparisons = await repo.list_comparisons(conn, user_id)
@@ -100,13 +102,18 @@ async def suggest_pairs(
     if focus is not None and focus not in scores:
         focus = None
     group_map = {i: groups[i] for i in scores}
-    queued = {tuple(sorted(p)) for p in (skip or set())}
-    asked = {tuple(sorted((left, right))) for left, right, _ in comparisons}
+
+    def _pair(a: int, b: int) -> tuple[int, int]:
+        """Order a book-id pair so it is a stable key regardless of argument order."""
+        return (a, b) if a <= b else (b, a)
+
+    queued: set[tuple[int, int]] = {_pair(*p) for p in (skip or set())}
+    asked: set[tuple[int, int]] = {_pair(left, right) for left, right, _ in comparisons}
 
     result: list[tuple[Book, Book]] = []
     for avoid in (asked | queued, queued):
         while len(result) < count:
-            taken = {tuple(sorted((a.id, b.id))) for a, b in result}
+            taken: set[tuple[int, int]] = {_pair(a.id, b.id) for a, b in result}
             pair = rating.next_pair(
                 scores, star_map, focus=focus, exclude=avoid | taken, groups=group_map
             )

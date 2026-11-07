@@ -31,6 +31,7 @@ from app.schemas.series import (
 )
 from app.services import books_json
 from app.services import series as compute
+from app.userdata import UserData, get_current_user_data
 
 logger = logging.getLogger(__name__)
 
@@ -179,26 +180,31 @@ async def check_watched_series(
     db_file: Path | None = None,
     *,
     settings: Settings | None = None,
+    user_id: int = SINGLE_USER_ID,
+    user_data: UserData | None = None,
 ) -> SeriesCheckResult:
-    """Run the web release-research step for every watched series.
+    """Run the web release-research step for every watched series of ONE user.
 
     Opens its own connection so it can run detached (the ``POST /api/series/check``
-    endpoint, ``just check-series`` or a Kiro Crew cron). Watched series only. Each
+    endpoint or the CLI). The user's library is ``db_file`` when given, else
+    ``user_data.database_file``, else the current context's DB. Watched series only. Each
     series is researched on the open web (Polish + original/English editions) and the
-    result stored; the waiting list gets one entry per language. Never calls Google Books.
+    result stored. Never calls Google Books.
     """
     settings = settings or get_settings()
-    db_file = db_file or settings.database_file
+    if db_file is None:
+        data = user_data or get_current_user_data()
+        db_file = data.database_file
     conn = await connect(db_file)
     updated_names: list[str] = []
     checked = 0
     try:
-        watched = await repo.list_watched(conn, user_id=SINGLE_USER_ID)
+        watched = await repo.list_watched(conn, user_id=user_id)
         for info in watched:
             checked += 1
             try:
                 summary = await research_series_releases(
-                    SINGLE_USER_ID, info.series_key, settings=settings, conn=conn
+                    user_id, info.series_key, settings=settings, conn=conn
                 )
                 if summary is not None:
                     updated_names.append(summary.name)
@@ -241,6 +247,7 @@ async def research_series_releases(
     settings: Settings | None = None,
     conn: aiosqlite.Connection | None = None,
     research_fn: Any | None = None,
+    user_data: UserData | None = None,
 ) -> SeriesSummary | None:
     """Research the next PL/EN volume for one series on the web and store the result.
 
@@ -258,7 +265,8 @@ async def research_series_releases(
     settings = settings or get_settings()
     own_conn = conn is None
     if own_conn:
-        conn = await connect(settings.database_file)
+        data = user_data or get_current_user_data()
+        conn = await connect(data.database_file)
     assert conn is not None
     try:
         summary = await get_series(conn, user_id, series_key)

@@ -1,12 +1,20 @@
 # API reference
 
 Every HTTP endpoint Shelfie exposes, with parameters and response shapes. All
-routes are mounted under `/api` (`app/api/router.py`). The app is single-user
-today: every request resolves to the seed user via the auth seam
-(`app/auth.py`), so no auth header is required yet.
+routes are mounted under `/api` (`app/api/router.py`).
+
+Since the accounts feature (wave 5) **every `/api/*` route needs a valid session cookie**
+except four public ones: `GET /api/health`, `POST /api/auth/login`, `POST /api/auth/setup`
+and `GET /api/auth/setup/{token}`. A request without a session gets `401`. Each person's
+data (library DB, `books.json`, covers) is a separate folder, resolved per request from the
+session; see [auth.md](auth.md).
+
+Every state-changing request (`POST`/`PUT`/`PATCH`/`DELETE`) must also carry the header
+`X-Shelfie-Client: web` or it gets `403` (CSRF defence; the frontend adds it to every
+request). When an `Origin` header is present it must match the request host.
 
 > Generated from the current route code (`app/api/routes/*.py`) and the Pydantic
-> schemas (`app/schemas/books.py`, `app/services/stats.py`). The live, always-current
+> schemas (`app/schemas/*.py`, `app/services/stats.py`). The live, always-current
 > contract is FastAPI's own OpenAPI docs at `/docs` when the server is running.
 
 ## Conventions
@@ -17,6 +25,53 @@ today: every request resolves to the seed user via the auth seam
 - `Book` is the full record; `VolumeSearchResult` is not-yet-saved external
   metadata; `BookInput` (create) / `BookPatch` (update) are the write bodies.
   See [data-pipeline.md](data-pipeline.md) for the full field table.
+
+## Authentication
+
+### `POST /api/auth/login` (public)
+**Body:** `{ email, password }`. **Response:** `200` + `{ id, email, display_name, is_admin }`
+and a `shelfie_session` cookie (HttpOnly, SameSite=Lax, 30-day sliding, Secure on HTTPS).
+**Errors:** `401` "Invalid e-mail or password" (same message for unknown e-mail and wrong
+password); `429` with `Retry-After` after more than 5 failed attempts for one e-mail or IP
+within 15 minutes.
+
+### `POST /api/auth/logout`
+**Response:** `204`, session deleted and cookie cleared.
+
+### `GET /api/auth/me`
+**Response:** `{ id, email, display_name, is_admin }`; `401` when not logged in.
+
+### `POST /api/auth/password`
+**Body:** `{ current_password, new_password }`. **Response:** `204`; every OTHER session of
+the user is revoked. **Errors:** `400` wrong current password; `422` new password shorter
+than 10 characters.
+
+### `GET /api/auth/setup/{token}` (public)
+**Response:** `{ email, display_name, purpose }` for a valid link; `410` when expired or used.
+
+### `POST /api/auth/setup` (public)
+**Body:** `{ token, password }`. **Response:** `200` + `{ user }` and a session cookie (logs
+the person in). **Errors:** `410` invalid/expired/used token; `422` weak password.
+
+## Admin (admin session required)
+
+### `GET /api/admin/users`
+**Response:** array of `{ id, email, display_name, is_admin, disabled, has_password,
+created_at, book_count }`.
+
+### `POST /api/admin/users`
+**Body:** `{ email, display_name }`. **Response:** `201` + `{ user, setup_url, expires_at }`;
+creates an empty per-user data folder. `setup_url` is `<request-origin>/setup?token=<token>`.
+**Errors:** `409` e-mail already exists.
+
+### `PATCH /api/admin/users/{id}`
+**Body:** `{ display_name?, disabled?, is_admin? }`. **Response:** the updated admin-user row.
+**Errors:** `409` when the change would disable or demote the last active admin; `404` unknown
+user.
+
+### `POST /api/admin/users/{id}/setup-link`
+**Response:** `{ setup_url, expires_at }` (a password-reset link; invalidates the user's older
+unused links). **Errors:** `404` unknown user.
 
 ## Health
 

@@ -12,6 +12,7 @@ from app.config import Settings
 from app.schemas.books import BookInsights
 from app.services import books as books_service
 from app.services import enrichment
+from app.userdata import UserData
 
 SAMPLE_INSIGHTS = {
     "summary": "A warded man fights demons.",
@@ -72,8 +73,9 @@ def test_enrich_endpoint_persists_generated_insights(
         return BookInsights(summary="A desert epic.", source="agent", generated_at="2026-01-01")
 
     monkeypatch.setattr(enrichment, "generate_insights", fake_generate)
-    # enrich_book opens its own connection against the configured db; point it at the test db.
-    monkeypatch.setattr(books_service, "get_settings", lambda: Settings(db_path=str(db_file)))
+    # enrich_book reads settings.enrichment_enabled (the suite disables it by default) and
+    # resolves the DB from the per-user context the request set. Enable enrichment here.
+    monkeypatch.setattr(books_service, "get_settings", lambda: Settings(enrichment_enabled=True))
 
     resp = client.post(f"/api/books/{book_id}/enrich")
     assert resp.status_code == 200
@@ -88,7 +90,7 @@ def test_enrich_missing_book_404(client: TestClient) -> None:
 
 
 def test_search_finds_text_in_description_and_insights(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch, db_file: Path
+    client: TestClient, test_user_data: "UserData", db_file: Path
 ) -> None:
     # A book whose Arlen reference lives only in the description, not the title/authors.
     client.post(
@@ -109,7 +111,9 @@ def test_search_finds_text_in_description_and_insights(
             "google_volume_id": "mv-1",
         },
     )
-    monkeypatch.setattr(tools, "get_settings", lambda: Settings(db_path=str(db_file)))
+    from app.userdata import set_current_user_data
+
+    set_current_user_data(test_user_data)
 
     arlen = tools.search_library(query="Arlen")
     assert arlen["count"] == 1
@@ -121,12 +125,14 @@ def test_search_finds_text_in_description_and_insights(
 
 
 def test_get_book_tool_returns_insights(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch, db_file: Path
+    client: TestClient, test_user_data: "UserData", db_file: Path
 ) -> None:
     book_id = client.post(
         "/api/books", json={"title": "Full Detail", "insights": SAMPLE_INSIGHTS}
     ).json()["id"]
-    monkeypatch.setattr(tools, "get_settings", lambda: Settings(db_path=str(db_file)))
+    from app.userdata import set_current_user_data
+
+    set_current_user_data(test_user_data)
     detail = tools.get_book(book_id=book_id)
     assert detail["title"] == "Full Detail"
     assert detail["insights"]["main_characters"] == "Arlen, Leesha, Rojer"

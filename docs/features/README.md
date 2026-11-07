@@ -15,6 +15,8 @@ real code (not the earlier planning docs). Start here.
 | [series-tracking.md](series-tracking.md) | "Series" tab: owned/read/missing volumes, name aliases, watch + daily checker (Google Books PL+EN + OpenLibrary, quota-safe), notifications, waiting list, agent tools |
 | [favourites.md](favourites.md) | "Favourites" tab: `books.favourite` flag, heart toggle on card + detail, shared grid/search/filter |
 | [chatbot.md](chatbot.md) | The current read-only library assistant: tools, SSE wire protocol, chat widget |
+| [auth.md](auth.md) | Accounts, e-mail + password login, admin-only user management, per-user data isolation, sessions, CSRF, setup links |
+| [cli.md](cli.md) | `python -m app.cli`: `users bootstrap/add/setup-link/list` and `series check --all-users`, with `just` recipes |
 | [api-reference.md](api-reference.md) | Every endpoint with parameters and response shape |
 
 ## Related feature docs (other workstreams)

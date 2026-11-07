@@ -44,7 +44,10 @@ def test_research_agent_clamps_unknown_date(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr("strands.Agent", _FakeAgent)
     result = asyncio.run(
         series_research.research_next_volumes(
-            "Shroud", "K", [1, 2, 3], model=_FakeModel()  # type: ignore[arg-type]
+            "Shroud",
+            "K",
+            [1, 2, 3],
+            model=_FakeModel(),  # type: ignore[arg-type]
         )
     )
     # PL unknown -> date cleared; EN released kept verbatim.
@@ -67,7 +70,10 @@ def test_research_agent_failure_yields_all_unknown(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr("strands.Agent", _BoomAgent)
     result = asyncio.run(
         series_research.research_next_volumes(
-            "Shroud", "K", [1], model=_FakeModel()  # type: ignore[arg-type]
+            "Shroud",
+            "K",
+            [1],
+            model=_FakeModel(),  # type: ignore[arg-type]
         )
     )
     assert result.pl.status == "unknown"

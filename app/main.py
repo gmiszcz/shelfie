@@ -10,9 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
+from app.api.middleware import CsrfMiddleware
 from app.api.router import api_router
+from app.authdb import init_auth_db
 from app.config import get_settings
-from app.db import init_db
 from app.logging_config import configure_logging
 
 
@@ -20,7 +21,10 @@ from app.logging_config import configure_logging
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings.log_level)
-    await init_db(settings.database_file)
+    # Only the shared auth database is created at startup. Each user's library DB is
+    # created on first access (see app.api.deps.current_user). There is no global library.
+    settings.data_path.mkdir(parents=True, exist_ok=True)
+    await init_auth_db(settings.auth_database_file)
     yield
 
 
@@ -28,6 +32,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title="Shelfie", version=__version__, lifespan=lifespan)
 
+    app.add_middleware(CsrfMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

@@ -70,9 +70,7 @@ async def next_pairs(
         left, _, right = token.partition("-")
         if left.isdigit() and right.isdigit():
             skipped.add((int(left), int(right)))
-    pairs = await ratings.suggest_pairs(
-        conn, user_id, focus, group, max(1, min(count, 5)), skipped
-    )
+    pairs = await ratings.suggest_pairs(conn, user_id, focus, group, max(1, min(count, 5)), skipped)
     return [Pair(left=a, right=b) for a, b in pairs]
 
 

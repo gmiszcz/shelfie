@@ -15,14 +15,19 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.agent import tools
-from app.config import Settings
 from app.schemas.books import VolumeSearchResult
+from app.userdata import UserData, set_current_user_data
 
 
 @pytest.fixture
-def write_db(client: TestClient, db_file: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Point the agent tools at the isolated temp DB used by the ``client`` fixture."""
-    monkeypatch.setattr(tools, "get_settings", lambda: Settings(db_path=str(db_file)))
+def write_db(client: TestClient, test_user_data: UserData, db_file: Path) -> Path:
+    """Set the per-user data context so the agent tools resolve the test user's DB.
+
+    The ``client`` fixture already created that user's library; the tools read the current
+    user's files through ``current_database_file()``. ``asyncio.run`` inside each tool copies
+    the current context, so setting it here is enough for the sync and async tools alike.
+    """
+    set_current_user_data(test_user_data)
     return db_file
 
 
