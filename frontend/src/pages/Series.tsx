@@ -6,6 +6,7 @@ import { BookDetailDialog } from '../components/BookDetailDialog';
 import { SeriesCard } from '../components/SeriesCard';
 import { useSeries } from '../hooks/useSeries';
 import { api } from '../services/api';
+import { useAgentAnchor } from '../agent-ui';
 import { SearchInput } from '../ui';
 import type { Book, ReadingStatus, SeriesSummary } from '../types';
 
@@ -67,6 +68,85 @@ export function Series() {
       notifyError(err instanceof Error ? err.message : 'Could not open book');
     }
   };
+
+  // --- UI-agent anchors (universal registry): the agent can search, watch, refresh and
+  // manage the waiting list here without any agent-side code. -------------------------------
+  const findSeries = (args?: Record<string, unknown>) => {
+    const key = String(args?.key ?? args?.series ?? args?.name ?? '').trim().toLowerCase();
+    const hit = series.find(
+      (s) =>
+        s.series_key.toLowerCase() === key ||
+        s.display_name.toLowerCase() === key ||
+        (s.aliases ?? []).some((a) => a.toLowerCase() === key) ||
+        s.display_name.toLowerCase().includes(key),
+    );
+    if (!hit) {
+      throw new Error(`no series "${key}"; see series.list for valid keys`);
+    }
+    return hit;
+  };
+
+  useAgentAnchor({
+    id: 'series.search',
+    kind: 'search',
+    label: 'Series search',
+    description: 'Filters the series list by series name, alias or author.',
+    tab: 'series',
+    getState: () => query,
+    set: (v) => setQuery(typeof v === 'string' ? v : String(v ?? '')),
+  });
+
+  useAgentAnchor({
+    id: 'series.list',
+    kind: 'list',
+    label: 'Series',
+    description:
+      'Series in the library with section (in_progress / owned / complete), watch flag and missing volumes. ' +
+      'Actions: "watch" / "unwatch" with args { key }, "refresh" with { key } (runs the release lookup), ' +
+      '"open" with { book_id } to open an owned volume.',
+    tab: 'series',
+    actions: ['watch', 'unwatch', 'refresh', 'open'],
+    getState: () =>
+      filtered.map((s) => ({
+        key: s.series_key,
+        name: s.display_name,
+        section: s.section,
+        watch: s.watch,
+        missing: s.missing_volumes.map((m) => m.number),
+      })),
+    items: () => filtered.map((s) => ({ id: s.series_key, title: s.display_name })),
+    invoke: async (action, args) => {
+      if (action === 'open') {
+        await openVolume(Number(args?.book_id));
+        return;
+      }
+      const hit = findSeries(args);
+      if (action === 'watch' || action === 'unwatch') {
+        await setWatch(hit.series_key, action === 'watch');
+      } else if (action === 'refresh') {
+        await handleRefresh(hit.series_key);
+      } else {
+        throw new Error(`unknown action "${action}"; use watch, unwatch, refresh or open`);
+      }
+    },
+  });
+
+  useAgentAnchor({
+    id: 'series.waitingList',
+    kind: 'list',
+    label: 'Waiting list',
+    description: 'Upcoming / expected books. Action "remove" with args { id } removes one.',
+    tab: 'series',
+    actions: ['remove'],
+    getState: () => expected.map((e) => ({ id: e.id, title: e.title, expected: e.expected_date ?? null })),
+    items: () => expected.map((e) => ({ id: e.id, title: e.title })),
+    invoke: async (action, args) => {
+      if (action !== 'remove') {
+        throw new Error('only "remove" is supported');
+      }
+      await removeExpected(Number(args?.id));
+    },
+  });
 
   const handleRefresh = async (key: string) => {
     setRefreshingKey(key);

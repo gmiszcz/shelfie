@@ -38,6 +38,8 @@ interface FormTarget {
 type FilterArgs = LibraryFilter;
 
 export function Library() {
+  // Latest favourite handler for the agent anchor (the handler is defined further down).
+  const handleFavouriteRef = useRef<(id: number, next: boolean) => Promise<void>>(async () => {});
   const { books, loading, error, add, update, remove, upsert } = useLibrary();
   const [selected, setSelected] = useState<Book | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -292,16 +294,22 @@ export function Library() {
     id: 'library.books',
     kind: 'list',
     label: 'Visible books',
-    description: 'The books currently shown in the grid. Invoke with action "open" and args { id } to open one.',
+    description:
+      'The books currently shown in the grid. Actions: "open" with args { id } opens one; ' +
+      '"favourite" / "unfavourite" with { id } adds or removes it from Favourites.',
     tab: 'library',
-    actions: ['open'],
-    getState: () => visibleBooks.map((b) => ({ id: b.id, title: b.title })),
+    actions: ['open', 'favourite', 'unfavourite'],
+    getState: () => visibleBooks.map((b) => ({ id: b.id, title: b.title, favourite: b.favourite })),
     items: () => visibleBooks.map((b) => ({ id: b.id, title: b.title })),
-    invoke: (_action, args) => {
+    invoke: async (action, args) => {
       const id = Number(args?.id);
       const book = books.find((b) => b.id === id) ?? null;
       if (!book) {
         throw new Error(`no book #${args?.id}`);
+      }
+      if (action === 'favourite' || action === 'unfavourite') {
+        await handleFavouriteRef.current(id, action === 'favourite');
+        return;
       }
       setSelected(book);
     },
@@ -378,6 +386,7 @@ export function Library() {
     }
   };
 
+  handleFavouriteRef.current = (id: number, next: boolean) => handleFavourite(id, next);
   const handleFavourite = async (id: number, next: boolean) => {
     try {
       await update(id, { favourite: next });

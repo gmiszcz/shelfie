@@ -116,3 +116,17 @@ to the agent, its tools or any database.
 - `frontend/src/agui/client.ts` — the run loop (sends the live schema as `state`).
 - `app/agent/ui_agent.py` — the thin Bedrock runner; injects the date block and relays schema/tools.
 - `frontend/src/App.test.tsx` — the anchor-coverage guard.
+
+## Anchors on the Series and Favourites tabs
+
+These tabs were added after the registry and became agent-reachable only by registering anchors; the agent code did not change:
+
+| Anchor | Kind | Actions |
+|---|---|---|
+| `series.search` | search | set text |
+| `series.list` | list | `watch` / `unwatch` / `refresh` with `{ key }` (series key, name or alias), `open` with `{ book_id }` |
+| `series.waitingList` | list | `remove` with `{ id }` |
+| `favourites.search` | search | set text |
+| `favourites.books` | list | `open` / `unfavourite` with `{ id }` |
+| `library.books` | list | `open`, and now `favourite` / `unfavourite` with `{ id }` |
+

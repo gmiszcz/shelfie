@@ -8,6 +8,7 @@ import type { ScoreBounds, StarBucket } from '../components/StarFilter';
 import { useLibrary } from '../hooks/useLibrary';
 import { filterByScore } from '../ranking';
 import { applyFilter } from '../settings/libraryFilter';
+import { useAgentAnchor } from '../agent-ui';
 import { SearchInput } from '../ui';
 import type { Book, ReadingStatus } from '../types';
 
@@ -47,6 +48,44 @@ export function Favourites() {
       notifyError(err instanceof Error ? err.message : 'Could not update favourite');
     }
   };
+
+  // --- UI-agent anchors (universal registry). --------------------------------------------
+  useAgentAnchor({
+    id: 'favourites.search',
+    kind: 'search',
+    label: 'Favourites search',
+    description: 'Filters favourite books by title, author or series.',
+    tab: 'favourites',
+    getState: () => query,
+    set: (v) => setQuery(typeof v === 'string' ? v : String(v ?? '')),
+  });
+
+  useAgentAnchor({
+    id: 'favourites.books',
+    kind: 'list',
+    label: 'Favourite books',
+    description:
+      'Favourite books currently shown. Actions: "open" with args { id }, "unfavourite" with { id }. ' +
+      'To ADD a favourite, use the library: open the book and set it as favourite, or ask the library agent.',
+    tab: 'favourites',
+    actions: ['open', 'unfavourite'],
+    getState: () => visibleBooks.map((b) => ({ id: b.id, title: b.title })),
+    items: () => visibleBooks.map((b) => ({ id: b.id, title: b.title })),
+    invoke: async (action, args) => {
+      const id = Number(args?.id);
+      const book = favourites.find((b) => b.id === id);
+      if (!book) {
+        throw new Error(`no favourite book #${args?.id}`);
+      }
+      if (action === 'open') {
+        setSelected(book);
+      } else if (action === 'unfavourite') {
+        await handleFavourite(id, false);
+      } else {
+        throw new Error('use "open" or "unfavourite"');
+      }
+    },
+  });
 
   const handleStatus = async (id: number, status: ReadingStatus) => {
     try {
