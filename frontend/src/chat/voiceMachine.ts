@@ -35,6 +35,9 @@ export const SILENCE_AFTER_SPEECH_MS = 1_500;
 /** Silence with nothing said at all that stops recording without sending. */
 export const SILENCE_NO_SPEECH_MS = 8_000;
 
+/** Hard safety cap on a single utterance: never record longer than this. */
+export const MAX_RECORDING_MS = 60_000;
+
 export interface VoiceMachineConfig {
   /** RMS threshold for the speech/silence decision. */
   rmsThreshold: number;
@@ -42,12 +45,15 @@ export interface VoiceMachineConfig {
   silenceAfterSpeechMs: number;
   /** Trailing silence (ms) with nothing said that stops without sending. */
   silenceNoSpeechMs: number;
+  /** Hard cap (ms): recording always stops once this elapses. */
+  maxDurationMs: number;
 }
 
 export const DEFAULT_CONFIG: VoiceMachineConfig = {
   rmsThreshold: VAD_RMS_THRESHOLD,
   silenceAfterSpeechMs: SILENCE_AFTER_SPEECH_MS,
   silenceNoSpeechMs: SILENCE_NO_SPEECH_MS,
+  maxDurationMs: MAX_RECORDING_MS,
 };
 
 export type VoicePhase = 'idle' | 'recording';
@@ -66,6 +72,8 @@ export interface VoiceMachineState {
   level: number;
   /** Timestamp (ms) of the last speech frame, or recording start. */
   lastSpeechAt: number;
+  /** Timestamp (ms) when recording started, for the hard duration cap. */
+  startedAt: number;
 }
 
 export const initialVoiceMachineState: VoiceMachineState = {
@@ -76,6 +84,7 @@ export const initialVoiceMachineState: VoiceMachineState = {
   heardSpeech: false,
   level: 0,
   lastSpeechAt: 0,
+  startedAt: 0,
 };
 
 export type VoiceInput =
@@ -114,6 +123,7 @@ function startedState(at: number): VoiceMachineState {
     heardSpeech: false,
     level: 0,
     lastSpeechAt: at,
+    startedAt: at,
   };
 }
 
@@ -194,6 +204,16 @@ export function voiceMachineStep(
         return { state, effects: [] };
       }
       const silenceMs = input.at - state.lastSpeechAt;
+      // Hard safety cap: never record past maxDurationMs. Send whatever text we
+      // have (auto-send) so a long utterance is not silently discarded.
+      if (input.at - state.startedAt >= config.maxDurationMs) {
+        const text = normalizeText(state.finalText || state.partial);
+        const effects: VoiceEffect[] = [{ type: 'teardown' }];
+        if (text) {
+          effects.push({ type: 'final', text, autoSend: true });
+        }
+        return { state: { ...initialVoiceMachineState }, effects };
+      }
       // End-of-speech: a final transcript exists and the user has gone quiet.
       if (state.hasFinal && silenceMs >= config.silenceAfterSpeechMs) {
         const text = normalizeText(state.finalText || state.partial);

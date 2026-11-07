@@ -17,6 +17,10 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: `http://127.0.0.1:${backendPort}`,
           changeOrigin: true,
+          // The voice transcription endpoint (/api/transcribe/stream) is a
+          // WebSocket. Without ws:true Vite proxies HTTP only, the upgrade is
+          // dropped, and the mic records forever with no transcript.
+          ws: true,
         },
       },
     },

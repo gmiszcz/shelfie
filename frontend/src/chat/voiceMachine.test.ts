@@ -15,6 +15,7 @@ const CONFIG: VoiceMachineConfig = {
   rmsThreshold: 0.02,
   silenceAfterSpeechMs: 1_500,
   silenceNoSpeechMs: 8_000,
+  maxDurationMs: 60_000,
 };
 
 /** Fold a list of inputs through the machine, collecting every emitted effect. */
@@ -138,6 +139,41 @@ describe('voiceMachineStep', () => {
     expect(effects).toEqual([]);
   });
 
+  it('hard cap stops and auto-sends after maxDurationMs even while still speaking', () => {
+    const { state, effects } = run([
+      { kind: 'start', at: 0 },
+      { kind: 'transcript', text: 'a very long dictation', isFinal: true },
+      // Still speaking right up to the cap (silence timer would never fire).
+      { kind: 'frame', rms: LOUD, at: 59_900 },
+      { kind: 'tick', at: 60_000 },
+    ]);
+    expect(effects).toEqual([
+      { type: 'teardown' },
+      { type: 'final', text: 'a very long dictation', autoSend: true },
+    ]);
+    expect(state.phase).toBe('idle');
+  });
+
+  it('hard cap stops even with no transcript and sends nothing', () => {
+    const { state, effects } = run([
+      { kind: 'start', at: 0 },
+      { kind: 'frame', rms: LOUD, at: 59_000 }, // heard speech, but no final text
+      { kind: 'tick', at: 60_000 },
+    ]);
+    expect(effects).toEqual([{ type: 'teardown' }]);
+    expect(state.phase).toBe('idle');
+  });
+
+  it('does not hit the hard cap before maxDurationMs elapses', () => {
+    const { state, effects } = run([
+      { kind: 'start', at: 0 },
+      { kind: 'frame', rms: LOUD, at: 59_000 },
+      { kind: 'tick', at: 59_500 }, // under 60s, speech still recent
+    ]);
+    expect(effects).toEqual([]);
+    expect(state.phase).toBe('recording');
+  });
+
   it('manual stop tears down and hands over the text with autoSend=false', () => {
     const { state, effects } = run([
       { kind: 'start', at: 0 },
@@ -226,6 +262,7 @@ describe('voiceMachineStep', () => {
   it('exposes usable defaults', () => {
     expect(DEFAULT_CONFIG.silenceAfterSpeechMs).toBeGreaterThan(0);
     expect(DEFAULT_CONFIG.silenceNoSpeechMs).toBeGreaterThan(DEFAULT_CONFIG.silenceAfterSpeechMs);
+    expect(DEFAULT_CONFIG.maxDurationMs).toBeGreaterThan(DEFAULT_CONFIG.silenceNoSpeechMs);
   });
 });
 
