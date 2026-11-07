@@ -17,12 +17,14 @@
 
 .rank-toolbar-count {
   color: var(--app-text-muted);
-  font-size: 0.9rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
 }
 
 .rank-error {
   margin: 0;
-  color: var(--red-400);
+  color: var(--accent-red-text);
 }
 
 .rank-section {
@@ -39,9 +41,15 @@
   flex-wrap: wrap;
 }
 
+/* Section headings read as the design system's muted monospace section labels. */
 .rank-section-head h2 {
   margin: 0;
-  font-size: 1.15rem;
+  font-family: var(--font-mono);
+  font-size: var(--label-size);
+  font-weight: 500;
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--app-text-faint);
 }
 
 .rank-section-controls {
@@ -83,14 +91,15 @@
 /* Compare + table area each sit in a padded panel so content never touches the edge. */
 .rank-compare-panel,
 .rank-table-panel {
-  padding: var(--big-padding);
+  padding: var(--panel-padding);
   background: var(--app-surface);
   border: 1px solid var(--app-border);
-  border-radius: var(--custom-border-radius);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
 }
 
 .rank-compare-skeleton {
-  border-radius: var(--custom-border-radius);
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
@@ -159,4 +168,34 @@
 .rank-confidence-label {
   font-size: 0.8rem;
   color: var(--app-text-muted);
+}
+
+/* --- Responsive ------------------------------------------------------------------------- */
+@media (max-width: 640px) {
+  /* Section head: label on its own line, controls stacked full width. */
+  .rank-section-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .rank-section-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--small-gap);
+  }
+  .rank-focus,
+  .rank-category,
+  .rank-search,
+  .rank-shelf {
+    min-width: 0;
+    width: 100%;
+  }
+  .rank-toolbar .p-button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+  .rank-compare-panel,
+  .rank-table-panel {
+    padding: var(--big-padding);
+    border-radius: var(--radius-md);
+  }
 }

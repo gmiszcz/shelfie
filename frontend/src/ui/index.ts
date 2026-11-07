@@ -5,3 +5,16 @@ export type { BookCoverProps, BookCoverSize } from './BookCover';
 export { SearchInput } from './SearchInput';
 export type { SearchInputProps } from './SearchInput';
 export { StatusTag } from './StatusTag';
+
+// Design-system primitives (the "quiet dashboard" look). Generic by design so new
+// tabs (Series, Favourites, …) can adopt them directly.
+export { Panel } from './Panel';
+export type { PanelProps, PanelTint } from './Panel';
+export { SectionLabel } from './SectionLabel';
+export type { SectionLabelProps } from './SectionLabel';
+export { StatCard } from './StatCard';
+export type { StatCardProps, StatTone } from './StatCard';
+export { Sparkline } from './Sparkline';
+export type { SparklineProps } from './Sparkline';
+export { Pill } from './Pill';
+export type { PillProps, PillTone } from './Pill';

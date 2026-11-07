@@ -10,7 +10,7 @@
   z-index: 1000;
   background: var(--app-accent) !important;
   border-color: var(--app-accent) !important;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-pop);
 }
 
 .chat-panel {
@@ -25,9 +25,9 @@
   flex-direction: column;
   background: var(--app-surface);
   border: 1px solid var(--app-border);
-  border-radius: var(--custom-border-radius);
+  border-radius: var(--radius-lg);
   overflow: hidden;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-pop);
 }
 
 @media (max-width: 640px) {
@@ -51,6 +51,12 @@
   /* 16px stops iOS Safari from zooming the page when the textarea gets focus. */
   .chat-panel .chat-textarea {
     font-size: 16px;
+  }
+
+  /* Lift the launcher clear of the fixed bottom tab bar + home-indicator safe area,
+     so it never covers a nav tab. */
+  .chat-fab {
+    bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
   }
 }
 

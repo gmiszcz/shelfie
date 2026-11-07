@@ -50,7 +50,7 @@ function initialTheme(): Theme {
   } catch {
     // ignore
   }
-  return 'dark';
+  return 'light';
 }
 
 /**
