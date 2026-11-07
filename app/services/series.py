@@ -287,10 +287,12 @@ def _summarise(
 
 def _missing_volumes(known: list[KnownVolume], owned_numbers: set[float]) -> list[MissingVolume]:
     missing: list[MissingVolume] = []
+    seen: set[float] = set()
     for kv in known:
         if kv.number is None:
             continue
-        if kv.number not in owned_numbers:
+        if kv.number not in owned_numbers and kv.number not in seen:
+            seen.add(kv.number)
             missing.append(
                 MissingVolume(
                     number=kv.number,
@@ -299,6 +301,16 @@ def _missing_volumes(known: list[KnownVolume], owned_numbers: set[float]) -> lis
                     source=kv.source,
                 )
             )
+    # Gaps in the owned numbering are missing volumes too, even when no lookup has named them
+    # yet: owning volumes 3 and 5 means 1, 2 and 4 exist and are not on the shelf.
+    whole = [int(n) for n in owned_numbers if float(n).is_integer() and n >= 1]
+    if whole:
+        for n in range(1, max(whole)):
+            if float(n) not in owned_numbers and float(n) not in seen:
+                seen.add(float(n))
+                missing.append(
+                    MissingVolume(number=float(n), title=None, published_date=None, source=None)
+                )
     missing.sort(key=lambda m: m.number if m.number is not None else 1e9)
     return missing
 
@@ -310,10 +322,12 @@ def _total_known(
 ) -> int | None:
     numbered_known = {kv.number for kv in known if kv.number is not None}
     all_numbers = numbered_known | owned_numbers
+    # The highest volume number seen bounds the series from below (gaps count).
+    highest = int(max(all_numbers)) if all_numbers else 0
     if info and info.total_known:
-        return max(info.total_known, len(all_numbers) or 0)
+        return max(info.total_known, len(all_numbers) or 0, highest)
     if all_numbers:
-        return len(all_numbers)
+        return max(len(all_numbers), highest)
     return None
 
 

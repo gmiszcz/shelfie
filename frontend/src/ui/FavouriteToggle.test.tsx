@@ -1,7 +1,9 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { FavouriteToggle } from './FavouriteToggle';
+
+afterEach(cleanup);
 
 describe('FavouriteToggle', () => {
   it('exposes an accessible pressed state reflecting the value', () => {
@@ -18,7 +20,7 @@ describe('FavouriteToggle', () => {
   it('toggles to the opposite value on click', () => {
     const onChange = vi.fn();
     render(<FavouriteToggle value={false} onChange={onChange} />);
-    fireEvent.click(screen.getByRole('button'));
+    fireEvent.click(screen.getByRole('button', { name: 'Add to favourites' }));
     expect(onChange).toHaveBeenCalledWith(true);
   });
 
@@ -30,7 +32,7 @@ describe('FavouriteToggle', () => {
         <FavouriteToggle value={false} onChange={onChange} />
       </div>,
     );
-    fireEvent.click(screen.getByRole('button'));
+    fireEvent.click(screen.getByRole('button', { name: 'Add to favourites' }));
     expect(onChange).toHaveBeenCalled();
     expect(parentClick).not.toHaveBeenCalled();
   });

@@ -133,3 +133,17 @@ def test_next_expected_from_known_picks_lowest_unowned() -> None:
     nxt = compute.next_expected_from_known(known, owned_numbers={1.0, 3.0})
     assert nxt is not None
     assert nxt.title == "Second"
+
+
+def test_gaps_in_owned_numbering_are_missing_volumes() -> None:
+    # Owning volumes 3 and 5 (both read) means 1, 2 and 4 exist and are missing:
+    # the series is in progress, never "complete" (e.g. Kel Kade, King's Dark Tidings).
+    books = [
+        _book(1, "Legends of Ahn", "King's Dark Tidings", "3"),
+        _book(2, "Dragons and Demons", "King's Dark Tidings", "5"),
+    ]
+    [summary] = compute.compute_series(books, [])
+    assert [m.number for m in summary.missing_volumes] == [1.0, 2.0, 4.0]
+    assert summary.section != "complete"
+    assert summary.finished is False
+    assert summary.total_known == 5
