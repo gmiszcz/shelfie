@@ -93,6 +93,35 @@
   color: var(--app-text-muted);
 }
 
+/* Earlier (seen) notifications: muted panel + the show/hide link. */
+.series-alerts-earlier {
+  display: flex;
+  margin-bottom: var(--default-gap);
+}
+
+.series-alerts--seen {
+  opacity: 0.85;
+}
+
+/* Watching section groups: a series card with its own waiting-list rows below it. */
+.series-watch-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+  min-width: 0;
+}
+
+.series-watch-waiting {
+  padding-left: 0;
+}
+
+.series-watch-orphans {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+  margin-top: var(--default-gap);
+}
+
 /* Sections. */
 .series-section {
   margin-bottom: var(--big-gap);

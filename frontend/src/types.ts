@@ -294,12 +294,33 @@ export interface SeriesAlert {
   message: string;
   detail: string | null;
   source_url: string | null;
+  /** Stable identity of this alert; dismissing stores it, a new alert gets a new key. */
+  alert_key: string;
+  /** Whether the user has already dismissed this exact alert. */
+  seen: boolean;
 }
 
 export interface SeriesAlertsResponse {
+  /** Number of UNSEEN alerts (the badge value). */
   count: number;
+  unseen_count: number;
   in_progress: SeriesAlert[];
   new_volume: SeriesAlert[];
+}
+
+/** The Series-tab filter ids, in display order. */
+export type SeriesFilterId =
+  | 'all'
+  | 'watching'
+  | 'in_progress'
+  | 'missing'
+  | 'complete'
+  | 'owned';
+
+/** Per-user Series-tab preferences (GET/PUT /api/preferences/series). */
+export interface SeriesPreferences {
+  filter: SeriesFilterId;
+  sort: string | null;
 }
 
 export interface ExpectedBook {

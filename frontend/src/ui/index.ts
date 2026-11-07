@@ -8,6 +8,8 @@ export { ProgressBar } from './ProgressBar';
 export type { ProgressBarProps } from './ProgressBar';
 export { SearchInput } from './SearchInput';
 export type { SearchInputProps } from './SearchInput';
+export { FilterBar } from './FilterBar';
+export type { FilterBarProps, FilterOption } from './FilterBar';
 export { StatusTag } from './StatusTag';
 
 // Design-system primitives (the "quiet dashboard" look). Generic by design so new

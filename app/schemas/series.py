@@ -191,12 +191,45 @@ class SeriesAlert(BaseModel):
     message: str
     detail: str | None = None
     source_url: str | None = None
+    # Stable identity of this alert (kind + series + the fields that matter, e.g. the
+    # release date). Dismissing stores this key; a NEW alert gets a different key and
+    # therefore reappears. See app.services.series_service._alert_key.
+    alert_key: str = ""
+    # Whether the user has already dismissed THIS exact alert (this key is in alert_seen).
+    seen: bool = False
 
 
 class AlertsResponse(BaseModel):
+    # ``count`` is the number of UNSEEN alerts (the badge value); kept named ``count`` for
+    # backward compatibility with existing callers. ``unseen_count`` is the same number
+    # under an explicit name. ``in_progress`` / ``new_volume`` carry EVERY alert (seen and
+    # unseen) each with its ``seen`` flag, so the UI can show unseen by default and reveal
+    # seen ones on demand.
     count: int
+    unseen_count: int = 0
     in_progress: list[SeriesAlert] = Field(default_factory=list)
     new_volume: list[SeriesAlert] = Field(default_factory=list)
+
+
+class AlertsSeenRequest(BaseModel):
+    """POST body for marking Series-tab alerts as seen.
+
+    Either pass explicit ``alert_keys`` to dismiss those, or ``all=true`` to dismiss every
+    currently-unseen alert.
+    """
+
+    alert_keys: list[str] = Field(default_factory=list)
+    all: bool = False
+
+
+class SeriesPreferences(BaseModel):
+    """Per-user Series-tab UI preferences (stored in ``ui_prefs`` under key 'series')."""
+
+    # The active filter on the Series tab. One of the SERIES_FILTERS ids below.
+    filter: str = "all"
+    # Optional sort choice (reserved; the UI may ignore it). Kept so the prefs endpoint
+    # can carry it without a schema change.
+    sort: str | None = None
 
 
 class SeriesCheckResult(BaseModel):

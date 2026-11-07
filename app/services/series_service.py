@@ -17,6 +17,7 @@ from app.db import SINGLE_USER_ID, connect
 from app.integrations import series_lookup
 from app.integrations.google_books import GoogleBooksClient
 from app.repositories import books as books_repo
+from app.repositories import prefs as prefs_repo
 from app.repositories import series as repo
 from app.schemas.books import Book, BookUpdate
 from app.schemas.series import (
@@ -27,6 +28,7 @@ from app.schemas.series import (
     SeriesAlert,
     SeriesCheckResult,
     SeriesInfo,
+    SeriesPreferences,
     SeriesSummary,
 )
 from app.services import books_json
@@ -375,9 +377,20 @@ async def _sync_waiting_entry(
         )
 
 
-async def alerts(conn: aiosqlite.Connection, user_id: int) -> AlertsResponse:
-    """Build the Series-tab notifications: in-progress series and new-volume announcements."""
-    summaries = await list_series(conn, user_id)
+def _alert_key(kind: str, series_key: str, *parts: str | None) -> str:
+    """Build a stable alert identity from its kind, series and the fields that matter.
+
+    The key changes when a meaningful field changes, so a NEW alert (a new volume, a
+    newly-announced or changed date, a release) gets a different key and shows again even
+    after an older alert for the same series was dismissed. ``None`` parts are normalised
+    to an empty segment so the key is stable across runs.
+    """
+    segments = [kind, series_key, *[(p or "").strip() for p in parts]]
+    return "|".join(segments)
+
+
+def _build_alerts(summaries: list[SeriesSummary]) -> tuple[list[SeriesAlert], list[SeriesAlert]]:
+    """Build the in-progress and new-volume alert lists (without seen state)."""
     in_progress: list[SeriesAlert] = []
     new_volume: list[SeriesAlert] = []
     for s in summaries:
@@ -387,6 +400,14 @@ async def alerts(conn: aiosqlite.Connection, user_id: int) -> AlertsResponse:
                 bits.append(f"{s.unread_owned_count} unread owned")
             if s.missing_volumes:
                 bits.append(f"{len(s.missing_volumes)} missing")
+            # The in-progress alert's identity tracks what the user still has to read; it
+            # changes (and so reappears) when they acquire a new volume or read one.
+            key = _alert_key(
+                "in_progress",
+                s.series_key,
+                str(s.unread_owned_count),
+                str(len(s.missing_volumes)),
+            )
             in_progress.append(
                 SeriesAlert(
                     kind="in_progress",
@@ -394,24 +415,113 @@ async def alerts(conn: aiosqlite.Connection, user_id: int) -> AlertsResponse:
                     series_name=s.name,
                     message=f"{s.name}: {s.read_count} of {s.total_known or s.owned_count} read",
                     detail=", ".join(bits) or None,
+                    alert_key=key,
                 )
             )
         if s.watch and s.next_expected and s.next_expected.title:
+            nxt = s.next_expected
+            # The new-volume alert's identity tracks the volume title, its date and its
+            # status, so a date being announced, a date changing, or a release flipping the
+            # status all yield a fresh key the user has not seen yet.
+            key = _alert_key(
+                "new_volume",
+                s.series_key,
+                nxt.title,
+                nxt.date,
+                nxt.status,
+            )
             new_volume.append(
                 SeriesAlert(
                     kind="new_volume",
                     series_key=s.series_key,
                     series_name=s.name,
-                    message=f"New volume for {s.name}: {s.next_expected.title}",
-                    detail=s.next_expected.date,
-                    source_url=s.next_expected.source_url,
+                    message=f"New volume for {s.name}: {nxt.title}",
+                    detail=nxt.date,
+                    source_url=nxt.source_url,
+                    alert_key=key,
                 )
             )
+    return in_progress, new_volume
+
+
+async def alerts(conn: aiosqlite.Connection, user_id: int) -> AlertsResponse:
+    """Build the Series-tab notifications with per-user seen state.
+
+    Each alert carries a stable ``alert_key`` and a ``seen`` flag (whether this user has
+    dismissed that exact key). ``count`` / ``unseen_count`` is the number of UNSEEN alerts
+    (the badge value). Both lists carry every alert so the UI can reveal seen ones on
+    demand. Stale seen rows (keys no longer present) are pruned so the table stays small.
+    """
+    summaries = await list_series(conn, user_id)
+    in_progress, new_volume = _build_alerts(summaries)
+
+    all_keys = {a.alert_key for a in (*in_progress, *new_volume)}
+    seen_keys = await repo.seen_alert_keys(conn, user_id)
+    await repo.prune_seen_alerts(conn, user_id, all_keys)
+
+    unseen = 0
+    for alert in (*in_progress, *new_volume):
+        alert.seen = alert.alert_key in seen_keys
+        if not alert.seen:
+            unseen += 1
+
     return AlertsResponse(
-        count=len(in_progress) + len(new_volume),
+        count=unseen,
+        unseen_count=unseen,
         in_progress=in_progress,
         new_volume=new_volume,
     )
+
+
+async def mark_alerts_seen(
+    conn: aiosqlite.Connection,
+    user_id: int,
+    *,
+    alert_keys: list[str] | None = None,
+    all_unseen: bool = False,
+) -> int:
+    """Dismiss alerts for this user.
+
+    With ``all_unseen`` set, every currently-unseen alert is dismissed; otherwise the
+    given ``alert_keys`` are dismissed. Returns the number of newly-recorded keys.
+    """
+    if all_unseen:
+        current = await alerts(conn, user_id)
+        keys = [a.alert_key for a in (*current.in_progress, *current.new_volume) if not a.seen]
+    else:
+        keys = [k for k in (alert_keys or []) if k]
+    if not keys:
+        return 0
+    return await repo.mark_alerts_seen(conn, user_id, keys)
+
+
+# --- per-user UI preferences (series-ux) -------------------------------------------------
+
+SERIES_FILTERS = ("all", "watching", "in_progress", "missing", "complete", "owned")
+_SERIES_PREF_KEY = "series"
+
+
+async def get_series_preferences(conn: aiosqlite.Connection, user_id: int) -> SeriesPreferences:
+    """Return the user's Series-tab preferences, defaulting when never set."""
+    stored = await prefs_repo.get_pref(conn, user_id, _SERIES_PREF_KEY)
+    if not stored:
+        return SeriesPreferences()
+    raw_filter = str(stored.get("filter", "all"))
+    active = raw_filter if raw_filter in SERIES_FILTERS else "all"
+    sort = stored.get("sort")
+    return SeriesPreferences(filter=active, sort=sort if isinstance(sort, str) else None)
+
+
+async def set_series_preferences(
+    conn: aiosqlite.Connection, user_id: int, prefs: SeriesPreferences
+) -> SeriesPreferences:
+    """Persist the user's Series-tab preferences (validated filter id)."""
+    active = prefs.filter if prefs.filter in SERIES_FILTERS else "all"
+    value: dict[str, Any] = {"filter": active}
+    if prefs.sort:
+        value["sort"] = prefs.sort
+    await prefs_repo.set_pref(conn, user_id, _SERIES_PREF_KEY, value)
+    return SeriesPreferences(filter=active, sort=prefs.sort)
 
 
 # --- series editing (wave 5) -------------------------------------------------------------
