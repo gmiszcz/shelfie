@@ -13,6 +13,9 @@ export default defineConfig(({ mode }) => {
       host: '127.0.0.1',
       port: 5174,
       strictPort: true,
+      // Allow access through `tailscale serve` (https://<machine>.<tailnet>.ts.net).
+      // The server still binds to 127.0.0.1 only; Tailscale proxies to it.
+      allowedHosts: ['.ts.net'],
       proxy: {
         '/api': {
           target: `http://127.0.0.1:${backendPort}`,
