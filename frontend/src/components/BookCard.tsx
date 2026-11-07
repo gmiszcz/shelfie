@@ -4,7 +4,6 @@ import { Tag } from 'primereact/tag';
 import { formatAuthors, formatYear } from '../format';
 import { useSettings } from '../settings/SettingsContext';
 import type { Book } from '../types';
-import { STATUS_LABELS } from '../types';
 import { BookCover, StatusTag } from '../ui';
 
 interface Props {

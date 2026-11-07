@@ -17,7 +17,7 @@
 
 import type { AgentTool } from './tools';
 import { toolSchemas } from './tools';
-import { readUiState } from './bus';
+import { describeUi } from '../agent-ui';
 import { readAgUiStream, type AgUiEvent } from './events';
 
 export type AgUiRole = 'user' | 'assistant' | 'tool';
@@ -104,7 +104,7 @@ async function runTurn(
       toolCallId: m.toolCallId ?? null,
     })),
     tools: toolSchemas(tools),
-    state: readUiState(),
+    state: describeUi(),
   });
 
   const resp = await fetchImpl(endpoint, {

@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Iterator
+from datetime import datetime
 from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
@@ -50,19 +51,34 @@ TOOL_CALL_END = "TOOL_CALL_END"
 
 SYSTEM_PROMPT = """You are Shelfie's in-app assistant. You DRIVE THE USER INTERFACE of a
 personal book-library web app by calling the tools you are given. Every tool runs in the
-user's own browser.
+user's own browser, and the interface describes itself to you at runtime — there is no fixed
+list of screens or controls baked into you.
+
+Your tools are generic and work for ANY current or future tab and control:
+- describe_ui: returns the whole UI as a schema — every tab (active or not) and the controls
+  (anchors) it owns, each with an id, kind, label, current value, allowed options and actions;
+  lists expose their items (e.g. the visible books) with ids and titles.
+- get_state(id): read one control's current value.
+- set(id, value): set a value control (text-input, search, select, toggle, multi-select).
+- invoke(id, action?, args?): act on a button, dialog or list item (e.g. open a book, open a dialog).
+- navigate(tab): switch the active tab.
+- find_books(query): search the loaded books to resolve a name into exact ids/titles.
 
 Rules:
 - Answer in the SAME LANGUAGE the user writes in (Polish stays Polish).
+- ALWAYS call describe_ui FIRST (unless you already hold a fresh schema this turn). Choose the
+  control by its kind, label and description, and use the EXACT id from the schema. NEVER invent
+  an id, an option value, a tab name or an action — they are only valid if they appear in the schema.
 - ACT, do not merely describe. When the user asks to show, filter, open, add, switch or change
   anything on screen, call the matching tool instead of explaining how to do it by hand.
 - Resolve real data first. When the user names a book, author or series, call find_books to get
-  the exact stored title / series / ids, THEN call the tool that changes the UI
-  (filter_library, open_book, ...).
-- To learn the current screen state (active tab, search text, star filter, visible books), call
-  get_ui_state.
+  the exact stored title / series / ids, THEN set the relevant control or invoke open on the book.
+- To change a tab's control, navigate to that tab first when it is not active (the schema marks the
+  active tab and whether each tab is mounted); its anchors are listed even when it is not mounted.
+- A set / invoke result reports ok, and on error lists the valid ids or option values — read it and
+  correct your call rather than repeating it.
 - After the UI changed, reply with ONE short sentence confirming what you did, in the user's
-  language. Keep it concrete ("Pokazuję 5 książek z serii Droga Szamana.").
+  language. Keep it concrete ("Pokazuję książki z serii Droga Szamana.").
 - Never invent books, ids, ratings or counts. If find_books returns nothing, say so briefly.
 """
 
@@ -202,6 +218,34 @@ def _to_bedrock_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]
     return out
 
 
+def _now() -> datetime:
+    """The current local date/time. A seam so the date block is testable."""
+    return datetime.now().astimezone()
+
+
+def _date_system_block(now: datetime | None = None) -> str:
+    """A system note giving the model the current date, so "this year" etc. resolve.
+
+    The UI agent has no clock of its own; without this it guesses the year (and in
+    practice asks the user). We state today's date, the current year, and that a
+    bare "this year" means books FINISHED in the current calendar year by default.
+    """
+    stamp = now or _now()
+    tz = stamp.tzname() or "local"
+    return (
+        f"\n\nToday is {stamp.strftime('%Y-%m-%d')} ({stamp.strftime('%A')}), "
+        f"timezone {tz}. The current year is {stamp.year}. "
+        f'When the user says "this year" / "w tym roku" it means books FINISHED in '
+        f"{stamp.year} (finished_on in {stamp.year}) unless they say otherwise; "
+        f'"last year" means {stamp.year - 1}. Resolve any relative period (this/last '
+        f"year, recent months) against this date and NEVER ask the user what year it is. "
+        f"Use the structured library filters (finished year, date range, status, shelf, "
+        f"tag, series, author, stars) for a year or period — never type a year into a "
+        f"free-text search box. Say in one short line which interpretation you used "
+        f'(e.g. "przeczytane w {stamp.year}").'
+    )
+
+
 def _state_system_block(state: Any) -> str:
     """A compact system note describing the current UI state, if provided."""
     if not isinstance(state, dict) or not state:
@@ -239,7 +283,7 @@ def run_stream(
 
     yield {"type": RUN_STARTED, "threadId": thread_id, "runId": run_id}
 
-    system = [{"text": SYSTEM_PROMPT + _state_system_block(state)}]
+    system = [{"text": SYSTEM_PROMPT + _date_system_block() + _state_system_block(state)}]
     bedrock_messages = _to_bedrock_messages(messages)
     tool_config = _tool_config(tools)
 

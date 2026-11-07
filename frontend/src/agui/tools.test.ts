@@ -1,7 +1,13 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { UI_BUS_ACK_EVENT, UI_BUS_EVENT, type UiBusDetail } from './bus';
 import { createTools, toolSchemas } from './tools';
+import {
+  _resetRegistry,
+  registerAnchor,
+  setStaticTabs,
+  setActiveTab,
+  type UiSchema,
+} from '../agent-ui';
 import type { Book } from '../types';
 
 const BOOKS: Book[] = [
@@ -37,42 +43,204 @@ function tool(name: string) {
   return t;
 }
 
-/** Auto-ack every bus event so dispatchAndWait resolves immediately. */
-function withAutoAck<T>(fn: () => Promise<T>): Promise<T> {
-  const onBus = (e: Event) => {
-    const detail = (e as CustomEvent).detail as UiBusDetail;
-    window.dispatchEvent(
-      new CustomEvent(UI_BUS_ACK_EVENT, { detail: { action: detail.action, ok: true } }),
-    );
-  };
-  window.addEventListener(UI_BUS_EVENT, onBus as EventListener);
-  return fn().finally(() => window.removeEventListener(UI_BUS_EVENT, onBus as EventListener));
-}
-
-afterEach(() => vi.restoreAllMocks());
+beforeEach(() => {
+  _resetRegistry();
+});
+afterEach(() => {
+  _resetRegistry();
+});
 
 describe('toolSchemas', () => {
-  it('exposes exactly the 13 browser tools with JSON-schema parameters', () => {
+  it('exposes exactly the 6 generic browser tools with JSON-schema parameters', () => {
     const schemas = toolSchemas(createTools({ getBooks: () => [] }));
     const names = schemas.map((s) => s.name);
-    expect(names).toEqual([
-      'navigate',
-      'set_search',
-      'set_star_filter',
-      'filter_library',
-      'clear_filter',
-      'open_book',
-      'open_add_book',
-      'open_settings',
-      'set_setting',
-      'toggle_theme',
-      'ranking_search',
-      'get_ui_state',
-      'find_books',
-    ]);
+    expect(names).toEqual(['describe_ui', 'get_state', 'set', 'invoke', 'navigate', 'find_books']);
     for (const s of schemas) {
       expect(s.parameters).toMatchObject({ type: 'object' });
     }
+  });
+});
+
+describe('describe_ui', () => {
+  it('builds the schema from the live registry, grouped by tab', () => {
+    setStaticTabs([
+      { id: 'library', label: 'Library' },
+      { id: 'stats', label: 'Statistics' },
+    ]);
+    setActiveTab('library');
+    registerAnchor({
+      id: 'library.search',
+      kind: 'search',
+      label: 'Library search',
+      tab: 'library',
+      getState: () => 'dune',
+      set: () => {},
+    });
+    registerAnchor({
+      id: 'theme.toggle',
+      kind: 'select',
+      label: 'Theme',
+      getState: () => 'dark',
+      options: () => [
+        { value: 'dark', label: 'Dark' },
+        { value: 'light', label: 'Light' },
+      ],
+      set: () => {},
+    });
+
+    const out = tool('describe_ui').execute({}) as { ok: boolean; schema: UiSchema };
+    expect(out.ok).toBe(true);
+    expect(out.schema.activeTab).toBe('library');
+    const library = out.schema.tabs.find((t) => t.id === 'library')!;
+    expect(library.active).toBe(true);
+    expect(library.mounted).toBe(true);
+    const search = library.anchors.find((a) => a.id === 'library.search')!;
+    expect(search).toMatchObject({ kind: 'search', value: 'dune', settable: true });
+    // The unmounted stats tab is still listed (from the static nav).
+    const stats = out.schema.tabs.find((t) => t.id === 'stats')!;
+    expect(stats.mounted).toBe(false);
+    // The global theme anchor carries its options.
+    const theme = out.schema.global.find((a) => a.id === 'theme.toggle')!;
+    expect(theme.options).toEqual([
+      { value: 'dark', label: 'Dark' },
+      { value: 'light', label: 'Light' },
+    ]);
+  });
+});
+
+describe('get_state / set / invoke / navigate', () => {
+  it('get_state reads a registered anchor and errors on an unknown id', () => {
+    registerAnchor({ id: 'library.search', kind: 'search', label: 's', getState: () => 'x' });
+    expect(tool('get_state').execute({ id: 'library.search' })).toMatchObject({
+      ok: true,
+      value: 'x',
+    });
+    const miss = tool('get_state').execute({ id: 'nope' }) as { ok: boolean; valid: string[] };
+    expect(miss.ok).toBe(false);
+    expect(miss.valid).toContain('library.search');
+  });
+
+  it('set writes a value control and validates against options', async () => {
+    let value = '';
+    registerAnchor({
+      id: 'stats.period',
+      kind: 'select',
+      label: 'Period',
+      getState: () => value,
+      options: () => [
+        { value: 'thisYear', label: 'This year' },
+        { value: 'last12Months', label: 'Last 12 months' },
+      ],
+      set: (v) => {
+        value = String(v);
+      },
+    });
+    const ok = (await tool('set').execute({ id: 'stats.period', value: 'last12Months' })) as {
+      ok: boolean;
+    };
+    expect(ok.ok).toBe(true);
+    expect(value).toBe('last12Months');
+
+    const bad = (await tool('set').execute({ id: 'stats.period', value: 'nope' })) as {
+      ok: boolean;
+      valid: string[];
+    };
+    expect(bad.ok).toBe(false);
+    expect(bad.valid).toEqual(['thisYear', 'last12Months']);
+  });
+
+  it('invoke runs an action and reports valid actions on error', async () => {
+    const calls: { action?: string; args?: unknown }[] = [];
+    registerAnchor({
+      id: 'library.books',
+      kind: 'list',
+      label: 'Books',
+      actions: ['open'],
+      items: () => [{ id: 7, title: 'Początek' }],
+      invoke: (action, args) => {
+        calls.push({ action, args });
+      },
+    });
+    const ok = (await tool('invoke').execute({
+      id: 'library.books',
+      action: 'open',
+      args: { id: 7 },
+    })) as { ok: boolean };
+    expect(ok.ok).toBe(true);
+    expect(calls[0]).toEqual({ action: 'open', args: { id: 7 } });
+
+    const bad = (await tool('invoke').execute({ id: 'library.books', action: 'delete' })) as {
+      ok: boolean;
+      valid: string[];
+    };
+    expect(bad.ok).toBe(false);
+    expect(bad.valid).toEqual(['open']);
+  });
+
+  it('navigate switches through the nav.tab anchor and rejects unknown tabs', async () => {
+    setStaticTabs([
+      { id: 'library', label: 'Library' },
+      { id: 'stats', label: 'Statistics' },
+    ]);
+    let tab = 'library';
+    registerAnchor({
+      id: 'nav.tab',
+      kind: 'tab',
+      label: 'Nav',
+      actions: ['navigate'],
+      getState: () => tab,
+      invoke: (_a, args) => {
+        tab = String(args?.tab);
+      },
+    });
+    const ok = (await tool('navigate').execute({ tab: 'stats' })) as { ok: boolean };
+    expect(ok.ok).toBe(true);
+    expect(tab).toBe('stats');
+
+    const bad = (await tool('navigate').execute({ tab: 'nope' })) as {
+      ok: boolean;
+      valid: string[];
+    };
+    expect(bad.ok).toBe(false);
+    expect(bad.valid).toEqual(['library', 'stats']);
+  });
+});
+
+describe('universality — a brand-new control needs no agent code', () => {
+  it('describe_ui lists a freshly registered dummy anchor and set() drives it', async () => {
+    // A component the agent has never heard of registers itself at runtime.
+    let dummy = 'before';
+    registerAnchor({
+      id: 'future.widget',
+      kind: 'text-input',
+      label: 'A future control',
+      tab: 'library',
+      getState: () => dummy,
+      set: (v) => {
+        dummy = String(v);
+      },
+    });
+
+    // The agent discovers it purely from describe_ui — no tool was added.
+    const schema = (tool('describe_ui').execute({}) as { schema: UiSchema }).schema;
+    const found = schema.tabs
+      .flatMap((t) => t.anchors)
+      .concat(schema.global)
+      .find((a) => a.id === 'future.widget');
+    expect(found).toMatchObject({
+      id: 'future.widget',
+      kind: 'text-input',
+      label: 'A future control',
+      value: 'before',
+      settable: true,
+    });
+
+    // And the generic set() tool drives it with no change to the agent.
+    const res = (await tool('set').execute({ id: 'future.widget', value: 'after' })) as {
+      ok: boolean;
+    };
+    expect(res.ok).toBe(true);
+    expect(dummy).toBe('after');
   });
 });
 
@@ -91,77 +259,5 @@ describe('find_books', () => {
     expect(out.count).toBe(1);
     const miss = tool('find_books').execute({ query: 'Frank Szamana' }) as { count: number };
     expect(miss.count).toBe(0);
-  });
-});
-
-describe('get_ui_state', () => {
-  it('reads the exposed snapshot', () => {
-    window.__shelfieUiState = { tab: 'library', visibleBookIds: [7] };
-    const out = tool('get_ui_state').execute({}) as { state: { tab: string } };
-    expect(out.state.tab).toBe('library');
-    delete window.__shelfieUiState;
-  });
-});
-
-describe('set_star_filter', () => {
-  it('coerces to a whole star 1..5 and dispatches it', async () => {
-    const seen: UiBusDetail[] = [];
-    const onBus = (e: Event) => seen.push((e as CustomEvent).detail);
-    window.addEventListener(UI_BUS_EVENT, onBus as EventListener);
-    await withAutoAck(() => Promise.resolve(tool('set_star_filter').execute({ stars: 4.9 })));
-    window.removeEventListener(UI_BUS_EVENT, onBus as EventListener);
-    expect(seen[0]).toEqual({ action: 'set_star_filter', stars: 5 });
-  });
-
-  it('passes null through to clear the filter', async () => {
-    const out = (await withAutoAck(() =>
-      Promise.resolve(tool('set_star_filter').execute({ stars: null })),
-    )) as { stars: unknown };
-    expect(out.stars).toBeNull();
-  });
-});
-
-describe('filter_library', () => {
-  it('dispatches only the set facets', async () => {
-    const seen: UiBusDetail[] = [];
-    const onBus = (e: Event) => seen.push((e as CustomEvent).detail);
-    window.addEventListener(UI_BUS_EVENT, onBus as EventListener);
-    await withAutoAck(() =>
-      Promise.resolve(tool('filter_library').execute({ series: 'Droga Szamana', query: '' })),
-    );
-    window.removeEventListener(UI_BUS_EVENT, onBus as EventListener);
-    expect(seen[0]).toEqual({ action: 'filter_library', series: 'Droga Szamana' });
-  });
-});
-
-describe('open_add_book', () => {
-  it('defaults to search mode and carries the query', async () => {
-    const seen: UiBusDetail[] = [];
-    const onBus = (e: Event) => seen.push((e as CustomEvent).detail);
-    window.addEventListener(UI_BUS_EVENT, onBus as EventListener);
-    await withAutoAck(() =>
-      Promise.resolve(tool('open_add_book').execute({ mode: 'search', query: 'Diuna' })),
-    );
-    window.removeEventListener(UI_BUS_EVENT, onBus as EventListener);
-    expect(seen[0]).toEqual({
-      action: 'open_add_book',
-      mode: 'search',
-      query: 'Diuna',
-      prefill: undefined,
-    });
-  });
-});
-
-describe('navigate', () => {
-  it('rejects an unknown tab without dispatching', async () => {
-    const seen: UiBusDetail[] = [];
-    const onBus = (e: Event) => seen.push((e as CustomEvent).detail);
-    window.addEventListener(UI_BUS_EVENT, onBus as EventListener);
-    const out = (await Promise.resolve(tool('navigate').execute({ tab: 'nope' }))) as {
-      ok: boolean;
-    };
-    window.removeEventListener(UI_BUS_EVENT, onBus as EventListener);
-    expect(out.ok).toBe(false);
-    expect(seen).toEqual([]);
   });
 });

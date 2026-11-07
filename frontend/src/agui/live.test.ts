@@ -1,19 +1,26 @@
 /**
  * LIVE integration test — drives the full browser-side agent loop against the
- * REAL `/api/agui/run` endpoint and REAL Bedrock. It is skipped unless the env
- * var `AGUI_LIVE` is set and `AGUI_BASE` points at a running dev server (e.g.
- * `http://127.0.0.1:8099`), so it never runs in `just check`.
+ * REAL `/api/agui/run` endpoint and REAL Bedrock, through the UNIVERSAL
+ * registry-driven tools (describe_ui / get_state / set / invoke / navigate /
+ * find_books). It is skipped unless `AGUI_LIVE` is set and `AGUI_BASE` points at
+ * a running dev server (e.g. `http://127.0.0.1:8099`), so it never runs in
+ * `just check`.
  *
- * It verifies the four acceptance prompts and prints the AG-UI event sequence
- * (tool calls) each one produced. A real `shelfie:ui` listener acks every action
- * so the loop behaves exactly as in the browser.
+ * It registers a small set of anchors mirroring the real app, then verifies the
+ * acceptance prompts drive those anchors — proving the model reads the live
+ * schema and acts through the generic verbs with no per-action tool.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { UI_BUS_ACK_EVENT, UI_BUS_EVENT, type UiBusDetail } from './bus';
 import { runAgent, type AgUiMessage } from './client';
 import { createTools } from './tools';
+import {
+  _resetRegistry,
+  registerAnchor,
+  setActiveTab,
+  setStaticTabs,
+} from '../agent-ui';
 import type { Book } from '../types';
 
 const LIVE = Boolean(process.env.AGUI_LIVE);
@@ -27,22 +34,95 @@ const BOOKS: Book[] = [
   { id: 201, title: 'Hobbit', authors: ['J.R.R. Tolkien'], series: null, stars: 5, display_score: 5.0 } as unknown as Book,
 ];
 
-function installBusListener(captured: UiBusDetail[]): () => void {
-  const onBus = (e: Event) => {
-    const detail = (e as CustomEvent).detail as UiBusDetail;
-    captured.push(detail);
-    window.dispatchEvent(
-      new CustomEvent(UI_BUS_ACK_EVENT, { detail: { action: detail.action, ok: true, info: 'live-test' } }),
-    );
-  };
-  window.addEventListener(UI_BUS_EVENT, onBus as EventListener);
-  return () => window.removeEventListener(UI_BUS_EVENT, onBus as EventListener);
+/** A record of what the model drove, captured by the anchors. */
+interface Driven {
+  tab: string;
+  librarySearch: string;
+  filter: Record<string, unknown> | null;
+  addBook: { action?: string; args?: Record<string, unknown> } | null;
+  starFilter: string;
+}
+
+/** Register anchors mirroring the app's library tab, capturing what the agent does. */
+function installAnchors(driven: Driven): void {
+  setStaticTabs([
+    { id: 'library', label: 'Library' },
+    { id: 'stats', label: 'Statistics' },
+    { id: 'ranking', label: 'Ranking' },
+  ]);
+  setActiveTab('library');
+  registerAnchor({
+    id: 'nav.tab',
+    kind: 'tab',
+    label: 'Navigation tab',
+    actions: ['navigate'],
+    getState: () => driven.tab,
+    invoke: (_a, args) => {
+      driven.tab = String(args?.tab);
+      setActiveTab(driven.tab);
+    },
+  });
+  registerAnchor({
+    id: 'library.search',
+    kind: 'search',
+    label: 'Library search',
+    tab: 'library',
+    getState: () => driven.librarySearch,
+    set: (v) => {
+      driven.librarySearch = String(v ?? '');
+    },
+  });
+  registerAnchor({
+    id: 'library.starFilter',
+    kind: 'select',
+    label: 'Star rating filter',
+    tab: 'library',
+    getState: () => driven.starFilter,
+    options: () => [
+      { value: '', label: 'Any rating' },
+      { value: '1', label: '1 star' },
+      { value: '2', label: '2 stars' },
+      { value: '3', label: '3 stars' },
+      { value: '4', label: '4 stars' },
+      { value: '5', label: '5 stars' },
+    ],
+    set: (v) => {
+      driven.starFilter = String(v ?? '');
+    },
+  });
+  registerAnchor({
+    id: 'library.filter',
+    kind: 'button',
+    label: 'Assistant library filter',
+    tab: 'library',
+    actions: ['apply', 'clear'],
+    getState: () => driven.filter,
+    invoke: (action, args) => {
+      driven.filter = action === 'clear' ? null : (args ?? {});
+    },
+  });
+  registerAnchor({
+    id: 'library.addBook',
+    kind: 'button',
+    label: 'Add a book',
+    tab: 'library',
+    actions: ['search', 'manual'],
+    invoke: (action, args) => {
+      driven.addBook = { action, args };
+    },
+  });
 }
 
 async function drive(prompt: string) {
-  const busEvents: UiBusDetail[] = [];
+  const driven: Driven = {
+    tab: 'library',
+    librarySearch: '',
+    filter: null,
+    addBook: null,
+    starFilter: '',
+  };
+  installAnchors(driven);
   const toolSeq: { name: string; args: Record<string, unknown> }[] = [];
-  const remove = installBusListener(busEvents);
   const messages: AgUiMessage[] = [{ role: 'user', content: prompt }];
   const result = await runAgent({
     threadId: `live-${Date.now()}`,
@@ -50,50 +130,45 @@ async function drive(prompt: string) {
     tools: createTools({ getBooks: () => BOOKS }),
     endpoint: `${BASE}/api/agui/run`,
     fetchImpl: fetch,
-    maxTurns: 8,
+    maxTurns: 10,
     callbacks: { onToolCall: (c) => toolSeq.push({ name: c.name, args: c.args }) },
   });
-  remove();
-  return { result, busEvents, toolSeq };
+  return { result, driven, toolSeq };
 }
 
-describe.runIf(LIVE)('AG-UI live (real Bedrock)', () => {
-  it('pokaż książki z serii Droga Szamana -> find_books then filter_library(series)', async () => {
-    const { result, toolSeq, busEvents } = await drive('pokaż książki z serii Droga Szamana');
+beforeEach(() => _resetRegistry());
+afterEach(() => _resetRegistry());
+
+describe.runIf(LIVE)('AG-UI live (real Bedrock, universal tools)', () => {
+  it('pokaż książki z serii Droga Szamana -> find_books then invoke library.filter(series)', async () => {
+    const { result, toolSeq, driven } = await drive('pokaż książki z serii Droga Szamana');
     // eslint-disable-next-line no-console
-    console.log('[series]', JSON.stringify({ tools: toolSeq, bus: busEvents, text: result.finalText }, null, 2));
+    console.log('[series]', JSON.stringify({ tools: toolSeq, driven, text: result.finalText }, null, 2));
     const names = toolSeq.map((t) => t.name);
     expect(names).toContain('find_books');
-    expect(names).toContain('filter_library');
-    const filter = toolSeq.find((t) => t.name === 'filter_library');
-    expect(String(filter?.args.series ?? '')).toMatch(/Droga Szamana/i);
+    expect(String((driven.filter?.series ?? '') as string)).toMatch(/Droga Szamana/i);
   }, 60000);
 
-  it('chcę dodać książkę Diuna -> open_add_book(search, "Diuna")', async () => {
-    const { result, toolSeq } = await drive('chcę dodać książkę Diuna');
+  it('chcę dodać książkę Diuna -> invoke library.addBook(search, "Diuna")', async () => {
+    const { result, toolSeq, driven } = await drive('chcę dodać książkę Diuna');
     // eslint-disable-next-line no-console
-    console.log('[add]', JSON.stringify({ tools: toolSeq, text: result.finalText }, null, 2));
-    const add = toolSeq.find((t) => t.name === 'open_add_book');
-    expect(add).toBeTruthy();
-    expect(add?.args.mode ?? 'search').toBe('search');
-    expect(String(add?.args.query ?? '')).toMatch(/Diuna/i);
+    console.log('[add]', JSON.stringify({ tools: toolSeq, driven, text: result.finalText }, null, 2));
+    expect(driven.addBook).toBeTruthy();
+    expect(driven.addBook?.action ?? 'search').toBe('search');
+    expect(String(driven.addBook?.args?.query ?? '')).toMatch(/Diuna/i);
   }, 60000);
 
-  it('pokaż tylko 5 gwiazdek -> set_star_filter(5)', async () => {
-    const { result, toolSeq } = await drive('pokaż tylko 5 gwiazdek');
+  it('pokaż tylko 5 gwiazdek -> set library.starFilter 5', async () => {
+    const { result, toolSeq, driven } = await drive('pokaż tylko 5 gwiazdek');
     // eslint-disable-next-line no-console
-    console.log('[stars]', JSON.stringify({ tools: toolSeq, text: result.finalText }, null, 2));
-    const star = toolSeq.find((t) => t.name === 'set_star_filter');
-    expect(star).toBeTruthy();
-    expect(star?.args.stars).toBe(5);
+    console.log('[stars]', JSON.stringify({ tools: toolSeq, driven, text: result.finalText }, null, 2));
+    expect(driven.starFilter).toBe('5');
   }, 60000);
 
   it('przejdź do rankingu -> navigate(ranking)', async () => {
-    const { result, toolSeq } = await drive('przejdź do rankingu');
+    const { result, toolSeq, driven } = await drive('przejdź do rankingu');
     // eslint-disable-next-line no-console
-    console.log('[nav]', JSON.stringify({ tools: toolSeq, text: result.finalText }, null, 2));
-    const nav = toolSeq.find((t) => t.name === 'navigate');
-    expect(nav).toBeTruthy();
-    expect(nav?.args.tab).toBe('ranking');
+    console.log('[nav]', JSON.stringify({ tools: toolSeq, driven, text: result.finalText }, null, 2));
+    expect(driven.tab).toBe('ranking');
   }, 60000);
 });

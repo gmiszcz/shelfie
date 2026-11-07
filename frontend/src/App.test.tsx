@@ -1,10 +1,10 @@
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { makeBook } from './components/testHelpers';
 import type { Book } from './types';
 
-const BOOKS: Book[] = [makeBook({ id: 1, title: 'Dune' })];
+const BOOKS: Book[] = [makeBook({ id: 1, title: 'Dune', series: 'Dune', stars: 5, display_score: 4.8 })];
 
 vi.mock('./services/api', () => ({
   ApiError: class ApiError extends Error {},
@@ -32,75 +32,159 @@ vi.mock('./services/api', () => ({
 // eslint-disable-next-line import/first
 import App from './App';
 // eslint-disable-next-line import/first
-import { UI_BUS_ACK_EVENT, UI_BUS_EVENT } from './settings/uiBus';
-// eslint-disable-next-line import/first
-import type { UiBusAck } from './settings/uiBus';
-// eslint-disable-next-line import/first
-import type { Settings } from './settings/settingsTypes';
+import {
+  _resetRegistry,
+  describeUi,
+  getAnchor,
+  getAnchorState,
+  invokeAnchor,
+  navigate,
+  setAnchor,
+} from './agent-ui';
 
-function dispatch(detail: unknown): UiBusAck[] {
-  const acks: UiBusAck[] = [];
-  const onAck = (e: Event) => acks.push((e as CustomEvent).detail as UiBusAck);
-  window.addEventListener(UI_BUS_ACK_EVENT, onAck);
-  window.dispatchEvent(new CustomEvent(UI_BUS_EVENT, { detail }));
-  window.removeEventListener(UI_BUS_ACK_EVENT, onAck);
-  return acks;
-}
+/** Every nav tab the app ships with — each MUST register a tab in the schema. */
+const REQUIRED_TABS = ['library', 'stats', 'ranking'];
+
+/**
+ * Every interactive control the universal agent must be able to reach, by anchor
+ * id, grouped by the tab that must be mounted for it to register. A new
+ * interactive control MUST call `useAgentAnchor` (see
+ * docs/features/ui-agent-registry.md) and be added here, so this guard fails
+ * until it is wired. Anchors register on mount, so the guard navigates to each
+ * tab before checking that tab's controls. Settings toggles (one per field) are
+ * checked separately.
+ */
+const GLOBAL_ANCHORS = ['nav.tab', 'theme.toggle', 'settings.sidebar', 'settings.showAllDetails'];
+const TAB_ANCHORS: Record<string, string[]> = {
+  library: [
+    'library.search',
+    'library.starFilter',
+    'library.filter',
+    'library.books',
+    'library.addBook',
+    'library.dialogs',
+    'library.finishedYear',
+    'library.startedYear',
+    'library.publishedYear',
+    'library.status',
+    'library.shelf',
+    'library.tag',
+    'library.series',
+    'library.author',
+  ],
+  stats: ['stats.period', 'stats.group', 'stats.metric', 'stats.tableSearch'],
+  ranking: ['ranking.search', 'ranking.category', 'ranking.focus'],
+};
 
 afterEach(() => {
   cleanup();
-  delete (window as { __shelfieUiState?: unknown }).__shelfieUiState;
+  _resetRegistry();
   document.documentElement.removeAttribute('data-theme');
 });
 
-describe('App UI bus v2 listeners', () => {
+async function renderApp() {
+  render(<App />);
+  // Wait until the registry has the nav anchor (App mounted) and the library tab mounted.
+  await waitFor(() => expect(getAnchor('nav.tab')).toBeTruthy());
+  await waitFor(() => expect(getAnchor('library.search')).toBeTruthy());
+}
+
+describe('agent-anchor coverage guard', () => {
   beforeEach(() => {
     localStorage.clear();
-    delete (window as { __shelfieUiState?: unknown }).__shelfieUiState;
+    _resetRegistry();
   });
 
-  async function renderApp() {
-    render(<App />);
-    await waitFor(() => expect(window.__shelfieUiState).toBeTruthy());
-  }
-
-  it('navigate switches the active tab and acks', async () => {
+  it('registers a tab in the schema for every nav tab', async () => {
     await renderApp();
-    const acks = dispatch({ action: 'navigate', tab: 'stats' });
-    await waitFor(() => expect(window.__shelfieUiState?.tab).toBe('stats'));
-    expect(acks).toContainEqual({ action: 'navigate', ok: true });
+    const schema = describeUi();
+    for (const tab of REQUIRED_TABS) {
+      expect(schema.tabs.find((t) => t.id === tab), `missing tab ${tab}`).toBeTruthy();
+    }
+    expect(schema.activeTab).toBe('library');
   });
 
-  it('open_settings opens the settings sidebar and acks', async () => {
+  it('registers an anchor for every known interactive control (mounting each tab)', async () => {
     await renderApp();
-    const acks = dispatch({ action: 'open_settings' });
-    await waitFor(() => expect(window.__shelfieUiState?.openDialog).toBe('settings'));
-    expect(acks).toContainEqual({ action: 'open_settings', ok: true });
+    // Global anchors are always present.
+    for (const id of GLOBAL_ANCHORS) {
+      expect(getAnchor(id), `missing global anchor "${id}"`).toBeTruthy();
+    }
+    // Each tab's controls register once that tab is mounted.
+    for (const [tab, ids] of Object.entries(TAB_ANCHORS)) {
+      await act(async () => {
+        await navigate(tab);
+      });
+      await waitFor(() => expect(getAnchor(ids[0])).toBeTruthy());
+      for (const id of ids) {
+        expect(
+          getAnchor(id),
+          `missing anchor "${id}" on tab "${tab}" — did a control forget useAgentAnchor?`,
+        ).toBeTruthy();
+      }
+    }
   });
 
-  it('toggle_theme flips the theme and acks', async () => {
+  it('registers one toggle anchor per settings card field and detail section', async () => {
     await renderApp();
-    const before = document.documentElement.getAttribute('data-theme');
-    dispatch({ action: 'toggle_theme' });
+    // A representative sample from each settings group.
+    for (const id of [
+      'settings.cardFields.author',
+      'settings.cardFields.pageCount',
+      'settings.detailSections.insights',
+      'settings.detailSections.notes',
+    ]) {
+      expect(getAnchor(id), `missing settings anchor "${id}"`).toBeTruthy();
+    }
+  });
+});
+
+describe('driving the app through the registry (no agent-side per-control code)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    _resetRegistry();
+  });
+
+  it('navigate switches the active tab', async () => {
+    await renderApp();
+    await act(async () => {
+      await navigate('stats');
+    });
+    await waitFor(() => expect(describeUi().activeTab).toBe('stats'));
+  });
+
+  it('set drives the library search box', async () => {
+    await renderApp();
+    await act(async () => {
+      await setAnchor('library.search', 'dune');
+    });
+    await waitFor(() => expect(getAnchorState('library.search').value).toBe('dune'));
+  });
+
+  it('set toggles a display setting without the sidebar being open', async () => {
+    await renderApp();
+    await act(async () => {
+      await setAnchor('settings.detailSections.insights', false);
+    });
     await waitFor(() =>
-      expect(document.documentElement.getAttribute('data-theme')).not.toBe(before),
+      expect(getAnchorState('settings.detailSections.insights').value).toBe(false),
     );
   });
 
-  it('set_setting toggles a detail section via SettingsContext and acks ok', async () => {
+  it('invoke opens the settings sidebar', async () => {
     await renderApp();
-    const acks = dispatch({ action: 'set_setting', key: 'insights', value: false });
-    await waitFor(() => {
-      const s = window.__shelfieUiState?.settings as Settings | null;
-      expect(s?.detailSections.insights).toBe(false);
+    await act(async () => {
+      await invokeAnchor('settings.sidebar', 'open');
     });
-    expect(acks).toContainEqual({ action: 'set_setting', ok: true, info: undefined });
+    await waitFor(() => expect(getAnchorState('settings.sidebar').value).toBe('open'));
   });
 
-  it('set_setting with an unknown key acks not-ok', async () => {
+  it('set changes the theme', async () => {
     await renderApp();
-    const acks = dispatch({ action: 'set_setting', key: 'nope', value: true });
-    expect(acks[0].action).toBe('set_setting');
-    expect(acks[0].ok).toBe(false);
+    const before = getAnchorState('theme.toggle').value;
+    await act(async () => {
+      await setAnchor('theme.toggle', before === 'dark' ? 'light' : 'dark');
+    });
+    await waitFor(() => expect(getAnchorState('theme.toggle').value).not.toBe(before));
   });
 });
