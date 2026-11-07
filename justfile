@@ -52,6 +52,16 @@ sample count="40":
 enrich *args:
     uv run python -m scripts.enrich {{args}}
 
+# Find and store real cover images for books missing a cover (updates books.json AND the DB).
+# Pass flags via args, e.g. `just fill-covers --dry-run` or `just fill-covers --root E:\WebDev\shelfie`.
+fill-covers *args:
+    uv run python -m scripts.fill_covers {{args}}
+
+# Repair series/volume/subtitle/description on cycle books (The Way of the Shaman, Dar anomalii).
+# Pass flags via args, e.g. `just fix-series --dry-run --scan` or `just fix-series --root E:\WebDev\shelfie`.
+fix-series *args:
+    uv run python -m scripts.fix_series_titles {{args}}
+
 # Build the production frontend bundle
 build:
     npm --prefix frontend run build
