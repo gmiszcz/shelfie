@@ -127,60 +127,39 @@ body {
 }
 
 /* --- Library toolbar -------------------------------------------------------------------- */
+/* Three independent rows, each separated by a gap from :root. The search bar
+   is its own full-width row, completely decoupled from the star filter. */
 .library-toolbar {
   display: flex;
+  flex-direction: column;
   gap: var(--default-gap);
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--default-gap);
-  flex-wrap: wrap;
+  margin-bottom: var(--big-gap);
 }
 
-.library-toolbar-left {
+.library-toolbar-actions {
   display: flex;
   gap: var(--default-gap);
   align-items: center;
   flex-wrap: wrap;
 }
 
-.library-toolbar-right {
+.library-toolbar-search {
   display: flex;
-  align-items: center;
+  width: 100%;
+}
+
+.library-toolbar-search .ui-search {
+  width: 100%;
+}
+
+.library-toolbar-filter {
+  display: flex;
 }
 
 .library-count {
   color: var(--app-text-muted);
   font-size: 0.9rem;
-}
-
-.library-search {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-}
-
-.library-search > input {
-  padding-left: 2.25rem;
-  padding-right: 2rem;
-  min-width: min(320px, 70vw);
-}
-
-.library-search > i.pi-search {
-  position: absolute;
-  left: 0.75rem;
-  color: var(--app-text-muted);
-  pointer-events: none;
-}
-
-.library-search-clear {
-  position: absolute;
-  right: 0.75rem;
-  color: var(--app-text-muted);
-  cursor: pointer;
-}
-
-.library-search-clear:hover {
-  color: var(--app-text);
+  margin-left: auto;
 }
 
 .library-filter-chip {
@@ -229,16 +208,25 @@ body {
 }
 
 .book-card .body {
-  padding: var(--default-padding) var(--big-padding) var(--big-padding);
+  padding: var(--big-padding);
   display: flex;
   flex-direction: column;
   gap: var(--small-gap);
   flex: 1;
 }
 
+/* Primary block — title and (series volume) subtitle sit tight together. */
+.book-card .card-heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-padding);
+}
+
 .book-card .title {
-  font-weight: 600;
+  font-weight: 700;
+  font-size: 0.98rem;
   line-height: 1.25;
+  color: var(--app-text);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   line-clamp: 2;
@@ -246,9 +234,29 @@ body {
   overflow: hidden;
 }
 
+/* The subtitle is the volume's real title — emphasised, just below the title. */
+.book-card .card-subtitle {
+  font-weight: 600;
+  font-size: 0.85rem;
+  line-height: 1.3;
+  color: var(--app-accent);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Secondary block — author/year, series, pages grouped and muted. */
+.book-card .card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-padding);
+}
+
 .book-card .author {
   color: var(--app-text-muted);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   display: -webkit-box;
   -webkit-line-clamp: 1;
   line-clamp: 1;
@@ -258,10 +266,12 @@ body {
 
 .book-card .card-footer {
   margin-top: auto;
+  padding-top: var(--small-gap);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--small-gap);
+  min-height: 1.75rem;
 }
 
 .empty-state {
@@ -288,6 +298,18 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--default-gap);
+}
+
+.detail-subtitle {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--app-accent);
+}
+
+.detail-byline {
+  color: var(--app-text);
 }
 
 .detail-description {
@@ -337,29 +359,24 @@ body {
   font-size: 0.85rem;
 }
 
-/* Search input with a left icon that does not overlap the text. */
-.search-input-wrap {
-  position: relative;
-  display: inline-flex;
+/* Search dialog toolbar: full-width search + language + button on one row. */
+.search-dialog-bar {
+  display: flex;
+  gap: var(--default-gap);
   align-items: center;
+  margin-bottom: var(--default-gap);
 }
 
-.search-input-wrap > i {
-  position: absolute;
-  left: 0.75rem;
-  color: var(--app-text-muted);
-  pointer-events: none;
-}
-
-.search-input-wrap > input {
-  padding-left: 2.25rem;
+.search-dialog-input {
+  flex: 1;
+  min-width: 0;
 }
 
 /* --- Book card extras (settings-driven fields) ------------------------------------------ */
 .book-card .card-series,
 .book-card .card-pages {
   color: var(--app-text-muted);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   display: -webkit-box;
   -webkit-line-clamp: 1;
   line-clamp: 1;
@@ -367,14 +384,26 @@ body {
   overflow: hidden;
 }
 
+.book-card .card-series {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-padding);
+}
+
 .book-card .card-series i {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
+  color: var(--app-text-muted);
 }
 
 .book-card .card-shelves {
   display: flex;
   gap: var(--small-padding);
   flex-wrap: wrap;
+}
+
+.book-card .card-shelves .p-tag,
+.book-card .card-footer .p-tag {
+  font-size: 0.72rem;
 }
 
 /* --- Book detail sections --------------------------------------------------------------- */
@@ -392,7 +421,7 @@ body {
 .detail-field {
   display: flex;
   gap: var(--small-gap);
-  padding: 0.1rem 0;
+  padding: var(--small-padding) 0;
 }
 
 .detail-field-label {
@@ -428,8 +457,9 @@ body {
 }
 
 .detail-quote {
-  border-left: 3px solid var(--app-accent);
-  padding-left: var(--default-padding);
+  background: var(--app-surface-2);
+  border-radius: var(--custom-border-radius);
+  padding: var(--default-padding) var(--big-padding);
   font-style: italic;
 }
 
@@ -450,13 +480,26 @@ body {
   font-weight: 600;
 }
 
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--default-gap);
+  padding: var(--big-padding) 0;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+}
+
 .settings-section h4 {
-  margin: 0 0 var(--small-padding);
+  margin: 0;
   font-size: 1rem;
 }
 
 .settings-hint {
-  margin: 0 0 var(--default-gap);
+  margin: 0;
   color: var(--app-text-muted);
   font-size: 0.85rem;
 }
@@ -474,10 +517,41 @@ body {
   cursor: pointer;
 }
 
-.settings-switch {
-  margin-bottom: var(--small-gap);
+.settings-reset {
+  align-self: flex-start;
 }
 
-.settings-reset {
-  margin-top: var(--default-gap);
+/* --- Global spacing pass: dialogs, sidebar, app bar ------------------------------------- */
+/* Every panel is padded from :root; nothing sits flush against an edge. */
+.p-dialog .p-dialog-header {
+  padding: var(--content-padding);
+  gap: var(--small-gap);
+}
+
+.p-dialog .p-dialog-content {
+  padding: 0 var(--content-padding) var(--content-padding);
+}
+
+.p-dialog .p-dialog-footer {
+  padding: var(--content-padding);
+  gap: var(--small-gap);
+}
+
+.p-sidebar .p-sidebar-header {
+  padding: var(--content-padding) var(--content-padding) var(--default-padding);
+}
+
+.p-sidebar .p-sidebar-content {
+  padding: 0 var(--content-padding) var(--content-padding);
+}
+
+/* Detail dialog: separate the action row from the content above it. */
+.detail-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--default-gap);
+  margin-top: var(--big-gap);
+  padding-top: var(--default-padding);
+  border-top: 1px solid var(--app-border);
 }

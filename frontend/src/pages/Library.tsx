@@ -1,6 +1,5 @@
 import { Button } from 'primereact/button';
 import { Chip } from 'primereact/chip';
-import { InputText } from 'primereact/inputtext';
 import { Toast } from 'primereact/toast';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -10,6 +9,7 @@ import { BookGrid } from '../components/BookGrid';
 import { SearchDialog } from '../components/SearchDialog';
 import { StarFilter, boundsForStarBucket } from '../components/StarFilter';
 import type { ScoreBounds, StarBucket } from '../components/StarFilter';
+import { SearchInput } from '../ui';
 import { useLibrary } from '../hooks/useLibrary';
 import { useSettings } from '../settings/SettingsContext';
 import { filterByScore } from '../ranking';
@@ -215,7 +215,7 @@ export function Library() {
       <Toast ref={toast} position="bottom-right" />
 
       <div className="library-toolbar">
-        <div className="library-toolbar-left">
+        <div className="library-toolbar-actions">
           <Button
             label="Add book"
             icon="pi pi-plus"
@@ -233,25 +233,16 @@ export function Library() {
           <span className="library-count">{countLabel}</span>
         </div>
 
-        <div className="library-toolbar-right">
-          <span className="p-input-icon-left library-search">
-            <i className="pi pi-search" />
-            <InputText
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search title, author or series…"
-              aria-label="Search library"
-            />
-            {query && (
-              <i
-                className="pi pi-times library-search-clear"
-                role="button"
-                aria-label="Clear search"
-                onClick={() => setQuery('')}
-              />
-            )}
-          </span>
+        <div className="library-toolbar-search">
+          <SearchInput
+            value={query}
+            onChange={setQuery}
+            placeholder="Search title, author or series…"
+            ariaLabel="Search library"
+          />
+        </div>
 
+        <div className="library-toolbar-filter">
           <StarFilter
             value={starBucket}
             onChange={(stars, bounds) => {

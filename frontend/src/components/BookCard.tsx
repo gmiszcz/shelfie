@@ -16,6 +16,8 @@ export function BookCard({ book, onOpen }: Props) {
   const f = settings.cardFields;
 
   const year = formatYear(book.published_date);
+  const hasSubtitle = typeof book.subtitle === 'string' && book.subtitle.trim().length > 0;
+  const showSubtitle = f.subtitle && hasSubtitle;
   const showAuthorLine = (f.author && book.authors.length > 0) || (f.year && !!year);
 
   return (
@@ -36,28 +38,39 @@ export function BookCard({ book, onOpen }: Props) {
         )}
       </div>
       <div className="body">
-        <span className="title" title={book.title}>
-          {book.title}
-        </span>
-
-        {showAuthorLine && (
-          <span className="author">
-            {f.author && formatAuthors(book.authors)}
-            {f.author && f.year && year && ' · '}
-            {f.year && year}
+        {/* Primary block: title + (for series volumes) the volume's own title as subtitle. */}
+        <div className="card-heading">
+          <span className="title" title={book.title}>
+            {book.title}
           </span>
-        )}
+          {showSubtitle && (
+            <span className="card-subtitle" title={book.subtitle ?? undefined}>
+              {book.subtitle}
+            </span>
+          )}
+        </div>
 
-        {f.series && book.series && (
-          <span className="card-series" title={book.series}>
-            <i className="pi pi-bookmark" /> {book.series}
-            {book.volume && ` · Vol. ${book.volume}`}
-          </span>
-        )}
+        {/* Secondary block: author/year, series, pages — smaller and muted. */}
+        <div className="card-meta">
+          {showAuthorLine && (
+            <span className="author">
+              {f.author && formatAuthors(book.authors)}
+              {f.author && f.year && year && ' · '}
+              {f.year && year}
+            </span>
+          )}
 
-        {f.pageCount && book.page_count != null && book.page_count > 0 && (
-          <span className="card-pages">{book.page_count} pages</span>
-        )}
+          {f.series && book.series && (
+            <span className="card-series" title={book.series}>
+              <i className="pi pi-bookmark" /> {book.series}
+              {book.volume && ` · Vol. ${book.volume}`}
+            </span>
+          )}
+
+          {f.pageCount && book.page_count != null && book.page_count > 0 && (
+            <span className="card-pages">{book.page_count} pages</span>
+          )}
+        </div>
 
         {f.shelves && book.shelves.length > 0 && (
           <div className="card-shelves">

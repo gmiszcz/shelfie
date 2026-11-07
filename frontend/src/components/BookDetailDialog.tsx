@@ -126,8 +126,8 @@ export function BookDetailDialog({ book, onHide, onStatus, onStars, onDelete, on
         </div>
 
         <div className="detail-meta">
-          {book.subtitle && <em>{book.subtitle}</em>}
-          <div>
+          {book.subtitle && <p className="detail-subtitle">{book.subtitle}</p>}
+          <div className="detail-byline">
             <strong>{formatAuthors(book.authors)}</strong>
             {year && ` · ${year}`}
             {book.publisher && ` · ${book.publisher}`}
@@ -292,7 +292,7 @@ export function BookDetailDialog({ book, onHide, onStatus, onStars, onDelete, on
         </>
       )}
 
-      <div className="flex justify-content-between mt-3">
+      <div className="detail-actions">
         <Button label="Edit" icon="pi pi-pencil" outlined onClick={() => onEdit(book.id)} />
         <Button
           label="Remove from library"

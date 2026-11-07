@@ -1,12 +1,12 @@
 import { Button } from 'primereact/button';
 import { Dialog } from 'primereact/dialog';
 import { Dropdown } from 'primereact/dropdown';
-import { InputText } from 'primereact/inputtext';
 import { ProgressSpinner } from 'primereact/progressspinner';
 import { useEffect, useState } from 'react';
 
 import { formatAuthors, formatYear, hitKey } from '../format';
 import { api } from '../services/api';
+import { SearchInput } from '../ui';
 import type { BookInput, VolumeSearchResult } from '../types';
 
 interface Props {
@@ -106,20 +106,20 @@ export function SearchDialog({
       style={{ width: 'min(720px, 94vw)' }}
       dismissableMask
     >
-      <div className="flex gap-2 mb-3">
-        <span className="search-input-wrap" style={{ flex: 1 }}>
-          <i className="pi pi-search" />
-          <InputText
+      <div className="search-dialog-bar">
+        <div
+          className="search-dialog-input"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void runSearch();
+          }}
+        >
+          <SearchInput
             value={query}
+            onChange={setQuery}
             placeholder="Title, author, or isbn:9780441013593"
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void runSearch();
-            }}
-            style={{ width: '100%' }}
-            autoFocus
+            ariaLabel="Search Google Books"
           />
-        </span>
+        </div>
         <Dropdown
           value={lang}
           options={LANG_OPTIONS}
