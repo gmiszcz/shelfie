@@ -14,6 +14,7 @@ import { formatAuthors } from '../format';
 import { api } from '../services/api';
 import {
   barOption,
+  filterBooks,
   presetRange,
   toIsoDate,
   type BarColors,
@@ -21,6 +22,7 @@ import {
   type StatsMetric,
 } from '../statsView';
 import type { Book, GroupBy, StatsResponse } from '../types';
+import { SearchInput } from '../ui';
 
 import './Stats.css';
 
@@ -72,6 +74,7 @@ export function Stats() {
   const [customRange, setCustomRange] = useState<(Date | null)[] | null>(null);
   const [groupBy, setGroupBy] = useState<GroupBy>('month');
   const [metric, setMetric] = useState<StatsMetric>('books');
+  const [tableSearch, setTableSearch] = useState('');
 
   const [data, setData] = useState<StatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -123,6 +126,12 @@ export function Stats() {
   }, [data, metric, themeKey]);
 
   const summary = data?.summary;
+
+  const allBooks = useMemo(() => data?.books ?? [], [data]);
+  const filteredBooks = useMemo(
+    () => filterBooks(allBooks, tableSearch),
+    [allBooks, tableSearch],
+  );
 
   const coverTemplate = (book: Book) => (
     <div className="stats-cover">
@@ -206,31 +215,41 @@ export function Stats() {
         {loading || !summary ? (
           Array.from({ length: 4 }).map((_, i) => (
             <Card key={i} className="stats-card">
-              <Skeleton width="60%" height="0.9rem" />
-              <Skeleton width="40%" height="1.6rem" />
+              <div className="stats-card-inner">
+                <Skeleton width="60%" height="0.9rem" />
+                <Skeleton width="40%" height="1.6rem" />
+              </div>
             </Card>
           ))
         ) : (
           <>
             <Card className="stats-card">
-              <span className="stats-card-label">Books read</span>
-              <span className="stats-card-value">{summary.books.toLocaleString()}</span>
+              <div className="stats-card-inner">
+                <span className="stats-card-label">Books read</span>
+                <span className="stats-card-value">{summary.books.toLocaleString()}</span>
+              </div>
             </Card>
             <Card className="stats-card">
-              <span className="stats-card-label">Pages read</span>
-              <span className="stats-card-value">{summary.pages.toLocaleString()}</span>
+              <div className="stats-card-inner">
+                <span className="stats-card-label">Pages read</span>
+                <span className="stats-card-value">{summary.pages.toLocaleString()}</span>
+              </div>
             </Card>
             <Card className="stats-card">
-              <span className="stats-card-label">Average stars</span>
-              <span className="stats-card-value">
-                {summary.average_stars != null ? summary.average_stars.toFixed(2) : '—'}
-              </span>
+              <div className="stats-card-inner">
+                <span className="stats-card-label">Average stars</span>
+                <span className="stats-card-value">
+                  {summary.average_stars != null ? summary.average_stars.toFixed(2) : '—'}
+                </span>
+              </div>
             </Card>
             <Card className="stats-card">
-              <span className="stats-card-label">Period</span>
-              <span className="stats-card-value stats-card-period">
-                {formatPeriod(data?.date_from ?? null, data?.date_to ?? null)}
-              </span>
+              <div className="stats-card-inner">
+                <span className="stats-card-label">Period</span>
+                <span className="stats-card-value stats-card-period">
+                  {formatPeriod(data?.date_from ?? null, data?.date_to ?? null)}
+                </span>
+              </div>
             </Card>
           </>
         )}
@@ -253,23 +272,42 @@ export function Stats() {
         {loading ? (
           <Skeleton width="100%" height="300px" />
         ) : (
-          <DataTable
-            value={data?.books ?? []}
-            paginator
-            rows={10}
-            sortMode="single"
-            removableSort
-            dataKey="id"
-            emptyMessage="No finished books in this range."
-            responsiveLayout="scroll"
-          >
-            <Column header="" body={coverTemplate} style={{ width: '3.5rem' }} />
-            <Column field="title" header="Title" sortable />
-            <Column header="Authors" body={authorsTemplate} sortable sortField="authors" />
-            <Column field="finished_on" header="Finished" sortable style={{ width: '9rem' }} />
-            <Column header="Stars" body={starsTemplate} sortable sortField="stars" />
-            <Column header="Shelves" body={shelvesTemplate} />
-          </DataTable>
+          <div className="stats-table">
+            <div className="stats-table-toolbar">
+              <SearchInput
+                value={tableSearch}
+                onChange={setTableSearch}
+                ariaLabel="Search finished books"
+                placeholder="Search title, author, series, shelf or tag…"
+                fullWidth={false}
+                className="stats-table-search"
+              />
+              <span className="stats-table-count">
+                {filteredBooks.length} of {allBooks.length}
+              </span>
+            </div>
+            <DataTable
+              value={filteredBooks}
+              paginator
+              rows={10}
+              sortMode="single"
+              removableSort
+              dataKey="id"
+              emptyMessage={
+                allBooks.length === 0
+                  ? 'No finished books in this range.'
+                  : 'No books match your search.'
+              }
+              responsiveLayout="scroll"
+            >
+              <Column header="" body={coverTemplate} style={{ width: '3.5rem' }} />
+              <Column field="title" header="Title" sortable />
+              <Column header="Authors" body={authorsTemplate} sortable sortField="authors" />
+              <Column field="finished_on" header="Finished" sortable style={{ width: '9rem' }} />
+              <Column header="Stars" body={starsTemplate} sortable sortField="stars" />
+              <Column header="Shelves" body={shelvesTemplate} />
+            </DataTable>
+          </div>
         )}
       </Card>
     </div>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import type { StatsBucket } from './types';
-import { barOption, presetRange, toIsoDate, type BarColors } from './statsView';
+import type { Book, StatsBucket } from './types';
+import { barOption, filterBooks, presetRange, toIsoDate, type BarColors } from './statsView';
 
 const COLORS: BarColors = {
   bar: '#8b9cff',
@@ -119,5 +119,88 @@ describe('barOption', () => {
     };
     expect(option.xAxis.data).toEqual([]);
     expect(option.series[0].data).toEqual([]);
+  });
+});
+
+describe('filterBooks', () => {
+  /** Build a Book with only the fields filterBooks reads; the rest are filler. */
+  const makeBook = (over: Partial<Book>): Book =>
+    ({
+      id: 1,
+      title: '',
+      subtitle: null,
+      authors: [],
+      series: null,
+      shelves: [],
+      tags: [],
+      ...over,
+    }) as Book;
+
+  const books: Book[] = [
+    makeBook({
+      id: 1,
+      title: 'Dune',
+      authors: ['Frank Herbert'],
+      series: 'Dune Chronicles',
+      shelves: ['sci-fi'],
+      tags: ['classic'],
+    }),
+    makeBook({
+      id: 2,
+      title: 'The Hobbit',
+      subtitle: 'There and Back Again',
+      authors: ['J.R.R. Tolkien'],
+      shelves: ['fantasy'],
+      tags: ['owned'],
+    }),
+    makeBook({
+      id: 3,
+      title: 'Foundation',
+      authors: ['Isaac Asimov'],
+      shelves: ['sci-fi'],
+      tags: [],
+    }),
+  ];
+
+  it('returns all books for an empty or whitespace query', () => {
+    expect(filterBooks(books, '')).toHaveLength(3);
+    expect(filterBooks(books, '   ')).toHaveLength(3);
+  });
+
+  it('matches by title (case-insensitive)', () => {
+    expect(filterBooks(books, 'dune').map((b) => b.id)).toEqual([1]);
+    expect(filterBooks(books, 'HOBBIT').map((b) => b.id)).toEqual([2]);
+  });
+
+  it('matches by author', () => {
+    expect(filterBooks(books, 'asimov').map((b) => b.id)).toEqual([3]);
+  });
+
+  it('matches by subtitle', () => {
+    expect(filterBooks(books, 'there and back').map((b) => b.id)).toEqual([2]);
+  });
+
+  it('matches by series', () => {
+    expect(filterBooks(books, 'chronicles').map((b) => b.id)).toEqual([1]);
+  });
+
+  it('matches by shelf and by tag', () => {
+    expect(filterBooks(books, 'sci-fi').map((b) => b.id)).toEqual([1, 3]);
+    expect(filterBooks(books, 'classic').map((b) => b.id)).toEqual([1]);
+  });
+
+  it('requires ALL space-separated terms to match (AND)', () => {
+    expect(filterBooks(books, 'sci-fi asimov').map((b) => b.id)).toEqual([3]);
+    expect(filterBooks(books, 'dune tolkien')).toHaveLength(0);
+  });
+
+  it('returns an empty list when nothing matches', () => {
+    expect(filterBooks(books, 'zzzznotfound')).toHaveLength(0);
+  });
+
+  it('tolerates null/undefined optional fields', () => {
+    const sparse = [makeBook({ id: 9, title: 'Solo', authors: [], series: null })];
+    expect(filterBooks(sparse, 'solo').map((b) => b.id)).toEqual([9]);
+    expect(filterBooks(sparse, 'anything')).toHaveLength(0);
   });
 });

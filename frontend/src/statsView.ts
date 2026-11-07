@@ -1,6 +1,7 @@
-/** Pure helpers for the statistics page: preset date ranges, local date formatting, and
- * ECharts bar-chart option building. No React, no DOM — fully unit-testable. */
-import type { StatsBucket } from './types';
+/** Pure helpers for the statistics page: preset date ranges, local date formatting,
+ * client-side table search, and ECharts bar-chart option building. No React, no DOM —
+ * fully unit-testable. */
+import type { Book, StatsBucket } from './types';
 
 export type PresetRange = 'thisYear' | 'lastYear' | 'last12Months' | 'allTime';
 export type StatsMetric = 'books' | 'pages';
@@ -44,6 +45,30 @@ export function presetRange(preset: PresetRange, today: Date = new Date()): Date
     default:
       return { from: null, to: null };
   }
+}
+
+/**
+ * Client-side search over the finished-books table. A book matches when EVERY
+ * space-separated term appears (case-insensitively) somewhere in its searchable
+ * fields: title, subtitle, authors, series, shelves and tags. An empty or
+ * whitespace-only query returns the list unchanged.
+ */
+export function filterBooks(books: Book[], query: string): Book[] {
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return books;
+  return books.filter((book) => {
+    const haystack = [
+      book.title,
+      book.subtitle ?? '',
+      ...(book.authors ?? []),
+      book.series ?? '',
+      ...(book.shelves ?? []),
+      ...(book.tags ?? []),
+    ]
+      .join(' ')
+      .toLowerCase();
+    return terms.every((term) => haystack.includes(term));
+  });
 }
 
 export interface BarColors {
