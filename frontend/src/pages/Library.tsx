@@ -378,6 +378,15 @@ export function Library() {
     }
   };
 
+  const handleFavourite = async (id: number, next: boolean) => {
+    try {
+      await update(id, { favourite: next });
+      setSelected((prev) => (prev && prev.id === id ? { ...prev, favourite: next } : prev));
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Could not update favourite');
+    }
+  };
+
   const handleDelete = async (id: number) => {
     try {
       await remove(id);
@@ -477,7 +486,12 @@ export function Library() {
           <p>No books match the current filter.</p>
         </div>
       ) : (
-        <BookGrid books={visibleBooks} loading={loading} onOpen={setSelected} />
+        <BookGrid
+          books={visibleBooks}
+          loading={loading}
+          onOpen={setSelected}
+          onToggleFavourite={(book, next) => handleFavourite(book.id, next)}
+        />
       )}
 
       <BookDetailDialog
@@ -487,6 +501,7 @@ export function Library() {
         onStars={handleStars}
         onDelete={handleDelete}
         onEdit={openEdit}
+        onFavourite={handleFavourite}
       />
 
       <SearchDialog

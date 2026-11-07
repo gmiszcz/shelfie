@@ -12,7 +12,7 @@ import { useSettings } from '../settings/SettingsContext';
 import type { DetailSection } from '../settings/settingsTypes';
 import type { Book, BookInsights, ReadingStatus } from '../types';
 import { STATUS_LABELS } from '../types';
-import { BookCover, StatusTag } from '../ui';
+import { BookCover, FavouriteToggle, StatusTag } from '../ui';
 
 interface Props {
   book: Book | null;
@@ -21,6 +21,8 @@ interface Props {
   onStars: (id: number, stars: number | null) => void;
   onDelete: (id: number) => void;
   onEdit: (id: number) => void;
+  /** When provided, a heart toggle is shown next to the title. */
+  onFavourite?: (id: number, next: boolean) => void;
 }
 
 const STATUS_OPTIONS = (Object.keys(STATUS_LABELS) as ReadingStatus[]).map((value) => ({
@@ -69,7 +71,15 @@ function Section({ title, children }: { title?: string; children: ReactNode }) {
   );
 }
 
-export function BookDetailDialog({ book, onHide, onStatus, onStars, onDelete, onEdit }: Props) {
+export function BookDetailDialog({
+  book,
+  onHide,
+  onStatus,
+  onStars,
+  onDelete,
+  onEdit,
+  onFavourite,
+}: Props) {
   const { settings } = useSettings();
   const [showDetails, setShowDetails] = useState(settings.showAllDetails);
 
@@ -123,6 +133,19 @@ export function BookDetailDialog({ book, onHide, onStatus, onStars, onDelete, on
             {year && ` · ${year}`}
             {book.publisher && ` · ${book.publisher}`}
           </div>
+
+          {onFavourite && (
+            <div className="flex align-items-center gap-2">
+              <FavouriteToggle
+                variant="inline"
+                value={book.favourite}
+                onChange={(next) => onFavourite(book.id, next)}
+              />
+              <span style={{ color: 'var(--app-text-muted)' }}>
+                {book.favourite ? 'In favourites' : 'Add to favourites'}
+              </span>
+            </div>
+          )}
 
           {book.translators.length > 0 && (
             <div style={{ color: 'var(--app-text-muted)' }}>

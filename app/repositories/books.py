@@ -41,6 +41,7 @@ def row_to_book(row: Mapping[str, Any] | sqlite3.Row) -> Book:
         raw = data.get(column)
         data[column] = json.loads(raw) if raw else None
     data["signed"] = bool(data.get("signed"))
+    data["favourite"] = bool(data.get("favourite"))
     data.pop("user_id", None)
     data["added_at"] = data.get("added_at") or ""
     data["updated_at"] = data.get("updated_at") or ""

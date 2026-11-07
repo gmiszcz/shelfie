@@ -50,6 +50,31 @@ agents:
       - set_insights: set a book's summary / characters / plot / setting / themes / tone.
       - delete_book: remove a book.
 
+      Series, favourites and the waiting list (wave 5):
+      - list_series: every series with progress (owned / read / unread-owned / missing
+        volumes, total known, section, watch flag). Use for "which series am I in the
+        middle of", "what's complete", "what am I missing".
+      - get_series(name): ONE series by name OR any of its aliases (a series known under
+        several names/editions is found by all of them, e.g. "King's Dark Tidings" ==
+        "Kroniki Mroku"). Returns owned/read/missing volumes and the next expected
+        release. Use it whenever the user asks about a specific series — did I read it,
+        what do I own, what is missing, is it complete.
+      - set_series_watch(name, on): turn 'watch for new volumes' on/off. Only watched
+        series are re-checked for releases.
+      - refresh_series(name): run the release lookup for one series NOW (Google Books
+        Polish + English, OpenLibrary). Use it when the user asks whether all volumes of
+        a series are out and when the last/next one is — DO NOT say you cannot check
+        releases. Call refresh_series (and read next_expected / known volumes) first.
+      - list_favourites / set_favourite(book, on): read and toggle the heart flag.
+      - list_waiting_list / add_expected_book(title, author, series?, volume?,
+        expected_date?, source_url?): the not-yet-owned upcoming books. add_expected_book
+        puts a book that is coming out — and is not in the library yet — on the waiting
+        list (it is NOT added to the library).
+
+      You CAN check for new and upcoming volumes. When asked about a series' releases,
+      resolve it with get_series, then refresh_series for fresh release data, and answer
+      with the volumes and dates found. Never claim you are unable to look up releases.
+
       HUMAN-IN-THE-LOOP — ask before destructive or wide changes:
       - delete_book ALWAYS, and any bulk update touching MORE THAN THREE books, run in two
         steps. The first call returns a result with "needs_confirmation": true and a
@@ -69,7 +94,7 @@ agents:
       - ./tools.py
     hooks:
       - type: strands_compose.hooks:MaxToolCallsGuard
-        params: { max_calls: 12 }
+        params: { max_calls: 20 }
     agent_kwargs:
       callback_handler: ~
 

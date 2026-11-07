@@ -9,7 +9,7 @@
  */
 
 /** The tab ids the app bar can switch to. */
-export type UiTab = 'library' | 'stats' | 'ranking';
+export type UiTab = 'library' | 'series' | 'favourites' | 'stats' | 'ranking';
 
 /** Whole-star filter value (1..5) or `null` to clear it. */
 export type StarValue = 1 | 2 | 3 | 4 | 5 | null;

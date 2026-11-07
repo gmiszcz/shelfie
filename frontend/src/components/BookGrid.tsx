@@ -7,9 +7,10 @@ interface Props {
   books: Book[];
   loading: boolean;
   onOpen: (book: Book) => void;
+  onToggleFavourite?: (book: Book, next: boolean) => void;
 }
 
-export function BookGrid({ books, loading, onOpen }: Props) {
+export function BookGrid({ books, loading, onOpen, onToggleFavourite }: Props) {
   if (loading) {
     return (
       <div className="book-grid">
@@ -38,7 +39,12 @@ export function BookGrid({ books, loading, onOpen }: Props) {
   return (
     <div className="book-grid">
       {books.map((book) => (
-        <BookCard key={book.id} book={book} onOpen={onOpen} />
+        <BookCard
+          key={book.id}
+          book={book}
+          onOpen={onOpen}
+          onToggleFavourite={onToggleFavourite}
+        />
       ))}
     </div>
   );

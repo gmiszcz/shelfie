@@ -48,6 +48,7 @@ export function makeBook(overrides: Partial<Book> = {}): Book {
       source: 'agent',
     },
     signed: true,
+    favourite: true,
     condition: 'Good',
     copies: 1,
     purchase_date: '2024-02-01',

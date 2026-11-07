@@ -41,6 +41,7 @@ function makeBook(over: Partial<Book>): Book {
     notes: null,
     quotes: null,
     signed: false,
+    favourite: false,
     condition: null,
     copies: 1,
     purchase_date: null,

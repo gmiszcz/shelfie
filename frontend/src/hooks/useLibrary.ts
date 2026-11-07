@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { api } from '../services/api';
-import type { Book, ReadingStatus, VolumeSearchResult } from '../types';
+import type { Book, BookPatch, ReadingStatus, VolumeSearchResult } from '../types';
 
 export interface UseLibrary {
   books: Book[];
@@ -9,7 +9,7 @@ export interface UseLibrary {
   error: string | null;
   reload: () => Promise<void>;
   add: (volume: VolumeSearchResult, status?: ReadingStatus) => Promise<Book>;
-  update: (id: number, changes: { status?: ReadingStatus; stars?: number | null }) => Promise<void>;
+  update: (id: number, changes: BookPatch) => Promise<void>;
   remove: (id: number) => Promise<void>;
   /** Insert a newly created book, or replace an existing one by id. */
   upsert: (book: Book) => void;
@@ -43,7 +43,7 @@ export function useLibrary(): UseLibrary {
   }, []);
 
   const update = useCallback(
-    async (id: number, changes: { status?: ReadingStatus; stars?: number | null }) => {
+    async (id: number, changes: BookPatch) => {
       const updated = await api.updateBook(id, changes);
       setBooks((prev) => prev.map((b) => (b.id === id ? updated : b)));
     },
