@@ -93,8 +93,8 @@ short line.
 ## Which anchors ship today
 
 - **Global:** `nav.tab`, `theme.toggle`, `settings.sidebar`, `settings.showAllDetails`,
-  and one toggle per settings card field / detail section (`settings.cardFields.*`,
-  `settings.detailSections.*`).
+  `settings.showVoiceButton`, and one toggle per settings card field / detail
+  section (`settings.cardFields.*`, `settings.detailSections.*`).
 - **Library tab:** `library.search`, `library.starFilter`, `library.filter`,
   `library.books` (list → open), `library.addBook` (search/manual),
   `library.dialogs` (close), and the structured facets above.
@@ -106,6 +106,17 @@ short line.
 **Every new interactive control calls `useAgentAnchor`.** That one line is all
 that is needed for the UI agent to discover and drive it — there is nothing to add
 to the agent, its tools or any database.
+
+## Driven from the global microphone too
+
+The UI agent is driven not only from the chat panel but also from the **global
+microphone** on the main view (see [voice-input.md](voice-input.md)). The chat and
+UI-agent state is single-sourced in `frontend/src/chat/ChatProvider.tsx`, so a
+transcript spoken at the global mic runs the **same** generic tools over the
+**same** thread and client as the panel — it navigates, filters, searches and opens
+dialogs through the registry exactly as a typed message would, without the chat
+panel opening. The registry and tools are unchanged by this: they do not know or
+care whether the turn came from the panel or the global mic.
 
 ## Files
 

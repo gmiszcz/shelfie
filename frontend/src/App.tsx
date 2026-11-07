@@ -2,7 +2,9 @@ import { Button } from 'primereact/button';
 import { useCallback, useEffect, useState } from 'react';
 
 import { useAgentAnchor, setStaticTabs, setActiveTab } from './agent-ui';
-import { ChatWidget } from './components/ChatWidget';
+import { ChatProvider, useChat } from './chat/ChatProvider';
+import { ChatWidget, chatMicRegistry } from './components/ChatWidget';
+import { GlobalMic, globalMicRegistry } from './components/GlobalMic';
 import { Library } from './pages/Library';
 import { Series } from './pages/Series';
 import { Favourites } from './pages/Favourites';
@@ -131,6 +133,13 @@ function SettingsAnchors() {
         get={() => settings.showAllDetails}
         settingKey="showAllDetails"
       />
+      <SettingAnchor
+        id="settings.showVoiceButton"
+        label="Show voice button"
+        description="Show the floating microphone on the main view, next to the chat bubble, so the user can talk to the assistant without opening the chat."
+        get={() => settings.showVoiceButton}
+        settingKey="showVoiceButton"
+      />
     </>
   );
 }
@@ -146,6 +155,7 @@ function AppShell() {
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [page, setPage] = useState<UiTab>('library');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const { open: chatOpen, setOpen: setChatOpen, switchMode } = useChat();
 
   useEffect(() => {
     applyTheme(theme);
@@ -155,6 +165,36 @@ function AppShell() {
       // ignore
     }
   }, [theme]);
+
+  // Central Ctrl+M routing (single owner, so no mic double-fires): when the chat
+  // panel is open, toggle the chat mic; otherwise toggle the global mic on the
+  // main view. Esc cancels whichever mic is recording. Neither MicButton owns
+  // the shortcut (both pass captureShortcuts={false}).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && (e.key === 'm' || e.key === 'M')) {
+        e.preventDefault();
+        if (chatOpen) {
+          chatMicRegistry.current?.toggle();
+        } else if (globalMicRegistry.current) {
+          globalMicRegistry.current.toggle();
+        } else {
+          // No global mic (setting off): fall back to opening the chat on the UI
+          // agent so Ctrl+M still reaches a microphone.
+          switchMode('ui');
+          setChatOpen(true);
+        }
+      } else if (e.key === 'Escape') {
+        if (chatMicRegistry.current?.isRecording()) {
+          chatMicRegistry.current.cancel();
+        } else if (globalMicRegistry.current?.isRecording()) {
+          globalMicRegistry.current.cancel();
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [chatOpen, setChatOpen, switchMode]);
 
   const toggleTheme = useCallback(() => setTheme((t) => (t === 'dark' ? 'light' : 'dark')), []);
 
@@ -262,6 +302,7 @@ function AppShell() {
 
       <SettingsSidebar visible={settingsOpen} onHide={() => setSettingsOpen(false)} />
       <ChatWidget />
+      <GlobalMic />
     </>
   );
 }
@@ -269,7 +310,9 @@ function AppShell() {
 export default function App() {
   return (
     <SettingsProvider>
-      <AppShell />
+      <ChatProvider>
+        <AppShell />
+      </ChatProvider>
     </SettingsProvider>
   );
 }

@@ -1,25 +1,16 @@
 import { Button } from 'primereact/button';
 import { InputTextarea } from 'primereact/inputtextarea';
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { runAgent, type AgUiMessage } from '../agui/client';
-import { describeAction } from '../agui/labels';
-import { createTools } from '../agui/tools';
-import { api } from '../services/api';
-import { type ChatMessage, chatReducer, initialChatState } from '../chat/chatState';
+import { useChat } from '../chat/ChatProvider';
+import { type ChatMessage } from '../chat/chatState';
 import { renderMarkdown } from '../chat/markdown';
-import { readChatStream } from '../chat/sse';
-import type { FinalMeta, TranscriptLanguage } from '../chat/useVoiceInput';
-import { MicButton } from './MicButton';
-import type { Book, ChatEvent } from '../types';
+import type { FinalMeta } from '../chat/useVoiceInput';
+import { MicButton, type MicHandle } from './MicButton';
 import './ChatWidget.css';
 
 /** The two chat agents the widget switches between. */
 type AgentMode = 'library' | 'ui';
-
-const SESSION_KEY = 'shelfie.chat.sessionId';
-const MODE_KEY = 'shelfie.chat.mode';
-const LANG_KEY = 'shelfie.chat.voiceLang';
 
 /** Human labels for the LIBRARY agent's backend data tools. */
 const TOOL_LABELS: Record<string, string> = {
@@ -45,10 +36,6 @@ const EXAMPLE_PROMPTS: Record<AgentMode, string[]> = {
 
 function toolLabel(name: string): string {
   return TOOL_LABELS[name] ?? name;
-}
-
-function newId(prefix: string): string {
-  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 /** Collapsible reasoning block: expanded while streaming, auto-collapses when done. */
@@ -165,94 +152,59 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   );
 }
 
+/**
+ * The floating chat panel.
+ *
+ * The chat/UI-agent STATE lives in {@link useChat} (the shared ChatProvider), so
+ * the global microphone on the main view drives the same UI-agent thread and
+ * client. This widget owns only the panel's own view state: the text input, the
+ * scroll position, and the in-panel mic. Its mic exposes a {@link MicHandle} so
+ * the shell can route `Ctrl+M` to it while the panel is open.
+ */
 export function ChatWidget() {
-  const [open, setOpen] = useState(false);
-  const [state, dispatch] = useReducer(chatReducer, initialChatState);
-  const [input, setInput] = useState('');
-  const [streaming, setStreaming] = useState(false);
-  const [mode, setMode] = useState<AgentMode>(() => {
-    const saved = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(MODE_KEY) : null;
-    return saved === 'ui' ? 'ui' : 'library';
-  });
-  const [voiceLang, setVoiceLang] = useState<TranscriptLanguage>(() => {
-    const saved = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(LANG_KEY) : null;
-    return saved === 'en-US' ? 'en-US' : 'pl-PL';
-  });
+  const {
+    open,
+    setOpen,
+    mode,
+    switchMode,
+    voiceLang,
+    setVoiceLang,
+    state,
+    streaming,
+    send,
+    stop,
+    newChat,
+  } = useChat();
 
-  const sessionRef = useRef<string | null>(
-    typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SESSION_KEY) : null,
-  );
-  const abortRef = useRef<AbortController | null>(null);
+  const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  // The UI agent keeps the full conversation (AG-UI messages) across turns, and
-  // a cache of the loaded books for its browser-side find_books tool.
-  const uiMessagesRef = useRef<AgUiMessage[]>([]);
-  const booksRef = useRef<Book[]>([]);
+  const micRef = useRef<MicHandle | null>(null);
 
   // onFinal from the mic: a VAD end-of-speech sends immediately; a manual stop
   // drops the text into the input box for the user to review.
-  const sendRef = useRef<(raw: string) => void>(() => {});
-  const onFinalTranscript = useCallback((text: string, meta: FinalMeta) => {
-    if (meta.autoSend) {
-      sendRef.current(text);
-      return;
-    }
-    setInput((prev) => (prev ? `${prev} ${text}`.replace(/\s+/g, ' ') : text));
-    inputRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    try {
-      sessionStorage.setItem(MODE_KEY, mode);
-    } catch {
-      // ignore
-    }
-  }, [mode]);
-  useEffect(() => {
-    try {
-      sessionStorage.setItem(LANG_KEY, voiceLang);
-    } catch {
-      // ignore
-    }
-  }, [voiceLang]);
-
-  // Keep a fresh book list for the UI agent's find_books tool while in UI mode.
-  useEffect(() => {
-    if (mode !== 'ui' || !open) {
-      return;
-    }
-    let cancelled = false;
-    void api
-      .listBooks()
-      .then((books) => {
-        if (!cancelled) {
-          booksRef.current = books;
-        }
-      })
-      .catch(() => {
-        // find_books degrades to "no books loaded"; the agent reports it.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [mode, open]);
-
-  // Library agent: dispatch each backend wire event into the reducer.
-  const handleLibraryEvent = useCallback((event: ChatEvent) => {
-    dispatch({ type: 'event', event });
-  }, []);
-
-  useEffect(() => {
-    if (state.sessionId) {
-      sessionRef.current = state.sessionId;
-      try {
-        sessionStorage.setItem(SESSION_KEY, state.sessionId);
-      } catch {
-        // ignore
+  const onFinalTranscript = useCallback(
+    (text: string, meta: FinalMeta) => {
+      if (meta.autoSend) {
+        void send(text);
+        return;
       }
-    }
-  }, [state.sessionId]);
+      setInput((prev) => (prev ? `${prev} ${text}`.replace(/\s+/g, ' ') : text));
+      inputRef.current?.focus();
+    },
+    [send],
+  );
+
+  // Expose the open panel's mic to the shell so Ctrl+M routes here when open.
+  useEffect(() => {
+    const el = chatMicRegistry;
+    el.current = open ? micRef.current : null;
+    return () => {
+      if (el.current === micRef.current) {
+        el.current = null;
+      }
+    };
+  }, [open]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -261,145 +213,20 @@ export function ChatWidget() {
     }
   }, [state.messages, open]);
 
-  /** Run the LIBRARY agent (existing backend strands-compose over SSE). */
-  const sendLibrary = useCallback(
-    async (text: string, controller: AbortController) => {
-      const resp = await api.chat(text, sessionRef.current, 'library', controller.signal);
-      await readChatStream(resp, handleLibraryEvent, controller.signal);
-    },
-    [handleLibraryEvent],
-  );
-
-  /** Run the UI agent (browser-side frontend-tools loop). */
-  const sendUi = useCallback(async (text: string, controller: AbortController) => {
-    const tools = createTools({ getBooks: () => booksRef.current });
-    const history = uiMessagesRef.current;
-    history.push({ role: 'user', content: text });
-
-    const result = await runAgent({
-      threadId: sessionRef.current ?? (sessionRef.current = newId('t')),
-      messages: history,
-      tools,
-      signal: controller.signal,
-      callbacks: {
-        onTextDelta: (delta) => dispatch({ type: 'text_delta', text: delta }),
-        onToolCall: (call) =>
-          dispatch({
-            type: 'action_start',
-            id: call.id,
-            name: call.name,
-            label: describeAction(call.name, call.args),
-            args: call.args,
-          }),
-        onToolResult: (id, _result, ok) => dispatch({ type: 'action_result', id, ok }),
-        onError: (message) => dispatch({ type: 'error', message }),
-        onRunFinish: () => dispatch({ type: 'finish', ok: true }),
-      },
-    });
-
-    // Persist the full conversation (assistant + tool turns) for the next message.
-    uiMessagesRef.current = result.messages;
-    if (result.error) {
-      dispatch({ type: 'finish', ok: false, error: result.error });
-    } else {
-      dispatch({ type: 'finish', ok: true });
-    }
-  }, []);
-
-  const send = useCallback(
-    async (raw: string) => {
-      const text = raw.trim();
-      if (!text || streaming) {
-        return;
-      }
-      setInput('');
-      dispatch({ type: 'send', text, userId: newId('u'), assistantId: newId('a') });
-      setStreaming(true);
-
-      const controller = new AbortController();
-      abortRef.current = controller;
-      try {
-        if (mode === 'ui') {
-          await sendUi(text, controller);
-        } else {
-          await sendLibrary(text, controller);
-        }
-      } catch (err) {
-        if (controller.signal.aborted) {
-          dispatch({ type: 'finish', ok: true });
-        } else {
-          const message = err instanceof Error ? err.message : 'Request failed';
-          dispatch({ type: 'error', message });
-          dispatch({ type: 'finish', ok: false, error: message });
-        }
-      } finally {
-        if (abortRef.current === controller) {
-          abortRef.current = null;
-        }
-        setStreaming(false);
-      }
-    },
-    [streaming, mode, sendUi, sendLibrary],
-  );
-  sendRef.current = (raw: string) => void send(raw);
-
-  const stop = useCallback(() => {
-    abortRef.current?.abort();
-  }, []);
-
-  // Ctrl+M opens the chat when it is closed; MicButton's own window-level
-  // handler then toggles recording once the panel (and the hook) are mounted.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && (e.key === 'm' || e.key === 'M') && !open) {
-        e.preventDefault();
-        setOpen(true);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open]);
-
-  const newChat = useCallback(async () => {
-    stop();
-    const current = sessionRef.current;
-    const wasLibrary = mode === 'library';
-    dispatch({ type: 'reset' });
-    sessionRef.current = null;
-    uiMessagesRef.current = [];
-    try {
-      sessionStorage.removeItem(SESSION_KEY);
-    } catch {
-      // ignore
-    }
-    // Only the library agent has server-side session state to reset.
-    if (current && wasLibrary) {
-      try {
-        await api.resetChat(current);
-      } catch {
-        // best-effort
-      }
-    }
-  }, [stop, mode]);
-
-  // Switching agents starts a clean conversation (their histories differ).
-  const switchMode = useCallback(
-    (next: AgentMode) => {
-      if (next === mode) {
-        return;
-      }
-      setMode(next);
-      void newChat();
-    },
-    [mode, newChat],
-  );
-
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       void send(input);
     }
   };
+
+  const submit = useCallback(
+    (text: string) => {
+      setInput('');
+      void send(text);
+    },
+    [send],
+  );
 
   const empty = state.messages.length === 0;
   const title = mode === 'ui' ? 'UI agent' : 'Library agent';
@@ -411,7 +238,7 @@ export function ChatWidget() {
         icon="pi pi-comments"
         rounded
         aria-label={open ? 'Close chat' : 'Open assistant'}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen(!open)}
       />
 
       {open && (
@@ -476,7 +303,7 @@ export function ChatWidget() {
                       type="button"
                       key={p}
                       className="chat-example"
-                      onClick={() => void send(p)}
+                      onClick={() => submit(p)}
                     >
                       {p}
                     </button>
@@ -495,16 +322,18 @@ export function ChatWidget() {
               aria-label={`Voice language: ${voiceLang === 'pl-PL' ? 'Polish' : 'English'}. Click to switch.`}
               title={`Voice language: ${voiceLang === 'pl-PL' ? 'Polish' : 'English'}`}
               disabled={streaming}
-              onClick={() => setVoiceLang((l) => (l === 'pl-PL' ? 'en-US' : 'pl-PL'))}
+              onClick={() => setVoiceLang(voiceLang === 'pl-PL' ? 'en-US' : 'pl-PL')}
             >
               {voiceLang === 'pl-PL' ? 'PL' : 'EN'}
             </button>
             <MicButton
+              ref={micRef}
               onFinal={onFinalTranscript}
               scope={mode}
               language={voiceLang}
               disabled={streaming}
               busy={streaming}
+              captureShortcuts={false}
             />
             <InputTextarea
               ref={inputRef}
@@ -530,7 +359,7 @@ export function ChatWidget() {
                 rounded
                 aria-label="Send"
                 disabled={!input.trim()}
-                onClick={() => void send(input)}
+                onClick={() => submit(input)}
               />
             )}
           </div>
@@ -539,3 +368,11 @@ export function ChatWidget() {
     </>
   );
 }
+
+/**
+ * A module-level handle to the OPEN panel's mic, so the shell's single Ctrl+M
+ * listener can toggle the chat mic when the panel is open and the global mic
+ * when it is closed, without either mic owning the shortcut (which would
+ * double-fire). The widget publishes its mic here only while open.
+ */
+export const chatMicRegistry: { current: MicHandle | null } = { current: null };
