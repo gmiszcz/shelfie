@@ -6,6 +6,7 @@ import { HalfStarRating } from './HalfStarRating';
 import { formatAuthors } from '../format';
 import { formatScore } from '../ranking';
 import type { Book, Winner } from '../types';
+import { BookCover } from '../ui';
 
 interface Props {
   left: Book;
@@ -38,13 +39,7 @@ function Side({
 }) {
   return (
     <div className="compare-card">
-      <div className="compare-cover">
-        {book.cover_url ? (
-          <img src={book.cover_url} alt={`Cover of ${book.title}`} loading="lazy" />
-        ) : (
-          <i className="pi pi-book" style={{ fontSize: '2.5rem' }} />
-        )}
-      </div>
+      <BookCover src={book.cover_url} title={book.title} size="compare" />
       <div className="compare-meta">
         <span className="compare-title" title={book.title}>
           {book.title}

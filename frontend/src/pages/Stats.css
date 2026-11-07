@@ -138,24 +138,6 @@
 }
 
 /* --- Shared cell templates -------------------------------------------------------------- */
-.stats-cover {
-  width: 2.5rem;
-  aspect-ratio: 2 / 3;
-  border-radius: 4px;
-  overflow: hidden;
-  background: var(--app-surface-2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--app-text-muted);
-}
-
-.stats-cover img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
 .stats-tags {
   display: flex;
   flex-wrap: wrap;

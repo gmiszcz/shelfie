@@ -22,7 +22,7 @@ import {
   type StatsMetric,
 } from '../statsView';
 import type { Book, GroupBy, StatsResponse } from '../types';
-import { SearchInput } from '../ui';
+import { BookCover, SearchInput } from '../ui';
 
 import './Stats.css';
 
@@ -134,13 +134,7 @@ export function Stats() {
   );
 
   const coverTemplate = (book: Book) => (
-    <div className="stats-cover">
-      {book.cover_url ? (
-        <img src={book.cover_url} alt={`Cover of ${book.title}`} loading="lazy" />
-      ) : (
-        <i className="pi pi-book" />
-      )}
-    </div>
+    <BookCover src={book.cover_url} title={book.title} size="thumb" />
   );
 
   const authorsTemplate = (book: Book) => formatAuthors(book.authors);

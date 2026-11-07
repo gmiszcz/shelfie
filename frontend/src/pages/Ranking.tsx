@@ -26,7 +26,7 @@ import {
 } from '../ranking';
 import { api } from '../services/api';
 import type { Book, RatingPair, Winner } from '../types';
-import { SearchInput } from '../ui';
+import { BookCover, SearchInput } from '../ui';
 
 const ALL_SHELVES = '__all__';
 const UI_BUS_EVENT = 'shelfie:ui';
@@ -246,13 +246,7 @@ export function Ranking() {
   );
 
   const coverBody = (row: Book) => (
-    <div className="rank-cover">
-      {row.cover_url ? (
-        <img src={row.cover_url} alt={`Cover of ${row.title}`} loading="lazy" />
-      ) : (
-        <i className="pi pi-book" />
-      )}
-    </div>
+    <BookCover src={row.cover_url} title={row.title} size="thumb" />
   );
 
   const titleBody = (row: Book) => (

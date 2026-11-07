@@ -288,7 +288,7 @@
 
 .chat-mode-switch {
   display: flex;
-  gap: 0.35rem;
+  gap: var(--small-gap);
   padding: var(--small-padding) var(--big-padding);
   background: var(--app-surface-2);
   border-bottom: 1px solid var(--app-border);
@@ -299,8 +299,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
-  padding: 0.3rem 0.55rem;
+  gap: var(--small-gap);
+  padding: var(--small-padding) var(--default-padding);
   font-size: 0.78rem;
   font-weight: 600;
   line-height: 1;
@@ -329,15 +329,14 @@
 .chat-ui-actions {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  margin: 0.4rem 0;
+  gap: var(--small-gap);
 }
 
 .chat-ui-action {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0.35rem 0.6rem;
+  gap: var(--small-gap);
+  padding: var(--small-padding) var(--default-padding);
   font-size: 0.82rem;
   border-radius: var(--custom-border-radius, 8px);
   border: 1px solid var(--app-accent);
@@ -360,9 +359,9 @@
 .chat-voice-banner {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 0.6rem;
-  margin: 0 0.6rem 0.4rem;
+  gap: var(--small-gap);
+  padding: var(--small-padding) var(--default-padding);
+  margin: 0 var(--default-padding) var(--small-padding);
   font-size: 0.8rem;
   border-radius: var(--custom-border-radius, 8px);
 }

@@ -9,12 +9,15 @@ import { SettingsSidebar } from './settings/SettingsSidebar';
 import { UI_BUS_EVENT, dispatchUiAck, parseUiBusEvent } from './settings/uiBus';
 import type { UiTab } from './settings/uiBus';
 import { Stats } from './pages/Stats';
+// Vite: theme CSS as local URLs (no CDN), swapped at runtime via one <link>.
+import darkThemeUrl from 'primereact/resources/themes/lara-dark-indigo/theme.css?url';
+import lightThemeUrl from 'primereact/resources/themes/lara-light-indigo/theme.css?url';
 
 type Theme = 'dark' | 'light';
 
 const THEME_HREF: Record<Theme, string> = {
-  dark: 'https://unpkg.com/primereact@10.9.6/resources/themes/lara-dark-indigo/theme.css',
-  light: 'https://unpkg.com/primereact@10.9.6/resources/themes/lara-light-indigo/theme.css',
+  dark: darkThemeUrl,
+  light: lightThemeUrl,
 };
 
 const THEME_LINK_ID = 'primereact-theme';

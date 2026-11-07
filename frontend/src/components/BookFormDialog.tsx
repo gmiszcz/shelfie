@@ -154,7 +154,7 @@ export function BookFormDialog({ visible, mode, bookId, initial, onHide, onSaved
       visible={visible}
       onHide={onHide}
       footer={footer}
-      style={{ width: 'min(820px, 96vw)' }}
+      style={{ width: 'min(960px, 96vw)' }}
       dismissableMask={!saving}
       closable={!saving}
     >
@@ -167,6 +167,7 @@ export function BookFormDialog({ visible, mode, bookId, initial, onHide, onSaved
           {apiError && <div className="bf-api-error">{apiError}</div>}
 
           <TabView
+            className="bf-tabs"
             activeIndex={activeTab}
             onTabChange={(e) => setActiveTab(e.index)}
             scrollable

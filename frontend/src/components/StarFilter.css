@@ -8,8 +8,8 @@
 .star-filter-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.1rem;
-  padding: 0.25rem 0.5rem;
+  gap: var(--hairline-gap);
+  padding: var(--small-padding) var(--default-padding);
   border: 1px solid var(--app-border);
   border-radius: 999px;
   background: var(--app-surface-2);

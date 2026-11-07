@@ -4,7 +4,8 @@ import { Tag } from 'primereact/tag';
 import { formatAuthors, formatYear } from '../format';
 import { useSettings } from '../settings/SettingsContext';
 import type { Book } from '../types';
-import { STATUS_LABELS, STATUS_SEVERITY } from '../types';
+import { STATUS_LABELS } from '../types';
+import { BookCover, StatusTag } from '../ui';
 
 interface Props {
   book: Book;
@@ -30,13 +31,7 @@ export function BookCard({ book, onOpen }: Props) {
         if (e.key === 'Enter') onOpen(book);
       }}
     >
-      <div className="cover">
-        {book.cover_url ? (
-          <img src={book.cover_url} alt={`Cover of ${book.title}`} loading="lazy" />
-        ) : (
-          <i className="pi pi-book" style={{ fontSize: '2rem' }} />
-        )}
-      </div>
+      <BookCover src={book.cover_url} title={book.title} size="fill" />
       <div className="body">
         {/* Primary block: title + (for series volumes) the volume's own title as subtitle. */}
         <div className="card-heading">
@@ -82,7 +77,7 @@ export function BookCard({ book, onOpen }: Props) {
 
         <div className="card-footer">
           {f.status && (
-            <Tag value={STATUS_LABELS[book.status]} severity={STATUS_SEVERITY[book.status]} />
+            <StatusTag status={book.status} />
           )}
           {f.score && book.display_score != null ? (
             <Tag value={`Score ${book.display_score.toFixed(1)}`} severity="info" />

@@ -59,3 +59,9 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Compact tab headers so all eight tabs fit at desktop width. */
+.bf-tabs .p-tabview-nav-link {
+  padding: var(--default-padding) var(--big-padding);
+  gap: var(--small-gap);
+}

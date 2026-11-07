@@ -28,9 +28,23 @@ frontend/
 ## Conventions (from the skill)
 
 - **All spacing from `index.css :root` CSS variables** — never hardcoded `rem`/`px`, never `margin`
-  for sibling spacing (use flex/grid `gap`).
-- Dark/light theme via CSS swap + `MutationObserver`.
+  for sibling spacing (use flex/grid `gap`). `--hairline-gap` exists only for the optical gap
+  between star glyphs.
+- Dark/light theme via CSS swap: the PrimeReact theme files are imported locally with Vite
+  `?url` (`App.tsx`) and swapped on one `<link id="primereact-theme">`. No CDN.
 - Redux Toolkit for UI/config/library state; typed hooks.
+
+## Shared components (`frontend/src/ui/`)
+
+Reusable components live only here and are imported from `../ui`. Never re-implement them.
+
+| Component | Used in | What it owns |
+|---|---|---|
+| `SearchInput` | Library, Ranking, Statistics table, Add-book search | icon + clear button in reserved padding, never overlapping text |
+| `BookCover` | book card, detail dialog, compare pair, ranking and stats tables, search hits | 2:3 poster box, image or centered book icon; size presets `fill`, `detail`, `compare`, `thumb`, `hit` |
+| `StatusTag` | book card, detail dialog | reading-status label and colour |
+
+A new component that a second screen needs moves into `ui/` and is exported from `ui/index.ts`.
 
 ## Key surfaces
 

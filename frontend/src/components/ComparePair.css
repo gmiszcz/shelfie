@@ -29,26 +29,6 @@
   border-radius: var(--custom-border-radius);
 }
 
-.compare-cover {
-  aspect-ratio: 2 / 3;
-  max-height: 340px;
-  width: auto;
-  align-self: center;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--app-surface-2);
-  border-radius: var(--custom-border-radius);
-  color: var(--app-text-muted);
-  overflow: hidden;
-}
-
-.compare-cover img {
-  height: 100%;
-  width: 100%;
-  object-fit: contain;
-}
-
 .compare-meta {
   display: flex;
   flex-direction: column;

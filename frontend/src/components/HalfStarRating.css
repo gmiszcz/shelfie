@@ -6,7 +6,7 @@
 
 .half-star-stars {
   display: inline-flex;
-  gap: 2px;
+  gap: var(--hairline-gap);
   cursor: pointer;
   outline: none;
   border-radius: 4px;

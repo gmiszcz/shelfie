@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 
 import { formatAuthors, formatYear, hitKey } from '../format';
 import { api } from '../services/api';
-import { SearchInput } from '../ui';
+import { BookCover, SearchInput } from '../ui';
 import type { BookInput, VolumeSearchResult } from '../types';
 
 interface Props {
@@ -163,13 +163,7 @@ export function SearchDialog({
           const already = hit.google_volume_id != null && existingVolumeIds.has(hit.google_volume_id);
           return (
             <div className="search-hit" key={hitKey(hit, i)}>
-              {hit.cover_url ? (
-                <img src={hit.cover_url} alt="" loading="lazy" />
-              ) : (
-                <div className="no-cover flex align-items-center justify-content-center">
-                  <i className="pi pi-book" />
-                </div>
-              )}
+              <BookCover src={hit.cover_url} title="" size="hit" />
               <div className="hit-meta">
                 <div className="t">{hit.title}</div>
                 <div className="a">

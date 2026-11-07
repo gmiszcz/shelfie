@@ -11,7 +11,8 @@ import { HalfStarRating } from './HalfStarRating';
 import { useSettings } from '../settings/SettingsContext';
 import type { DetailSection } from '../settings/settingsTypes';
 import type { Book, BookInsights, ReadingStatus } from '../types';
-import { STATUS_LABELS, STATUS_SEVERITY } from '../types';
+import { STATUS_LABELS } from '../types';
+import { BookCover, StatusTag } from '../ui';
 
 interface Props {
   book: Book | null;
@@ -113,17 +114,7 @@ export function BookDetailDialog({ book, onHide, onStatus, onStars, onDelete, on
       dismissableMask
     >
       <div className="detail-grid">
-        <div className="cover detail-cover">
-          {book.cover_url ? (
-            <img
-              src={book.cover_url}
-              alt={`Cover of ${book.title}`}
-              style={{ width: '100%', borderRadius: 'var(--custom-border-radius)' }}
-            />
-          ) : (
-            <i className="pi pi-book" style={{ fontSize: '2rem' }} />
-          )}
-        </div>
+        <BookCover src={book.cover_url} title={book.title} size="detail" />
 
         <div className="detail-meta">
           {book.subtitle && <p className="detail-subtitle">{book.subtitle}</p>}
@@ -147,7 +138,7 @@ export function BookDetailDialog({ book, onHide, onStatus, onStars, onDelete, on
                 options={STATUS_OPTIONS}
                 onChange={(e) => onStatus(book.id, e.value as ReadingStatus)}
               />
-              <Tag value={STATUS_LABELS[book.status]} severity={STATUS_SEVERITY[book.status]} />
+              <StatusTag status={book.status} />
             </div>
           )}
 
@@ -177,7 +168,7 @@ export function BookDetailDialog({ book, onHide, onStatus, onStars, onDelete, on
 
           {on('pages') && (hasPositive(book.page_count) || hasPositive(book.pages_read)) && (
             <div style={{ color: 'var(--app-text-muted)' }}>
-              {hasPositive(book.pages_read) && `${book.pages_read} read`}
+              {hasPositive(book.pages_read) && `${book.pages_read} pages read`}
               {hasPositive(book.pages_read) && hasPositive(book.page_count) && ' / '}
               {hasPositive(book.page_count) && `${book.page_count} pages`}
             </div>
