@@ -11,6 +11,7 @@
 export type CardField =
   | 'author'
   | 'year'
+  | 'subtitle'
   | 'status'
   | 'score'
   | 'stars'
@@ -36,6 +37,7 @@ export type DetailSection =
 export const CARD_FIELDS: CardField[] = [
   'author',
   'year',
+  'subtitle',
   'status',
   'score',
   'stars',
@@ -63,6 +65,7 @@ export const DETAIL_SECTIONS: DetailSection[] = [
 export const CARD_FIELD_LABELS: Record<CardField, string> = {
   author: 'Author',
   year: 'Year',
+  subtitle: 'Subtitle',
   status: 'Status badge',
   score: 'Score',
   stars: 'Stars',
