@@ -13,28 +13,41 @@ Shelfie has **two chat agents**, switched in the chat widget header:
 Both run on **AWS Bedrock** (Claude Haiku 5.5, `eu-central-1`). Voice input (AWS Transcribe) works
 in either mode.
 
-## Why frontend tools (what changed)
+## Why frontend tools, and why they are now universal
 
-The previous design put "UI tools" on the **server** as stub functions and tried to turn the model's
+The first design put "UI tools" on the **server** as stub functions and tried to turn the model's
 tool call into a UI event after the fact. In the real app the agent often just **said it could not
-change the UI**. The UI agent fixes this by making the browser the source of truth:
+change the UI**. The second design moved every tool into the browser but still hand-wrote one tool
+per action (`set_search`, `set_star_filter`, …) plus a matching case in a `shelfie:ui` bus — so
+**adding a tab or control meant editing the agent**.
 
-- The browser **owns** every UI tool — both its JSON-Schema definition (sent to the model) and its
-  **executor** (run locally). The tool's effect is a real DOM action: it dispatches a `shelfie:ui`
-  bus event, waits for the listener's ack, reads `window.__shelfieUiState`, or searches the books the
-  app already loaded.
-- The server **never** runs a tool and has **no database access**. It only relays the browser's tool
-  schemas to Bedrock and streams events back.
+The UI agent is now **universal (registry-driven)**:
+
+- Controls **declare themselves** at runtime with `useAgentAnchor(...)` (see
+  [ui-agent-registry.md](features/ui-agent-registry.md)). Each **anchor** is one addressable control
+  with a stable id, a kind, a label, and live accessors (`getState` / `set` / `invoke` / `options` /
+  `items`).
+- The browser owns a small set of **generic** tools — `describe_ui`, `get_state`, `set`, `invoke`,
+  `navigate`, plus the client-side `find_books`. No tool knows any specific control.
+- `describe_ui()` builds the whole **navigation schema on the fly** from the live registry (tabs →
+  anchors with kind, label, current value, allowed options, actions; lists expose their items).
+- The server still **never** runs a tool and has **no database access**. It relays the browser's
+  generic tool schemas and the live UI schema to Bedrock and streams events back, and it injects the
+  **current date/time** so relative periods ("this year") resolve without asking the user.
+
+Adding a tab or a control is now purely a `useAgentAnchor` call in that component — the agent, its
+tools and the backend are untouched.
 
 ```mermaid
 flowchart LR
     U[User] --> CW[ChatWidget\nUI agent mode]
-    CW -->|POST /api/agui/run\n{messages, tools, state}| R[Thin runner\napp/agent/ui_agent.py]
+    COMP[Any component\nuseAgentAnchor&#40;...&#41;] -->|register / unregister| REG[(Anchor registry\nfrontend/src/agent-ui)]
+    CW -->|POST /api/agui/run\n{messages, generic tools, describe_ui&#40;&#41; schema}| R[Thin runner\napp/agent/ui_agent.py\n+ current date]
     R -->|converse_stream| B[(Bedrock\nHaiku 5.5)]
     B -->|AG-UI events| R --> CW
-    CW -->|model called a tool| EX[Browser tool executor\nfrontend/src/agui/tools.ts]
-    EX -->|shelfie:ui CustomEvent| L[App / Library listeners]
-    L -->|shelfie:ui:ack| EX
+    CW -->|model called set/invoke/navigate&#40;id&#41;| EX[Browser tool executor\nfrontend/src/agui/tools.ts]
+    EX -->|setAnchor / invokeAnchor| REG
+    REG -->|anchor.set / anchor.invoke| COMP
     EX -->|tool result message| CW
     CW -->|next POST /api/agui/run| R
 ```
@@ -45,8 +58,9 @@ flowchart LR
 
 1. POST `{threadId, runId, messages, tools, state}` to `/api/agui/run`.
    - `messages` is the running AG-UI conversation (`user` / `assistant` / `tool`).
-   - `tools` is the JSON-Schema list from `frontend/src/agui/tools.ts`.
-   - `state` is a snapshot of `window.__shelfieUiState`.
+   - `tools` is the generic JSON-Schema list from `frontend/src/agui/tools.ts`.
+   - `state` is the live UI schema from `describeUi()` (the anchor registry), so the first turn
+     already knows the screen even before the model calls `describe_ui`.
 2. The runner streams AG-UI events; the client collects streamed text and **at most one tool call**.
 3. If the model answered with **text only** → the run is done.
 4. If the model emitted a **tool call** → the browser **executes it**, appends the result as a
@@ -69,43 +83,34 @@ The runner (`app/agent/ui_agent.py`) emits, per turn:
 A turn that emits a tool call **ends right after it** (`TOOL_CALL_END` → `RUN_FINISHED`); the browser
 runs the tool and starts the next turn. This is the AG-UI frontend-tools contract.
 
-The system prompt tells the model to answer in the user's language, to **act instead of describing**,
-to resolve names with `find_books` first, and to confirm briefly what it did.
+The system prompt tells the model to **call `describe_ui` first**, to act through `set` / `invoke` /
+`navigate` using only ids from the schema, to resolve names with `find_books`, to use the structured
+filters (never type a year into a search box), and to confirm briefly what it did.
 
-## Browser tools (`frontend/src/agui/tools.ts`)
+## Browser tools (`frontend/src/agui/tools.ts`) — generic, registry-driven
 
-Every tool runs in the browser. `navigate`, `set_search`, `set_star_filter`, `filter_library`,
-`clear_filter`, `open_book`, `open_add_book`, `open_settings`, `set_setting`, `toggle_theme` and
-`ranking_search` dispatch a `shelfie:ui` event and await its ack; `get_ui_state` reads
-`window.__shelfieUiState`; `find_books` searches the **already-loaded** books (title / author /
-series / shelf / tags / insights) and returns ids + titles so the model can then filter or open them.
+Every tool runs in the browser and is **generic**: it reads or drives the runtime anchor registry
+(`frontend/src/agent-ui/`), so it works for any current or future control with no change.
 
 | Tool | Effect |
 |---|---|
-| `navigate(tab)` | switch tab: `library` / `stats` / `ranking` |
-| `set_search(query)` | type into the library search box (navigates to library) |
-| `set_star_filter(stars)` | whole-star filter 1..5, or `null` to clear |
-| `filter_library(query?, series?, author?, shelf?, tag?, status?, min_stars?, book_ids?)` | filter the grid |
-| `clear_filter()` | remove the assistant filter |
-| `open_book(book_id)` | open the detail dialog |
-| `open_add_book(mode, query?, prefill?)` | open the Google-search dialog (query typed) or the manual form (prefilled) |
-| `open_settings()` | open the settings sidebar |
-| `set_setting(key, value)` | toggle a card field / detail section / `showAllDetails` |
-| `toggle_theme()` | dark ↔ light |
-| `ranking_search(query)` | type into the ranking search box (navigates to ranking) |
-| `get_ui_state()` | read the current UI state snapshot |
-| `find_books(query, limit?)` | search the loaded books → `{ id, title, authors, series, stars, display_score }[]` |
+| `describe_ui()` | Build the whole UI schema from the live registry (tabs → anchors with kind, label, current value, allowed options, actions; lists expose items). Call first. |
+| `get_state(id)` | Read one anchor's current value. |
+| `set(id, value)` | Set a value control (text-input / search / select / toggle / multi-select); validated against the anchor's options. |
+| `invoke(id, action?, args?)` | Act on a button / dialog / list item (e.g. open a book, open/close a dialog, apply a filter). |
+| `navigate(tab)` | Switch the active tab. |
+| `find_books(query, limit?)` | Search the **already-loaded** books → `{ id, title, authors, series, stars, display_score }[]`. |
 
-## UI bus contract v2 (`frontend/src/agui/bus.ts`)
+## Anchor registry (`frontend/src/agent-ui/`)
 
-A tool drives the app with a `window` CustomEvent `shelfie:ui` whose `detail` is one of the
-`UiBusDetail` shapes (the wave-2 events plus `set_search`, `set_star_filter`, `open_add_book`,
-`open_settings`, `close_dialogs`, `set_setting`, `toggle_theme`, `ranking`). The listener (App /
-Library, owned by library-fixes) handles it and **must answer** with a `shelfie:ui:ack` CustomEvent
-carrying `{ action, ok, info? }`. `dispatchAndWait()` resolves on the ack, or after a short timeout
-treats the action as done (so a missing listener degrades gracefully rather than hanging the loop).
-A read-only snapshot lives on `window.__shelfieUiState = { tab, search, starFilter, assistantFilter,
-settings, visibleBookIds, openDialog }`.
+Controls register with `useAgentAnchor({ id, kind, label, description?, tab?, getState?, set?,
+invoke?, options?, items?, actions? })` on mount and unregister on unmount. `describeUi()` builds the
+schema from the live set; `setAnchor` / `invokeAnchor` / `navigate` act on it with validation (an
+error lists the valid ids or option values). Allowed values for selects (years, shelves, tags,
+series, authors, statuses) are **derived from the loaded data**, so they are always correct. The full
+contract, the shipped anchors, the date-awareness and the structured library filters are documented
+in [features/ui-agent-registry.md](features/ui-agent-registry.md). The old `shelfie:ui` CustomEvent
+bus and the `window.__shelfieUiState` snapshot have been removed — the registry replaces both.
 
 ## Chat widget (`frontend/src/components/ChatWidget.tsx`)
 
@@ -117,25 +122,31 @@ it uses the existing backend SSE stream unchanged.
 
 ## Verified live against Bedrock
 
-A dev server on port 8099 (`uv run python -m uvicorn app.main:app --port 8099`) and the live
-integration test `frontend/src/agui/live.test.ts` (run with `AGUI_LIVE=1 AGUI_BASE=http://127.0.0.1:8099
-npx vitest run src/agui/live.test.ts`) drive the **full browser loop** against **real Bedrock**. The
-observed tool/event sequences:
+A dev server (`uv run python -m uvicorn app.main:app --port 8099`) and the live integration test
+`frontend/src/agui/live.test.ts` (run with `AGUI_LIVE=1 AGUI_BASE=http://127.0.0.1:8099 npx vitest run
+src/agui/live.test.ts`) register anchors mirroring the app and drive the **full browser loop** against
+**real Bedrock** through the generic tools. The observed behaviour (also verified in the browser with
+Playwright against the live backend):
 
-| Prompt (Polish) | Tool sequence | Final text |
+| Prompt (Polish) | What the model did | Result |
 |---|---|---|
-| „pokaż książki z serii Droga Szamana” | `find_books{query:"Droga Szamana"}` → `filter_library{series:"Droga Szamana"}` | „Pokazuję 3 książki z serii Droga Szamana.” |
-| „chcę dodać książkę Diuna” | `open_add_book{mode:"search", query:"Diuna"}` | „Otworzyłem wyszukiwarkę książek z hasłem „Diuna”…” |
-| „pokaż tylko 5 gwiazdek” | `set_star_filter{stars:5}` | „Pokazuję tylko książki z oceną 5 gwiazdek.” |
-| „przejdź do rankingu” | `navigate{tab:"ranking"}` | „Przeszedłem do rankingu.” |
+| „pokaż książki z serii Droga Szamana” | `describe_ui` → `find_books` → `invoke(library.filter, apply, {series})` | grid filtered to the series |
+| „przejdź do statystyk i pokaż ostatnie 12 miesięcy” | `navigate(stats)` → `set(stats.period, "last12Months")` | Statistics tab, period changed |
+| „w rankingu wyszukaj Sanderson” | `navigate(ranking)` → `set(ranking.search, "Sanderson")` | ranking search filled |
+| „włącz w ustawieniach liczbę stron na kartach” | `set(settings.cardFields.pageCount, true)` | page-count card field on |
+| „chcę dodać książkę Diuna” | `invoke(library.addBook, search, {query:"Diuna"})` | add-search dialog prefilled |
+| „pokaż książki z tego roku” | `invoke(library.filter, apply, {finished_year: <current>})` | finished-this-year, chip shows it, count matches DB |
+| „pokaż przeczytane w 2025” | `invoke(library.filter, apply, {finished_year: 2025})` | finished-2025, count matches DB |
+| „pokaż fantasy z 2024” | `invoke(library.filter, apply, {shelf:"Fantasy", finished_year:2024})` | shelf + year, structured chip |
 
-Each run streamed `RUN_STARTED → TOOL_CALL_START/ARGS/END → RUN_FINISHED`, the browser executed the
-tool and acked it, the tool result was fed back, and a final turn produced
-`RUN_STARTED → TEXT_MESSAGE_* → RUN_FINISHED` with the Polish confirmation above.
+No year ever went into the free-text search box — the model picks the structured `finished_year`
+facet because the injected date block tells it "this year" means `finished_on` in the current year.
 
 The live test is skipped unless `AGUI_LIVE` is set, so it never runs in `just check`. The client loop
 is also unit-tested with a **fake fetch** (`frontend/src/agui/client.test.ts`): a scripted
-find_books → filter_library → answer sequence, a `RUN_ERROR` stop, and the `maxTurns` cap.
+`find_books → invoke(library.filter) → answer` sequence, a `RUN_ERROR` stop, and the `maxTurns` cap.
+The registry, the generic tools and the anchor-coverage guard are unit-tested in
+`frontend/src/agent-ui/*.test.*`, `frontend/src/agui/tools.test.ts` and `frontend/src/App.test.tsx`.
 
 ## Library agent (unchanged, `POST /api/agent/chat`)
 
@@ -154,11 +165,12 @@ transcripts; the final text is appended to the input box (pl-PL default, en-US t
 
 ## Files
 
-- `app/agent/ui_agent.py` — thin Bedrock runner (`run_stream`): request → `converse_stream` → AG-UI events. **No DB tools.**
+- `app/agent/ui_agent.py` — thin Bedrock runner (`run_stream`): request → `converse_stream` → AG-UI events; injects the current date. **No DB tools.**
 - `app/api/routes/agui.py` — `POST /api/agui/run` (SSE).
-- `frontend/src/agui/client.ts` — the browser run loop (`runAgent`).
-- `frontend/src/agui/tools.ts` — browser tool definitions + executors.
-- `frontend/src/agui/bus.ts` — UI bus v2 types, `dispatchAndWait` (+ ack), `readUiState`.
+- `frontend/src/agent-ui/` — the anchor registry: `types.ts`, `registry.ts` (`describeUi`/`setAnchor`/`invokeAnchor`/`navigate`), `useAgentAnchor.ts`.
+- `frontend/src/agui/client.ts` — the browser run loop (`runAgent`); sends the `describeUi()` schema as `state`.
+- `frontend/src/agui/tools.ts` — the generic browser tools (`describe_ui`/`get_state`/`set`/`invoke`/`navigate`/`find_books`).
+- `frontend/src/settings/libraryFilter.ts` — the structured library filter + data-derived option helpers.
 - `frontend/src/agui/events.ts` — AG-UI event types + SSE parser.
 - `frontend/src/agui/labels.ts` — action-card labels.
 - `frontend/src/components/ChatWidget.tsx` — Library-vs-UI mode switch, action cards.

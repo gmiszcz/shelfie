@@ -1,12 +1,18 @@
 import { Button } from 'primereact/button';
 import { useCallback, useEffect, useState } from 'react';
 
+import { useAgentAnchor, setStaticTabs, setActiveTab } from './agent-ui';
 import { ChatWidget } from './components/ChatWidget';
 import { Library } from './pages/Library';
 import { Ranking } from './pages/Ranking';
 import { SettingsProvider, useSettings } from './settings/SettingsContext';
 import { SettingsSidebar } from './settings/SettingsSidebar';
-import { UI_BUS_EVENT, dispatchUiAck, parseUiBusEvent } from './settings/uiBus';
+import {
+  CARD_FIELDS,
+  CARD_FIELD_LABELS,
+  DETAIL_SECTIONS,
+  DETAIL_SECTION_LABELS,
+} from './settings/settingsTypes';
 import type { UiTab } from './settings/uiBus';
 import { Stats } from './pages/Stats';
 // Vite: theme CSS as local URLs (no CDN), swapped at runtime via one <link>.
@@ -54,13 +60,85 @@ function initialTheme(): Theme {
 }
 
 /**
- * The application shell. Lives inside `SettingsProvider` so the agent UI bus
- * handler can toggle settings (`set_setting`). It owns the active tab, theme
- * and settings-sidebar visibility, listens for the App-level bus actions, and
- * keeps the `tab` / `openDialog` fields of `window.__shelfieUiState` current.
+ * Register one display-setting toggle as an agent anchor. A tiny component so
+ * each `useAgentAnchor` call sits at a component's top level (rules-of-hooks),
+ * even though the settings list is iterated.
+ */
+function SettingAnchor({
+  id,
+  label,
+  description,
+  get,
+  settingKey,
+}: {
+  id: string;
+  label: string;
+  description: string;
+  get: () => boolean;
+  settingKey: string;
+}) {
+  const { setSettingByKey } = useSettings();
+  useAgentAnchor({
+    id,
+    kind: 'toggle',
+    label,
+    description,
+    getState: get,
+    set: (v) => {
+      setSettingByKey(settingKey, Boolean(v));
+    },
+  });
+  return null;
+}
+
+/**
+ * Mount the display-settings anchors (one per card field / detail section plus
+ * `showAllDetails`) so the agent can toggle any of them — whether or not the
+ * settings sidebar is open. Rendered once at the shell level.
+ */
+function SettingsAnchors() {
+  const { settings } = useSettings();
+  return (
+    <>
+      {CARD_FIELDS.map((field) => (
+        <SettingAnchor
+          key={`card-${field}`}
+          id={`settings.cardFields.${field}`}
+          label={`Card field: ${CARD_FIELD_LABELS[field]}`}
+          description={`Show the "${CARD_FIELD_LABELS[field]}" field on library book cards.`}
+          get={() => settings.cardFields[field]}
+          settingKey={field}
+        />
+      ))}
+      {DETAIL_SECTIONS.map((section) => (
+        <SettingAnchor
+          key={`detail-${section}`}
+          id={`settings.detailSections.${section}`}
+          label={`Detail section: ${DETAIL_SECTION_LABELS[section]}`}
+          description={`Show the "${DETAIL_SECTION_LABELS[section]}" section in the book detail dialog.`}
+          get={() => settings.detailSections[section]}
+          settingKey={section}
+        />
+      ))}
+      <SettingAnchor
+        id="settings.showAllDetails"
+        label="Show all details by default"
+        description="Expand the extended detail sections whenever a book is opened."
+        get={() => settings.showAllDetails}
+        settingKey="showAllDetails"
+      />
+    </>
+  );
+}
+
+/**
+ * The application shell. Lives inside `SettingsProvider`. It owns the active tab,
+ * theme and settings-sidebar visibility, and registers the app-global agent
+ * anchors (nav tab, theme toggle, settings sidebar) plus the per-setting toggles.
+ * No agent-specific UI-bus listener remains: controls are driven through their
+ * anchors.
  */
 function AppShell() {
-  const { setSettingByKey } = useSettings();
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [page, setPage] = useState<UiTab>('library');
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -76,78 +154,61 @@ function AppShell() {
 
   const toggleTheme = useCallback(() => setTheme((t) => (t === 'dark' ? 'light' : 'dark')), []);
 
-  // Agent UI bus (contract v2): App-level actions. Library owns the
-  // filter/search/add-book/open_book actions and acks them itself; here we
-  // handle navigation, settings sidebar, theme and set_setting.
+  // Seed the static tab list for the agent (so unmounted tabs are still described).
   useEffect(() => {
-    const onBus = (e: Event) => {
-      const detail = parseUiBusEvent((e as CustomEvent).detail);
-      if (!detail) {
-        return;
-      }
-      switch (detail.action) {
-        case 'navigate':
-          setPage(detail.tab);
-          dispatchUiAck({ action: 'navigate', ok: true });
-          break;
-        case 'filter_library':
-        case 'open_book':
-        case 'clear_filter':
-        case 'set_search':
-        case 'set_star_filter':
-          // Library handles + acks these; ensure the library tab is visible.
-          setPage('library');
-          break;
-        case 'open_settings':
-          setSettingsOpen(true);
-          dispatchUiAck({ action: 'open_settings', ok: true });
-          break;
-        case 'close_dialogs':
-          setSettingsOpen(false);
-          // Library also closes its dialogs and acks.
-          break;
-        case 'toggle_theme':
-          toggleTheme();
-          dispatchUiAck({ action: 'toggle_theme', ok: true });
-          break;
-        case 'set_setting': {
-          const ok = setSettingByKey(detail.key, detail.value);
-          dispatchUiAck({
-            action: 'set_setting',
-            ok,
-            info: ok ? undefined : `unknown setting key "${detail.key}"`,
-          });
-          break;
-        }
-        case 'ranking':
-          // Navigate to ranking; the ranking page owns its own search box.
-          setPage('ranking');
-          dispatchUiAck({ action: 'ranking', ok: true });
-          break;
-        default:
-          break;
-      }
-    };
-    window.addEventListener(UI_BUS_EVENT, onBus as EventListener);
-    return () => window.removeEventListener(UI_BUS_EVENT, onBus as EventListener);
-  }, [setSettingByKey, toggleTheme]);
+    setStaticTabs(PAGES.map((p) => ({ id: p.id, label: p.label })));
+  }, []);
 
-  // Keep the tab and settings-dialog fields of the shared snapshot current.
+  // Keep the registry's active tab current.
   useEffect(() => {
-    const prev = window.__shelfieUiState;
-    window.__shelfieUiState = {
-      tab: page,
-      search: prev?.search ?? '',
-      starFilter: prev?.starFilter ?? null,
-      assistantFilter: prev?.assistantFilter ?? null,
-      settings: prev?.settings ?? null,
-      visibleBookIds: prev?.visibleBookIds ?? [],
-      openDialog: settingsOpen ? 'settings' : (prev?.openDialog ?? 'none'),
-    };
-  }, [page, settingsOpen]);
+    setActiveTab(page);
+  }, [page]);
+
+  // --- app-global anchors -------------------------------------------------------------
+  useAgentAnchor({
+    id: 'nav.tab',
+    kind: 'tab',
+    label: 'Navigation tab',
+    description: 'The active top-level tab. Invoke with action "navigate" and args { tab }.',
+    actions: ['navigate'],
+    getState: () => page,
+    invoke: (_action, args) => {
+      const tab = args?.tab;
+      if (tab === 'library' || tab === 'stats' || tab === 'ranking') {
+        setPage(tab);
+      }
+    },
+  });
+
+  useAgentAnchor({
+    id: 'theme.toggle',
+    kind: 'select',
+    label: 'Theme',
+    description: 'The colour theme. Set to "dark" or "light".',
+    getState: () => theme,
+    options: () => [
+      { value: 'dark', label: 'Dark' },
+      { value: 'light', label: 'Light' },
+    ],
+    set: (v) => {
+      const next = v === 'light' ? 'light' : 'dark';
+      setTheme(next);
+    },
+  });
+
+  useAgentAnchor({
+    id: 'settings.sidebar',
+    kind: 'dialog',
+    label: 'Settings sidebar',
+    description: 'The display-settings panel. Invoke with action "open" or "close".',
+    actions: ['open', 'close'],
+    getState: () => (settingsOpen ? 'open' : 'closed'),
+    invoke: (action) => setSettingsOpen(action !== 'close'),
+  });
 
   return (
     <>
+      <SettingsAnchors />
       <header className="app-bar">
         <div className="app-brand">
           <i className="pi pi-book" />

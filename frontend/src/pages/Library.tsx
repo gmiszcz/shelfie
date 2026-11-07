@@ -1,8 +1,9 @@
 import { Button } from 'primereact/button';
 import { Chip } from 'primereact/chip';
 import { Toast } from 'primereact/toast';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
+import { useAgentAnchor } from '../agent-ui';
 import { BookDetailDialog } from '../components/BookDetailDialog';
 import { BookFormDialog } from '../components/BookFormDialog';
 import { BookGrid } from '../components/BookGrid';
@@ -11,11 +12,19 @@ import { StarFilter, boundsForStarBucket } from '../components/StarFilter';
 import type { ScoreBounds, StarBucket } from '../components/StarFilter';
 import { SearchInput } from '../ui';
 import { useLibrary } from '../hooks/useLibrary';
-import { useSettings } from '../settings/SettingsContext';
 import { filterByScore } from '../ranking';
 import { applyFilter, describeFilter, isEmptyFilter } from '../settings/libraryFilter';
+import {
+  authorsOf,
+  finishedYears,
+  publishedYears,
+  seriesOf,
+  shelvesOf,
+  startedYears,
+  STATUS_VALUES,
+  tagsOf,
+} from '../settings/libraryFilter';
 import type { LibraryFilter } from '../settings/libraryFilter';
-import { UI_BUS_EVENT, dispatchUiAck, parseUiBusEvent } from '../settings/uiBus';
 import type { StarValue } from '../settings/uiBus';
 import type { Book, BookInput, ReadingStatus, VolumeSearchResult } from '../types';
 
@@ -25,16 +34,18 @@ interface FormTarget {
   initial?: Partial<BookInput>;
 }
 
+/** Facets the agent can apply to the assistant filter (anchor `library.filter`). */
+type FilterArgs = LibraryFilter;
+
 export function Library() {
   const { books, loading, error, add, update, remove, upsert } = useLibrary();
-  const { settings } = useSettings();
   const [selected, setSelected] = useState<Book | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchInitialQuery, setSearchInitialQuery] = useState<string | undefined>(undefined);
   const [formTarget, setFormTarget] = useState<FormTarget | null>(null);
   // Free-text search box (client-side filtering).
   const [query, setQuery] = useState('');
-  // Structured filter pushed by the agent over the UI bus (contract 3).
+  // Structured filter pushed by the agent (anchor `library.filter`).
   const [assistantFilter, setAssistantFilter] = useState<LibraryFilter | null>(null);
   // Whole-star band filter (wave-3): "5" keeps scores 4.6..5.0, etc.
   const [starBucket, setStarBucket] = useState<StarBucket | null>(null);
@@ -56,61 +67,6 @@ export function Library() {
     }
   };
 
-  // Agent UI bus v2: filters, search box, star filter, add-book, dialogs.
-  useEffect(() => {
-    const onBus = (e: Event) => {
-      const detail = parseUiBusEvent((e as CustomEvent).detail);
-      if (!detail) {
-        return;
-      }
-      let ok = true;
-      let info: string | undefined;
-      switch (detail.action) {
-        case 'filter_library': {
-          const { action: _action, ...filter } = detail;
-          setAssistantFilter(isEmptyFilter(filter) ? null : filter);
-          break;
-        }
-        case 'clear_filter':
-          setAssistantFilter(null);
-          break;
-        case 'open_book': {
-          const book = books.find((b) => b.id === detail.book_id) ?? null;
-          setSelected(book);
-          ok = book != null;
-          info = ok ? undefined : `no book #${detail.book_id}`;
-          break;
-        }
-        case 'set_search':
-          setQuery(detail.query);
-          break;
-        case 'set_star_filter':
-          applyStarValue(detail.stars);
-          break;
-        case 'open_add_book':
-          if (detail.mode === 'manual') {
-            setFormTarget({ mode: 'create', initial: detail.prefill });
-          } else {
-            setSearchInitialQuery(detail.query ?? '');
-            setSearchOpen(true);
-          }
-          break;
-        case 'close_dialogs':
-          setSelected(null);
-          setSearchOpen(false);
-          setFormTarget(null);
-          break;
-        default:
-          // Actions handled elsewhere (App): navigate, open_settings,
-          // toggle_theme, set_setting, ranking. Ignore here.
-          return;
-      }
-      dispatchUiAck({ action: detail.action, ok, info });
-    };
-    window.addEventListener(UI_BUS_EVENT, onBus as EventListener);
-    return () => window.removeEventListener(UI_BUS_EVENT, onBus as EventListener);
-  }, [books]);
-
   // The assistant filter is applied first, then the free-text box narrows further.
   const visibleBooks = useMemo(() => {
     const afterAssistant = applyFilter(books, assistantFilter);
@@ -118,33 +74,279 @@ export function Library() {
     return starBounds ? filterByScore(afterQuery, starBounds) : afterQuery;
   }, [books, assistantFilter, query, starBounds]);
 
-  // Keep the read-only state snapshot up to date for the agent (ui-agent reads it).
-  useEffect(() => {
-    const openDialog = formTarget
-      ? 'form'
-      : searchOpen
-        ? 'search'
-        : selected
-          ? 'detail'
-          : 'none';
-    window.__shelfieUiState = {
-      ...(window.__shelfieUiState ?? {
-        tab: 'library',
-        search: '',
-        starFilter: null,
-        assistantFilter: null,
-        settings: null,
-        visibleBookIds: [],
-        openDialog: 'none',
-      }),
-      search: query,
-      starFilter: starBucket,
-      assistantFilter,
-      settings,
-      visibleBookIds: visibleBooks.map((b) => b.id),
-      openDialog,
-    };
-  }, [query, starBucket, assistantFilter, settings, visibleBooks, formTarget, searchOpen, selected]);
+  // --- agent anchors (the only agent-facing code in this page) -----------------------
+  useAgentAnchor({
+    id: 'library.search',
+    kind: 'search',
+    label: 'Library search',
+    description: 'Free-text search box filtering the library by title, author or series.',
+    tab: 'library',
+    getState: () => query,
+    set: (v) => setQuery(typeof v === 'string' ? v : String(v ?? '')),
+  });
+
+  useAgentAnchor({
+    id: 'library.starFilter',
+    kind: 'select',
+    label: 'Star rating filter',
+    description: 'Whole-star library filter. 5 shows 4.6–5.0, 4 shows 3.6–4.5, etc. Empty clears it.',
+    tab: 'library',
+    getState: () => (starBucket == null ? '' : String(starBucket)),
+    options: () => [
+      { value: '', label: 'Any rating' },
+      { value: '1', label: '1 star' },
+      { value: '2', label: '2 stars' },
+      { value: '3', label: '3 stars' },
+      { value: '4', label: '4 stars' },
+      { value: '5', label: '5 stars' },
+    ],
+    set: (v) => {
+      const n = v == null || v === '' ? null : Number(v);
+      applyStarValue(n != null && n >= 1 && n <= 5 ? (n as StarValue) : null);
+    },
+  });
+
+  useAgentAnchor({
+    id: 'library.filter',
+    kind: 'button',
+    label: 'Assistant library filter',
+    description:
+      'Filter the grid by one or more STRUCTURED facets. Invoke with action "apply" and args ' +
+      '{ query?, series?, author?, shelf?, tag?, status?, min_stars?, finished_year?, ' +
+      'started_year?, published_year?, finished_from?, finished_to?, book_ids? } ' +
+      '(resolve exact names/ids with find_books first; use finished_year for "read in <year>"), ' +
+      'or action "clear" to remove it.',
+    tab: 'library',
+    actions: ['apply', 'clear'],
+    getState: () => assistantFilter,
+    invoke: (action, args) => {
+      if (action === 'clear') {
+        setAssistantFilter(null);
+        return;
+      }
+      const f = (args ?? {}) as FilterArgs;
+      const filter: LibraryFilter = {};
+      for (const key of ['query', 'series', 'author', 'shelf', 'tag', 'status'] as const) {
+        const val = f[key];
+        if (typeof val === 'string' && val.trim()) {
+          filter[key] = val.trim();
+        }
+      }
+      for (const key of [
+        'finished_from',
+        'finished_to',
+      ] as const) {
+        const val = f[key];
+        if (typeof val === 'string' && val.trim()) {
+          filter[key] = val.trim();
+        }
+      }
+      for (const key of ['finished_year', 'started_year', 'published_year'] as const) {
+        const val = f[key];
+        const n = typeof val === 'number' ? val : Number(val);
+        if (!Number.isNaN(n) && n > 0) {
+          filter[key] = n;
+        }
+      }
+      if (typeof f.min_stars === 'number' && f.min_stars > 0) {
+        filter.min_stars = f.min_stars;
+      }
+      if (Array.isArray(f.book_ids)) {
+        const ids = f.book_ids.filter((n): n is number => typeof n === 'number');
+        if (ids.length) {
+          filter.book_ids = ids;
+        }
+      }
+      setAssistantFilter(isEmptyFilter(filter) ? null : filter);
+    },
+  });
+
+  // One structured facet of the assistant filter, exposed as a select anchor whose
+  // options are DERIVED FROM THE DATA. Setting it merges that one facet into the
+  // current filter (empty value clears just that facet). `mergeFacet` keeps the
+  // other active facets intact so the agent can build a filter incrementally.
+  const mergeFacet = (patch: LibraryFilter) =>
+    setAssistantFilter((prev) => {
+      const next = { ...(prev ?? {}), ...patch };
+      for (const [k, v] of Object.entries(patch)) {
+        if (v == null || v === '') {
+          delete (next as Record<string, unknown>)[k];
+        }
+      }
+      return isEmptyFilter(next) ? null : next;
+    });
+
+  useAgentAnchor({
+    id: 'library.finishedYear',
+    kind: 'select',
+    label: 'Finished-in-year filter',
+    description: 'Show only books FINISHED in a given calendar year (finished_on). "" clears it.',
+    tab: 'library',
+    getState: () => (assistantFilter?.finished_year == null ? '' : String(assistantFilter.finished_year)),
+    options: () => [
+      { value: '', label: 'Any year' },
+      ...finishedYears(books).map((y) => ({ value: String(y), label: String(y) })),
+    ],
+    set: (v) => mergeFacet({ finished_year: v ? Number(v) : undefined }),
+  });
+
+  useAgentAnchor({
+    id: 'library.startedYear',
+    kind: 'select',
+    label: 'Started-in-year filter',
+    description: 'Show only books STARTED in a given calendar year (started_on). "" clears it.',
+    tab: 'library',
+    getState: () => (assistantFilter?.started_year == null ? '' : String(assistantFilter.started_year)),
+    options: () => [
+      { value: '', label: 'Any year' },
+      ...startedYears(books).map((y) => ({ value: String(y), label: String(y) })),
+    ],
+    set: (v) => mergeFacet({ started_year: v ? Number(v) : undefined }),
+  });
+
+  useAgentAnchor({
+    id: 'library.publishedYear',
+    kind: 'select',
+    label: 'Published-in-year filter',
+    description: 'Show only books PUBLISHED in a given year (published_date). "" clears it.',
+    tab: 'library',
+    getState: () => (assistantFilter?.published_year == null ? '' : String(assistantFilter.published_year)),
+    options: () => [
+      { value: '', label: 'Any year' },
+      ...publishedYears(books).map((y) => ({ value: String(y), label: String(y) })),
+    ],
+    set: (v) => mergeFacet({ published_year: v ? Number(v) : undefined }),
+  });
+
+  useAgentAnchor({
+    id: 'library.status',
+    kind: 'select',
+    label: 'Reading-status filter',
+    description: 'Show only books with a given reading status. "" clears it.',
+    tab: 'library',
+    getState: () => assistantFilter?.status ?? '',
+    options: () => [
+      { value: '', label: 'Any status' },
+      ...STATUS_VALUES.map((s) => ({ value: s, label: s })),
+    ],
+    set: (v) => mergeFacet({ status: v ? String(v) : undefined }),
+  });
+
+  useAgentAnchor({
+    id: 'library.shelf',
+    kind: 'select',
+    label: 'Shelf filter',
+    description: 'Show only books on a given shelf. "" clears it.',
+    tab: 'library',
+    getState: () => assistantFilter?.shelf ?? '',
+    options: () => [
+      { value: '', label: 'Any shelf' },
+      ...shelvesOf(books).map((s) => ({ value: s, label: s })),
+    ],
+    set: (v) => mergeFacet({ shelf: v ? String(v) : undefined }),
+  });
+
+  useAgentAnchor({
+    id: 'library.tag',
+    kind: 'select',
+    label: 'Tag filter',
+    description: 'Show only books with a given tag. "" clears it.',
+    tab: 'library',
+    getState: () => assistantFilter?.tag ?? '',
+    options: () => [
+      { value: '', label: 'Any tag' },
+      ...tagsOf(books).map((t) => ({ value: t, label: t })),
+    ],
+    set: (v) => mergeFacet({ tag: v ? String(v) : undefined }),
+  });
+
+  useAgentAnchor({
+    id: 'library.series',
+    kind: 'select',
+    label: 'Series filter',
+    description: 'Show only books in a given series. "" clears it.',
+    tab: 'library',
+    getState: () => assistantFilter?.series ?? '',
+    options: () => [
+      { value: '', label: 'Any series' },
+      ...seriesOf(books).map((s) => ({ value: s, label: s })),
+    ],
+    set: (v) => mergeFacet({ series: v ? String(v) : undefined }),
+  });
+
+  useAgentAnchor({
+    id: 'library.author',
+    kind: 'select',
+    label: 'Author filter',
+    description: 'Show only books by a given author. "" clears it.',
+    tab: 'library',
+    getState: () => assistantFilter?.author ?? '',
+    options: () => [
+      { value: '', label: 'Any author' },
+      ...authorsOf(books).map((a) => ({ value: a, label: a })),
+    ],
+    set: (v) => mergeFacet({ author: v ? String(v) : undefined }),
+  });
+
+  useAgentAnchor({
+    id: 'library.books',
+    kind: 'list',
+    label: 'Visible books',
+    description: 'The books currently shown in the grid. Invoke with action "open" and args { id } to open one.',
+    tab: 'library',
+    actions: ['open'],
+    getState: () => visibleBooks.map((b) => ({ id: b.id, title: b.title })),
+    items: () => visibleBooks.map((b) => ({ id: b.id, title: b.title })),
+    invoke: (_action, args) => {
+      const id = Number(args?.id);
+      const book = books.find((b) => b.id === id) ?? null;
+      if (!book) {
+        throw new Error(`no book #${args?.id}`);
+      }
+      setSelected(book);
+    },
+  });
+
+  useAgentAnchor({
+    id: 'library.addBook',
+    kind: 'button',
+    label: 'Add a book',
+    description:
+      'Open the add-book flow. Invoke with action "search" (args { query? } — the Google-search ' +
+      'dialog, optionally with a query typed) or action "manual" (args { prefill? } — the manual form).',
+    tab: 'library',
+    actions: ['search', 'manual'],
+    invoke: (action, args) => {
+      if (action === 'manual') {
+        setFormTarget({ mode: 'create', initial: args?.prefill as Partial<BookInput> | undefined });
+      } else {
+        setSearchInitialQuery(typeof args?.query === 'string' ? args.query : '');
+        setSearchOpen(true);
+      }
+    },
+  });
+
+  useAgentAnchor({
+    id: 'library.dialogs',
+    kind: 'dialog',
+    label: 'Library dialogs',
+    description: 'The open book-detail / add dialogs. Invoke with action "close" to close them all.',
+    tab: 'library',
+    actions: ['close'],
+    getState: () => {
+      if (formTarget) return 'form';
+      if (searchOpen) return 'search';
+      if (selected) return 'detail';
+      return 'none';
+    },
+    invoke: (action) => {
+      if (action === 'close') {
+        setSelected(null);
+        setSearchOpen(false);
+        setFormTarget(null);
+      }
+    },
+  });
 
   const notifyError = (message: string) =>
     toast.current?.show({ severity: 'error', summary: 'Error', detail: message });

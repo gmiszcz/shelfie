@@ -12,6 +12,7 @@ import './Ranking.css';
 import { ComparePair } from '../components/ComparePair';
 import { HalfStarRating } from '../components/HalfStarRating';
 import { formatAuthors } from '../format';
+import { useAgentAnchor } from '../agent-ui';
 import {
   bandLabel,
   confidenceLabel,
@@ -30,8 +31,6 @@ import type { Book, Winner } from '../types';
 import { BookCover, SearchInput } from '../ui';
 
 const ALL_SHELVES = '__all__';
-const UI_BUS_EVENT = 'shelfie:ui';
-const UI_BUS_ACK_EVENT = 'shelfie:ui:ack';
 
 /** A sentinel Dropdown value for the "uncategorised" group (Dropdown cannot use null as a value). */
 const NO_GROUP = '__none__';
@@ -177,27 +176,48 @@ export function Ranking() {
     }
   };
 
-  // --- UI bus: ranking { action: 'search', query } (brief, wave 3, task 4) --------------
-  // Put the query into the ranking search box, then acknowledge on the ack bus so the agent
-  // knows it was handled. Bound once; reads live state via refs.
-  useEffect(() => {
-    const ack = (ok: boolean, info?: string) => {
-      window.dispatchEvent(
-        new CustomEvent(UI_BUS_ACK_EVENT, { detail: { action: 'ranking', ok, info } }),
-      );
-    };
-    const onBus = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { action?: string; query?: unknown } | null;
-      if (!detail || detail.action !== 'ranking') {
-        return;
-      }
-      const query = typeof detail.query === 'string' ? detail.query : '';
-      setSearch(query);
-      ack(true, query ? `searching for "${query}"` : 'cleared the ranking search');
-    };
-    window.addEventListener(UI_BUS_EVENT, onBus as EventListener);
-    return () => window.removeEventListener(UI_BUS_EVENT, onBus as EventListener);
-  }, []);
+  // --- agent anchors: ranking search, category, focus ------------------------------
+  // Read live via refs/closures so the registered anchors always act on current state.
+  useAgentAnchor({
+    id: 'ranking.search',
+    kind: 'search',
+    label: 'Ranking search',
+    description: 'Free-text search over the ranking table (title, author, series).',
+    tab: 'ranking',
+    getState: () => search,
+    set: (v) => setSearch(typeof v === 'string' ? v : String(v ?? '')),
+  });
+
+  useAgentAnchor({
+    id: 'ranking.category',
+    kind: 'select',
+    label: 'Ranking category',
+    description: 'The category the comparison pairs are drawn from.',
+    tab: 'ranking',
+    getState: () => toGroupValue(categoryRef.current ?? null),
+    options: () => categoryOptions,
+    set: (v) => {
+      void handleCategoryChange(String(v));
+    },
+  });
+
+  useAgentAnchor({
+    id: 'ranking.focus',
+    kind: 'select',
+    label: 'Ranking focus book',
+    description: 'Focus the next comparisons on one book, or "" for the most informative pair.',
+    tab: 'ranking',
+    getState: () => (focus == null ? '' : String(focus)),
+    options: () =>
+      focusOptions.map((o) => ({
+        value: o.value == null ? '' : String(o.value),
+        label: o.label,
+      })),
+    set: (v) => {
+      const id = v == null || v === '' ? null : Number(v);
+      void handleFocusChange(Number.isNaN(id as number) ? null : id);
+    },
+  });
 
   const shelfOptions = useMemo(
     () => [

@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PlotChart } from '../components/PlotChart';
 import { formatAuthors } from '../format';
 import { api } from '../services/api';
+import { useAgentAnchor } from '../agent-ui';
 import {
   barOption,
   filterBooks,
@@ -103,6 +104,66 @@ export function Stats() {
     }
     return presetRange(preset);
   }, [customRange, preset]);
+
+  // --- agent anchors -----------------------------------------------------------------
+  useAgentAnchor({
+    id: 'stats.period',
+    kind: 'select',
+    label: 'Statistics period',
+    description: 'The time range for the statistics. Setting a preset clears any custom range.',
+    tab: 'stats',
+    getState: () => preset,
+    options: () => PRESETS.map((p) => ({ value: p.value, label: p.label })),
+    set: (v) => {
+      const next = PRESETS.find((p) => p.value === v);
+      if (next) {
+        setPreset(next.value);
+        setCustomRange(null);
+      }
+    },
+  });
+
+  useAgentAnchor({
+    id: 'stats.group',
+    kind: 'select',
+    label: 'Statistics grouping',
+    description: 'How the chart buckets are grouped.',
+    tab: 'stats',
+    getState: () => groupBy,
+    options: () => GROUP_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+    set: (v) => {
+      const next = GROUP_OPTIONS.find((o) => o.value === v);
+      if (next) {
+        setGroupBy(next.value);
+      }
+    },
+  });
+
+  useAgentAnchor({
+    id: 'stats.metric',
+    kind: 'select',
+    label: 'Statistics metric',
+    description: 'Whether the chart shows book counts or page counts.',
+    tab: 'stats',
+    getState: () => metric,
+    options: () => METRIC_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+    set: (v) => {
+      const next = METRIC_OPTIONS.find((o) => o.value === v);
+      if (next) {
+        setMetric(next.value);
+      }
+    },
+  });
+
+  useAgentAnchor({
+    id: 'stats.tableSearch',
+    kind: 'search',
+    label: 'Statistics table search',
+    description: 'Free-text search over the finished-books table.',
+    tab: 'stats',
+    getState: () => tableSearch,
+    set: (v) => setTableSearch(typeof v === 'string' ? v : String(v ?? '')),
+  });
 
   const fetchStats = useCallback(async () => {
     setLoading(true);

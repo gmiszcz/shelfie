@@ -142,6 +142,29 @@ def test_state_snapshot_goes_into_system_prompt() -> None:
     assert '"tab":"library"' in system_text
 
 
+def test_system_prompt_carries_the_current_date() -> None:
+    import datetime as _dt
+
+    _, captured = _split(_run(_fake_text_stream))
+    system_text = captured["system"][0]["text"]
+    year = _dt.datetime.now().astimezone().year
+    assert "Today is" in system_text
+    assert f"current year is {year}" in system_text
+    # It must steer "this year" to finished_on, not a text search.
+    assert "finished_on" in system_text
+    assert "never" in system_text.lower()
+
+
+def test_date_block_resolves_this_and_last_year() -> None:
+    import datetime as _dt
+
+    fixed = _dt.datetime(2026, 11, 7, 10, 0, tzinfo=_dt.timezone.utc)
+    block = ui_agent._date_system_block(fixed)
+    assert "2026-11-07" in block
+    assert "current year is 2026" in block
+    assert "last year" in block and "2025" in block
+
+
 def test_streamer_exception_becomes_run_error() -> None:
     def boom() -> Iterator[dict[str, Any]]:
         raise RuntimeError("NoCredentials")

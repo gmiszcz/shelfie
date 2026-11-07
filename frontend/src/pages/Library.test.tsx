@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { makeBook } from '../components/testHelpers';
@@ -12,6 +12,8 @@ const BOOKS: Book[] = [
     series: 'Dune',
     display_score: 4.8,
     stars: 5,
+    finished_on: '2026-02-10',
+    status: 'finished',
   }),
   makeBook({
     id: 2,
@@ -20,6 +22,8 @@ const BOOKS: Book[] = [
     series: 'Sprawl',
     display_score: 3.2,
     stars: 3,
+    finished_on: '2025-07-01',
+    status: 'finished',
   }),
   makeBook({
     id: 3,
@@ -28,6 +32,8 @@ const BOOKS: Book[] = [
     series: 'Foundation',
     display_score: 4.0,
     stars: 4,
+    finished_on: '2026-09-15',
+    status: 'finished',
   }),
 ];
 
@@ -48,18 +54,13 @@ import { Library } from './Library';
 // eslint-disable-next-line import/first
 import { SettingsProvider } from '../settings/SettingsContext';
 // eslint-disable-next-line import/first
-import { UI_BUS_ACK_EVENT, UI_BUS_EVENT } from '../settings/uiBus';
-// eslint-disable-next-line import/first
-import type { UiBusAck } from '../settings/uiBus';
-
-function dispatch(detail: unknown): UiBusAck[] {
-  const acks: UiBusAck[] = [];
-  const onAck = (e: Event) => acks.push((e as CustomEvent).detail as UiBusAck);
-  window.addEventListener(UI_BUS_ACK_EVENT, onAck);
-  window.dispatchEvent(new CustomEvent(UI_BUS_EVENT, { detail }));
-  window.removeEventListener(UI_BUS_ACK_EVENT, onAck);
-  return acks;
-}
+import {
+  _resetRegistry,
+  getAnchor,
+  getAnchorState,
+  invokeAnchor,
+  setAnchor,
+} from '../agent-ui';
 
 async function renderLibrary() {
   render(
@@ -67,81 +68,159 @@ async function renderLibrary() {
       <Library />
     </SettingsProvider>,
   );
-  // Wait until the library has loaded (count label reflects all books).
   await waitFor(() => expect(screen.getByText(/3 books/)).toBeTruthy());
+}
+
+/** The ids of the books currently visible, read from the list anchor. */
+function visibleIds(): number[] {
+  const res = getAnchorState('library.books');
+  const value = res.value as { id: number }[] | undefined;
+  return (value ?? []).map((b) => b.id);
 }
 
 afterEach(() => {
   cleanup();
-  delete (window as { __shelfieUiState?: unknown }).__shelfieUiState;
+  _resetRegistry();
 });
 
-describe('Library UI bus v2 listeners', () => {
+describe('Library agent anchors', () => {
   beforeEach(() => {
     localStorage.clear();
-    delete (window as { __shelfieUiState?: unknown }).__shelfieUiState;
+    _resetRegistry();
   });
 
-  it('set_search updates the search box and the state snapshot, and acks', async () => {
+  it('library.search filters the grid and reflects its value', async () => {
     await renderLibrary();
-    const acks = dispatch({ action: 'set_search', query: 'dune' });
-    await waitFor(() => expect(window.__shelfieUiState?.search).toBe('dune'));
-    expect(window.__shelfieUiState?.visibleBookIds).toEqual([1]);
-    expect(acks).toContainEqual({ action: 'set_search', ok: true, info: undefined });
+    await act(async () => {
+      await setAnchor('library.search', 'dune');
+    });
+    await waitFor(() => expect(getAnchorState('library.search').value).toBe('dune'));
+    expect(visibleIds()).toEqual([1]);
   });
 
-  it('set_star_filter narrows to the whole-star band and acks', async () => {
+  it('library.starFilter narrows to the whole-star band', async () => {
     await renderLibrary();
-    dispatch({ action: 'set_star_filter', stars: 5 });
+    await act(async () => {
+      await setAnchor('library.starFilter', '5');
+    });
     // 5-star band (4.6..5.0) keeps only Dune (display_score 4.8).
-    await waitFor(() => expect(window.__shelfieUiState?.starFilter).toBe(5));
-    expect(window.__shelfieUiState?.visibleBookIds).toEqual([1]);
+    await waitFor(() => expect(visibleIds()).toEqual([1]));
+    expect(getAnchorState('library.starFilter').value).toBe('5');
 
-    const acks = dispatch({ action: 'set_star_filter', stars: null });
-    await waitFor(() => expect(window.__shelfieUiState?.starFilter).toBeNull());
-    expect(window.__shelfieUiState?.visibleBookIds).toEqual([1, 2, 3]);
-    expect(acks).toContainEqual({ action: 'set_star_filter', ok: true, info: undefined });
+    await act(async () => {
+      await setAnchor('library.starFilter', '');
+    });
+    await waitFor(() => expect(visibleIds()).toEqual([1, 2, 3]));
   });
 
-  it('open_book opens the detail dialog for a known id and acks ok', async () => {
+  it('library.filter applies a series facet and clears it', async () => {
     await renderLibrary();
-    const acks = dispatch({ action: 'open_book', book_id: 2 });
-    await waitFor(() => expect(window.__shelfieUiState?.openDialog).toBe('detail'));
-    expect(acks).toContainEqual({ action: 'open_book', ok: true, info: undefined });
+    await act(async () => {
+      await invokeAnchor('library.filter', 'apply', { series: 'Dune' });
+    });
+    await waitFor(() => expect(visibleIds()).toEqual([1]));
+
+    await act(async () => {
+      await invokeAnchor('library.filter', 'clear');
+    });
+    await waitFor(() => expect(visibleIds()).toEqual([1, 2, 3]));
   });
 
-  it('open_book with an unknown id acks not-ok', async () => {
+  it('library.books opens the detail dialog for a known id, errors on an unknown one', async () => {
     await renderLibrary();
-    const acks = dispatch({ action: 'open_book', book_id: 999 });
-    expect(acks[0].action).toBe('open_book');
-    expect(acks[0].ok).toBe(false);
+    await act(async () => {
+      await invokeAnchor('library.books', 'open', { id: 2 });
+    });
+    await waitFor(() => expect(getAnchorState('library.dialogs').value).toBe('detail'));
+
+    const bad = await invokeAnchor('library.books', 'open', { id: 999 });
+    expect(bad.ok).toBe(false);
   });
 
-  it('open_add_book(search) opens the search dialog with the query typed in', async () => {
+  it('library.addBook(search) opens the search dialog with the query typed in', async () => {
     await renderLibrary();
-    const acks = dispatch({ action: 'open_add_book', mode: 'search', query: 'sci-fi' });
-    await waitFor(() => expect(window.__shelfieUiState?.openDialog).toBe('search'));
+    await act(async () => {
+      await invokeAnchor('library.addBook', 'search', { query: 'sci-fi' });
+    });
+    await waitFor(() => expect(getAnchorState('library.dialogs').value).toBe('search'));
     await waitFor(() => expect(screen.getByDisplayValue('sci-fi')).toBeTruthy());
-    expect(acks).toContainEqual({ action: 'open_add_book', ok: true, info: undefined });
   });
 
-  it('open_add_book(manual) opens the manual form and acks', async () => {
+  it('library.addBook(manual) opens the manual form', async () => {
     await renderLibrary();
-    const acks = dispatch({ action: 'open_add_book', mode: 'manual' });
-    await waitFor(() => expect(window.__shelfieUiState?.openDialog).toBe('form'));
-    expect(acks).toContainEqual({ action: 'open_add_book', ok: true, info: undefined });
+    await act(async () => {
+      await invokeAnchor('library.addBook', 'manual');
+    });
+    await waitFor(() => expect(getAnchorState('library.dialogs').value).toBe('form'));
   });
 
-  it('close_dialogs closes any open dialog', async () => {
+  it('library.dialogs(close) closes any open dialog', async () => {
     await renderLibrary();
-    dispatch({ action: 'open_book', book_id: 1 });
-    await waitFor(() => expect(window.__shelfieUiState?.openDialog).toBe('detail'));
-    dispatch({ action: 'close_dialogs' });
-    await waitFor(() => expect(window.__shelfieUiState?.openDialog).toBe('none'));
+    await act(async () => {
+      await invokeAnchor('library.books', 'open', { id: 1 });
+    });
+    await waitFor(() => expect(getAnchorState('library.dialogs').value).toBe('detail'));
+    await act(async () => {
+      await invokeAnchor('library.dialogs', 'close');
+    });
+    await waitFor(() => expect(getAnchorState('library.dialogs').value).toBe('none'));
   });
 
-  it('keeps visibleBookIds in the snapshot for the agent to read', async () => {
+  it('library.books lists every visible book for the agent to open', async () => {
     await renderLibrary();
-    await waitFor(() => expect(window.__shelfieUiState?.visibleBookIds).toEqual([1, 2, 3]));
+    await waitFor(() => expect(visibleIds()).toEqual([1, 2, 3]));
+  });
+});
+
+describe('Library structured facet anchors', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    _resetRegistry();
+  });
+
+  it('library.finishedYear offers the years present in the data, newest first', async () => {
+    await renderLibrary();
+    const res = getAnchorState('library.finishedYear');
+    // The anchor's own value is the current selection (empty); options come from describe.
+    expect(res.value).toBe('');
+    const anchor = getAnchor('library.finishedYear')!;
+    const opts = anchor.options!().map((o) => o.value);
+    expect(opts).toEqual(['', '2026', '2025']);
+  });
+
+  it('library.finishedYear filters the grid to books finished in that year', async () => {
+    await renderLibrary();
+    await act(async () => {
+      await setAnchor('library.finishedYear', '2026');
+    });
+    // Dune (2026) and Foundation (2026), not Neuromancer (2025).
+    await waitFor(() => expect(visibleIds()).toEqual([1, 3]));
+
+    await act(async () => {
+      await setAnchor('library.finishedYear', '2025');
+    });
+    await waitFor(() => expect(visibleIds()).toEqual([2]));
+
+    await act(async () => {
+      await setAnchor('library.finishedYear', '');
+    });
+    await waitFor(() => expect(visibleIds()).toEqual([1, 2, 3]));
+  });
+
+  it('library.finishedYear rejects a year not in the options', async () => {
+    await renderLibrary();
+    const res = await setAnchor('library.finishedYear', '1999');
+    expect(res.ok).toBe(false);
+    expect(res.valid).toContain('2026');
+  });
+
+  it('structured facets combine (series + finishedYear) and show in the filter chip', async () => {
+    await renderLibrary();
+    await act(async () => {
+      await setAnchor('library.series', 'Foundation');
+      await setAnchor('library.finishedYear', '2026');
+    });
+    await waitFor(() => expect(visibleIds()).toEqual([3]));
+    await waitFor(() => expect(screen.getByText(/Filtered by assistant/)).toBeTruthy());
   });
 });

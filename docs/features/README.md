@@ -25,6 +25,7 @@ These are owned by other feature workstreams and may land after this set:
 | [insights-enrichment.md](insights-enrichment.md) | Per-book AI `insights` (summary, characters, plot, setting, themes, tone) and enrichment |
 | [ui-shell-and-settings.md](ui-shell-and-settings.md) | App shell, navigation, book cards/grid/detail, settings |
 | [agent-ag-ui-bedrock.md](../agent-ag-ui-bedrock.md) | AG-UI streaming, the agent → UI event bus, voice input |
+| [ui-agent-registry.md](ui-agent-registry.md) | Universal UI agent: the runtime anchor registry, generic tools, date-awareness and structured library filters |
 
 ## See also
 
