@@ -8,6 +8,7 @@
     "build": "vite build",
     "typecheck": "tsc -b",
     "test": "vitest run",
+    "test:e2e:voice": "node e2e/voice-global-mic.mjs",
     "preview": "vite preview --host 127.0.0.1 --port 4173"
   },
   "dependencies": {

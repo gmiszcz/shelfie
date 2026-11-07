@@ -118,6 +118,11 @@ dialogs through the registry exactly as a typed message would, without the chat
 panel opening. The registry and tools are unchanged by this: they do not know or
 care whether the turn came from the panel or the global mic.
 
+A hermetic **Playwright fake-audio check** (`frontend/e2e/voice-global-mic.mjs`,
+see [voice-input.md](voice-input.md#playwright-fake-audio-check-real-capture-pipeline))
+proves this end to end: a spoken WAV, with the chat closed, drives a real
+`navigate` through the live registry — no AWS, no Bedrock, no Google Books.
+
 ## Files
 
 - `frontend/src/agent-ui/types.ts` — anchor + schema types.

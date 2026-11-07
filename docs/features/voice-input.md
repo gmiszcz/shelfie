@@ -135,3 +135,66 @@ no meter, not red" report.
 Credentials come from the standard AWS chain (SSO / `aws configure`). Only the
 region is configured (`AWS_REGION`, default `eu-central-1`). Streaming languages
 supported: `pl-PL` (default) and `en-US`.
+
+## Testing
+
+### Unit tests (vitest)
+
+The browser pipeline is unit-tested without any audio hardware or AWS:
+
+- `frontend/src/chat/voiceMachine.test.ts` — the pure VAD reducer (speech →
+  silence auto-stop, no-speech timeout, 60 s hard cap, manual stop vs auto-send).
+- `frontend/src/chat/useVoiceInput.test.ts` — the capture hook against a fake
+  `getUserMedia` + fake WebSocket, including the **insecure-origin HTTPS** error.
+- `frontend/src/components/MicButton.test.tsx` — the button states (recording /
+  requesting / busy ring / error) and the imperative handle.
+- `frontend/src/components/GlobalMic.test.tsx` — the global mic's own behaviour
+  with `MicButton` mocked: send to the UI agent **without opening the chat**, the
+  result toast (transcript + reply), tap-to-open-chat, the HTTPS error toast and
+  the auto-hide.
+- `frontend/src/CtrlMRouting.test.tsx` — the shell's single **Ctrl+M** owner
+  routes to the chat mic when the panel is open and to the global mic when it is
+  closed.
+
+### Playwright fake-audio check (real capture pipeline)
+
+`frontend/e2e/voice-global-mic.mjs` exercises the **real** browser capture
+pipeline end to end for the global mic — the one path unit tests mock away
+(`getUserMedia`, the `AudioContext` graph, the RMS VAD over real samples). It
+feeds a WAV through Chromium's own fake-audio device:
+
+```
+node e2e/voice-global-mic.mjs      # from frontend/
+```
+
+What it does:
+
+1. Serves the built `dist/` on `http://127.0.0.1:<port>` — a **secure context**,
+   so the microphone is allowed over plain http with no self-signed cert.
+2. Launches Chromium with fake-audio flags so `getUserMedia` returns the fixture:
+   `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream
+   --use-file-for-fake-audio-capture=e2e/fixtures/speech.wav`.
+3. Taps the global mic (chat closed) → the fixture plays → the hook's **RMS VAD
+   auto-stops** on the trailing silence → the final transcript is sent to the UI
+   agent head-less → the agent drives the **real anchor registry** (a
+   `navigate("stats")`) → the **result toast** shows the transcript + reply →
+   tapping it opens the chat.
+
+It is **hermetic** — no AWS, no Bedrock, no Google Books. The four backend
+surfaces are faked in the browser (Playwright route / `routeWebSocket`):
+`GET /api/auth/me` (a logged-in user), `GET /api/books` (`[]`), the
+`WS /api/transcribe/stream` (emits `{ready}` then one `{final, text}` once audio
+flows) and `POST /api/agui/run` (AG-UI SSE: turn 1 `navigate(stats)`, turn 2 a
+text reply). So the WAV only has to carry real audio **energy** then silence —
+enough to drive the VAD — not intelligible speech.
+
+The fixture `e2e/fixtures/speech.wav` was originally cut from an Amazon Polly
+utterance, but it is reproducible with **no cloud** via
+`node e2e/fixtures/make-fixture-wav.mjs`, which synthesizes a valid 16 kHz / mono
+/ 16-bit-PCM "speech then silence" WAV locally.
+
+A 45 s internal watchdog hard-exits the runner, so it is safe to run inside an
+outer `Start-Job` + `Wait-Job -Timeout 55` window. Playwright and its Chromium
+are reused from the environment's `node_modules` (`PLAYWRIGHT_MODULE` /
+`KIROCREW_SCRATCH` override discovery); the check needs a built `frontend/dist`
+(`npm run build`).
