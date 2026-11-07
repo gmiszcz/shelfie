@@ -80,7 +80,34 @@ It renders:
 1. **Summary cards** — Books read, Pages read, Average stars, Period.
 2. **Bar chart** — `barOption(buckets, metric, colors)` → `PlotChart`.
 3. **Table** — the selected books (cover, title, authors, finished date, stars,
-   shelves) with pagination and sorting.
+   shelves) with pagination and sorting, and a **search box** above it.
+
+### Summary cards
+
+Each KPI card is a flex column: a small muted label on top, the big value below,
+separated by `var(--small-gap)`; the card body is padded with `var(--card-padding)`.
+The label and value live in a `.stats-card-inner` wrapper (PrimeReact nests card
+children inside `.p-card-content`, so the gap is owned by that wrapper rather than
+the card body). The Period card uses the same layout with a smaller value that wraps
+cleanly (`overflow-wrap: anywhere`) so the date range never sits on the label.
+
+### Control groups
+
+Period / Group by / Metric each stack their label above the control with
+`var(--small-gap)`, and the groups are separated with `var(--big-gap)`. The
+`.stats-controls` row and each `.p-selectbutton` wrap (`flex-wrap: wrap`) so the
+controls reflow onto new lines on narrow widths instead of overflowing behind the
+chat panel.
+
+### Table search
+
+The books table has a search box (the shared `SearchInput` from
+`frontend/src/ui`) with a live `N of M` count. `filterBooks(books, query)` in
+`statsView.ts` filters client-side: a book matches when **every** space-separated
+term appears (case-insensitively) in its title, subtitle, authors, series, shelves
+or tags. An empty query returns the full list. The empty message distinguishes an
+empty range ("No finished books in this range.") from a search with no hits ("No
+books match your search.").
 
 ### Charts
 
