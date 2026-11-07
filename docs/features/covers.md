@@ -61,6 +61,40 @@ extracted, so trusting their top search hit risks attaching the wrong cover to a
 store a cover that might belong to a different book, the script leaves those `cover_url` empty and
 reports each one. They can be filled by hand through the existing cover-upload UI.
 
+### Attaching a known cover by hand — `scripts/attach_cover.py`
+
+For a book `fill_covers` left empty, a cover can be found by hand and attached with
+`scripts/attach_cover.py`, one book at a time. It takes the book's `external_id` and an image URL,
+downloads it with a normal browser `User-Agent`, verifies it is a genuine image (the SAME 2 KB /
+content-type check as `fill_covers`, so placeholders and HTML error pages are rejected), stores it
+in `data/covers/` and writes the `/api/covers/<name>` URL into both `books.json` and the SQLite DB
+(targeted `UPDATE` by id; `comparisons` untouched; count asserted unchanged):
+
+```
+python -m scripts.attach_cover --external-id 21357301 --url https://.../cover.jpg
+python -m scripts.attach_cover --external-id 21357301 --url https://.../cover.jpg --dry-run
+python -m scripts.attach_cover --external-id 21357301 --url https://.../cover.jpg --root E:\WebDev\shelfie
+```
+
+`attach(..., make_backup=False)` lets a batch caller take a single shared backup up front instead
+of one per book.
+
+**taniaksiazka.pl is the reliable source for these Polish editions.** Its product pages are served
+to a browser `User-Agent` (unlike empik, which returns 403) and host the cover on the
+`cf-tk.statiki.pl` CDN at `…/images/large-x2/<DIR>/<ISBN13>.webp` — the cover filename *is* the
+book's ISBN-13, so a match is ISBN-exact by construction. The safe procedure, applied in the
+`feat/covers-web` pass that filled 22 of these books:
+
+1. Search the shop by the book's ISBN-13 (`/Szukaj/q-<isbn>`); take the `…-p-<id>.html` product
+   link and read the `large-x2` cover whose filename equals the book's ISBN. **ISBN-exact — accept.**
+2. If the ISBN is not stocked, search by title + author. Accept a hit **only** when the product's
+   title AND author (AND volume, for a series) match exactly — a re-edition of the same book shares
+   its cover art. The top search hit is usually a *different* volume of the same series, so this
+   step is verified by hand, never auto-accepted. Books where no confident match exists are left
+   empty. The still-empty set is dominated by series volumes taniaksiazka does not currently stock
+   (several *Kroniki Riyrii*, *Czarne kamienie* and *Droga Szamana* volumes) and a few standalones
+   with no shop listing.
+
 ## Task B — `scripts/fix_series_titles.py`
 
 Repairs cycle metadata on books whose title carries only the series name, with the real volume
