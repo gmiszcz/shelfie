@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from app.api.deps import AppSettings, CurrentUser, DbConn
 from app.schemas.series import (
     AlertsResponse,
+    AlertsSeenRequest,
     ExpectedBook,
     ExpectedBookCreate,
     SeriesBookAdd,
@@ -30,6 +31,20 @@ async def list_series(user_id: CurrentUser, conn: DbConn) -> list[SeriesSummary]
 
 @router.get("/alerts", response_model=AlertsResponse)
 async def series_alerts(user_id: CurrentUser, conn: DbConn) -> AlertsResponse:
+    return await service.alerts(conn, user_id)
+
+
+@router.post("/alerts/seen", response_model=AlertsResponse)
+async def mark_alerts_seen(
+    data: AlertsSeenRequest, user_id: CurrentUser, conn: DbConn
+) -> AlertsResponse:
+    """Mark Series-tab alerts as seen for the current user.
+
+    Pass ``{"alert_keys": [...]}`` to dismiss those, or ``{"all": true}`` to dismiss every
+    currently-unseen alert. Returns the refreshed alerts (with the new seen state) so the
+    client can reconcile optimistic UI without a second request.
+    """
+    await service.mark_alerts_seen(conn, user_id, alert_keys=data.alert_keys, all_unseen=data.all)
     return await service.alerts(conn, user_id)
 
 

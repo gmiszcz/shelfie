@@ -12,6 +12,7 @@ from app.api.routes import (
     books,
     covers,
     health,
+    preferences,
     ratings,
     search,
     series,
@@ -29,6 +30,7 @@ api_router.include_router(search.router)
 api_router.include_router(stats.router)
 api_router.include_router(ratings.router)
 api_router.include_router(series.router)
+api_router.include_router(preferences.router)
 api_router.include_router(agent.router)
 api_router.include_router(agui.router)
 api_router.include_router(transcribe.router)

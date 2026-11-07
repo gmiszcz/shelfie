@@ -289,3 +289,46 @@ async def find_expected_by_series(
         (user_id, series_key),
     )
     return [_row_to_expected(row) for row in await cursor.fetchall()]
+
+
+# --- alert seen-state (series-ux) --------------------------------------------------------
+
+
+async def seen_alert_keys(conn: aiosqlite.Connection, user_id: int) -> set[str]:
+    """Return the set of alert keys this user has already dismissed."""
+    cursor = await conn.execute("SELECT alert_key FROM alert_seen WHERE user_id = ?", (user_id,))
+    return {row["alert_key"] for row in await cursor.fetchall()}
+
+
+async def mark_alerts_seen(conn: aiosqlite.Connection, user_id: int, alert_keys: list[str]) -> int:
+    """Record ``alert_keys`` as seen for this user (idempotent). Returns rows affected."""
+    affected = 0
+    for key in alert_keys:
+        if not key:
+            continue
+        cursor = await conn.execute(
+            "INSERT INTO alert_seen (user_id, alert_key) VALUES (?, ?) "
+            "ON CONFLICT(user_id, alert_key) DO NOTHING",
+            (user_id, key),
+        )
+        affected += cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
+    await conn.commit()
+    return affected
+
+
+async def prune_seen_alerts(conn: aiosqlite.Connection, user_id: int, keep_keys: set[str]) -> None:
+    """Delete seen rows whose alert key is no longer present among current alerts.
+
+    Keeps the table from growing without bound as release dates change (an old key for a
+    superseded alert is removed once that alert no longer exists). Never removes a key that
+    is still a live alert, so a dismissed-and-still-current alert stays hidden.
+    """
+    cursor = await conn.execute("SELECT alert_key FROM alert_seen WHERE user_id = ?", (user_id,))
+    stored = {row["alert_key"] for row in await cursor.fetchall()}
+    stale = stored - keep_keys
+    for key in stale:
+        await conn.execute(
+            "DELETE FROM alert_seen WHERE user_id = ? AND alert_key = ?", (user_id, key)
+        )
+    if stale:
+        await conn.commit()

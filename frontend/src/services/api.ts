@@ -9,6 +9,7 @@ import type {
   RecomputeResult,
   SearchResponse,
   SeriesAlertsResponse,
+  SeriesPreferences,
   SeriesSummary,
   StatsResponse,
   VolumeSearchResult,
@@ -324,6 +325,26 @@ export const api = {
   ),
 
   seriesAlerts: () => request<SeriesAlertsResponse>('/series/alerts'),
+
+  /**
+   * Mark Series-tab alerts as seen. Pass explicit keys, or {all:true} to dismiss every
+   * currently-unseen alert. Returns the refreshed alert feed (with new seen state).
+   */
+  markAlertsSeen: (payload: { alert_keys?: string[]; all?: boolean }) =>
+    request<SeriesAlertsResponse>('/series/alerts/seen', {
+      method: 'POST',
+      body: JSON.stringify({ alert_keys: payload.alert_keys ?? [], all: payload.all ?? false }),
+    }),
+
+  /** The current user's Series-tab preferences (active filter, optional sort). */
+  getSeriesPreferences: () => request<SeriesPreferences>('/preferences/series'),
+
+  /** Persist the current user's Series-tab preferences. */
+  putSeriesPreferences: (prefs: SeriesPreferences) =>
+    request<SeriesPreferences>('/preferences/series', {
+      method: 'PUT',
+      body: JSON.stringify(prefs),
+    }),
 
   listExpected: () => request<ExpectedBook[]>('/series/expected'),
 

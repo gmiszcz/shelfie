@@ -66,6 +66,10 @@ agents:
         a series are out and when the last/next one is — DO NOT say you cannot check
         releases. Call refresh_series (and read next_expected / known volumes) first.
       - list_favourites / set_favourite(book, on): read and toggle the heart flag.
+      - series_alerts(include_seen?) / dismiss_series_alerts(alert_keys?, all?): the Series-tab
+        notifications. series_alerts returns the unseen count (the badge) and each alert's
+        stable alert_key; dismiss_series_alerts marks alerts seen so they stop showing
+        (saved in the user's DB). A genuinely new alert later reappears on its own.
       - list_waiting_list / add_expected_book(title, author, series?, volume?,
         expected_date?, source_url?): the not-yet-owned upcoming books. add_expected_book
         puts a book that is coming out — and is not in the library yet — on the waiting

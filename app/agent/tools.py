@@ -829,6 +829,57 @@ def list_waiting_list() -> dict[str, Any]:
 
 
 @tool
+def series_alerts(include_seen: bool = False) -> dict[str, Any]:
+    """List the Series-tab notifications and how many are still unseen.
+
+    Each alert has a stable ``alert_key`` and a ``seen`` flag. ``unseen_count`` is the
+    badge number shown next to "Series". By default only UNSEEN alerts are returned; pass
+    ``include_seen=True`` to get every alert (seen and unseen). Use this for "do I have any
+    new series notifications", "what new volumes were announced", or before dismissing
+    alerts with dismiss_series_alerts.
+
+    Args:
+        include_seen: Include alerts the user has already dismissed (default False).
+    """
+    from app.services import series_service
+
+    response = _run(_with_conn(lambda c: series_service.alerts(c, SINGLE_USER_ID)))
+    items = [*response.new_volume, *response.in_progress]
+    if not include_seen:
+        items = [a for a in items if not a.seen]
+    return {
+        "unseen_count": response.unseen_count,
+        "count": len(items),
+        "alerts": [a.model_dump() for a in items],
+    }
+
+
+@tool
+def dismiss_series_alerts(alert_keys: list[str] | None = None, all: bool = False) -> dict[str, Any]:
+    """Mark Series-tab alerts as seen so they stop showing (persisted in the user's DB).
+
+    Pass the ``alert_keys`` from series_alerts to dismiss specific ones, or ``all=True`` to
+    dismiss every currently-unseen alert. A genuinely NEW alert later (a new volume, a date
+    announced or changed, a release) has a different key and will appear again.
+
+    Args:
+        alert_keys: Stable alert keys to dismiss (from series_alerts).
+        all: Dismiss every currently-unseen alert.
+    """
+    from app.services import series_service
+
+    marked = _run(
+        _with_conn(
+            lambda c: series_service.mark_alerts_seen(
+                c, SINGLE_USER_ID, alert_keys=alert_keys or [], all_unseen=bool(all)
+            )
+        )
+    )
+    response = _run(_with_conn(lambda c: series_service.alerts(c, SINGLE_USER_ID)))
+    return {"ok": True, "dismissed": marked, "unseen_count": response.unseen_count}
+
+
+@tool
 def add_expected_book(
     title: str,
     author: str = "",

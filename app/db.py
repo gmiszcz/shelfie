@@ -147,6 +147,35 @@ CREATE TABLE IF NOT EXISTS expected_books (
 );
 
 CREATE INDEX IF NOT EXISTS idx_expected_user ON expected_books(user_id);
+
+-- Acknowledgement of Series-tab alerts (wave 5 series-ux). One row per
+-- (user, stable alert key) records that the user dismissed that exact alert. A
+-- NEW alert (a new volume, a date announced or changed, a book released) gets a
+-- different key and is therefore unseen until dismissed again. Reading state is
+-- never stored here — only which alerts the user has already seen.
+CREATE TABLE IF NOT EXISTS alert_seen (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id),
+    alert_key  TEXT NOT NULL,
+    seen_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (user_id, alert_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_alert_seen_user ON alert_seen(user_id);
+
+-- Per-user UI preferences (wave 5 series-ux): a small key/value store so a
+-- choice such as the active Series filter is restored on any device. Values are
+-- JSON text. Not localStorage — these belong to the person, not the browser.
+CREATE TABLE IF NOT EXISTS ui_prefs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id),
+    pref_key   TEXT NOT NULL,
+    value      TEXT NOT NULL DEFAULT '{{}}',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (user_id, pref_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ui_prefs_user ON ui_prefs(user_id);
 """
 
 

@@ -8,41 +8,103 @@ import { SeriesEditDialog } from '../components/SeriesEditDialog';
 import { useLibrary } from '../hooks/useLibrary';
 import { useSeries } from '../hooks/useSeries';
 import { api } from '../services/api';
+import {
+  filterCounts,
+  matchesFilter,
+  matchesQuery,
+  orderWatching,
+  orphanExpected,
+} from '../seriesView';
 import { useAgentAnchor } from '../agent-ui';
-import { SearchInput } from '../ui';
-import type { Book, ReadingStatus, SeriesSummary } from '../types';
+import { FilterBar, SearchInput } from '../ui';
+import type {
+  Book,
+  ExpectedBook,
+  ReadingStatus,
+  SeriesFilterId,
+  SeriesSummary,
+} from '../types';
 
 import './Series.css';
 
+const FILTERS: { id: SeriesFilterId; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'watching', label: 'Watching' },
+  { id: 'in_progress', label: 'In progress' },
+  { id: 'missing', label: 'Missing volumes' },
+  { id: 'complete', label: 'Complete' },
+  { id: 'owned', label: 'Owned' },
+];
+
+// Sections rendered below the Watching section (depend on the active filter).
 const SECTIONS: { id: SeriesSummary['section']; label: string; icon: string; hint: string }[] = [
   { id: 'in_progress', label: 'In progress', icon: 'pi pi-book',
     hint: 'Started, not finished — with unread or missing volumes.' },
-  { id: 'owned', label: 'Watched & other', icon: 'pi pi-bell',
-    hint: 'Watched series and series you own but have not started.' },
+  { id: 'owned', label: 'Owned & other', icon: 'pi pi-book',
+    hint: 'Series you own but have not started.' },
   { id: 'complete', label: 'Complete', icon: 'pi pi-check-circle',
     hint: 'Every known volume read.' },
 ];
 
-function matches(series: SeriesSummary, needle: string): boolean {
-  if (!needle) {
-    return true;
-  }
-  const hay = [series.name, series.author, ...series.aliases].join(' ').toLowerCase();
-  return needle
-    .toLowerCase()
-    .split(/\s+/)
-    .every((t) => hay.includes(t));
+/** One waiting-list row (reused in the Watching section and the Waiting list section). */
+function WaitingRow({
+  item,
+  onRemove,
+}: {
+  item: ExpectedBook;
+  onRemove: (id: number) => void;
+}) {
+  return (
+    <li className="series-waiting-item">
+      <div className="series-waiting-main">
+        <span className="series-waiting-title">{item.title}</span>
+        <span className="series-waiting-meta">
+          {item.author}
+          {item.series_name && ` · ${item.series_name}`}
+          {item.volume && ` · vol. ${item.volume}`}
+          {item.expected_date ? ` · ${item.expected_date}` : ' · date unknown'}
+        </span>
+      </div>
+      <div className="series-waiting-actions">
+        {item.source_url && (
+          <a href={item.source_url} target="_blank" rel="noreferrer noopener">
+            source
+          </a>
+        )}
+        <Button
+          icon="pi pi-trash"
+          rounded
+          text
+          severity="danger"
+          aria-label={`Remove ${item.title} from the waiting list`}
+          onClick={() => onRemove(item.id)}
+        />
+      </div>
+    </li>
+  );
 }
 
 export function Series() {
-  const { series, expected, alerts, loading, error, reload, setWatch, refresh, removeExpected } =
-    useSeries();
+  const {
+    series,
+    expected,
+    alerts,
+    filter,
+    loading,
+    error,
+    reload,
+    setWatch,
+    refresh,
+    removeExpected,
+    setFilter,
+    dismissAlerts,
+  } = useSeries();
   const { books } = useLibrary();
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Book | null>(null);
   const [editing, setEditing] = useState<SeriesSummary | null>(null);
   const [refreshingKey, setRefreshingKey] = useState<string | null>(null);
-  const [alertsDismissed, setAlertsDismissed] = useState(false);
+  const [showSeen, setShowSeen] = useState(false);
   const toast = useRef<Toast>(null);
   // Fields the UI agent stages on series.editDialog before calling its "save" action.
   const editDialogDraft = useRef<{
@@ -59,17 +121,38 @@ export function Series() {
   const notifySuccess = (message: string) =>
     toast.current?.show({ severity: 'success', summary: 'Saved', detail: message, life: 2000 });
 
-  const filtered = useMemo(
-    () => series.filter((s) => matches(s, query.trim())),
+  // Search first, then the active filter. Counts are over the search-filtered set so each
+  // filter pill shows how many it would land on.
+  const searched = useMemo(
+    () => series.filter((s) => matchesQuery(s, query.trim())),
     [series, query],
   );
-
-  const bySectionInProgress = filtered.filter((s) => s.section === 'in_progress');
-  const complete = filtered.filter((s) => s.section === 'complete');
-  const middle = filtered.filter(
-    (s) => s.section === 'owned' || (s.watch && s.section !== 'in_progress' && s.section !== 'complete'),
+  const counts = useMemo(() => filterCounts(searched), [searched]);
+  const filtered = useMemo(
+    () => searched.filter((s) => matchesFilter(s, filter)),
+    [searched, filter],
   );
 
+  // Watching section: watched series (search-filtered) ordered by nearest known date.
+  const watching = useMemo(() => orderWatching(searched), [searched]);
+  const orphans = useMemo(() => orphanExpected(expected, series), [expected, series]);
+  const expectedBySeries = useMemo(() => {
+    const map = new Map<string, ExpectedBook[]>();
+    for (const e of expected) {
+      if (e.series_key) {
+        const list = map.get(e.series_key) ?? [];
+        list.push(e);
+        map.set(e.series_key, list);
+      }
+    }
+    return map;
+  }, [expected]);
+
+  // The lower sections honour the active filter: when a specific filter is chosen we only
+  // show that bucket (as one flat grid); on "all" we keep the familiar section split.
+  const bySectionInProgress = filtered.filter((s) => s.section === 'in_progress');
+  const complete = filtered.filter((s) => s.section === 'complete');
+  const middle = filtered.filter((s) => s.section === 'owned');
   const grouped: Record<SeriesSummary['section'], SeriesSummary[]> = {
     in_progress: bySectionInProgress,
     owned: middle,
@@ -91,8 +174,6 @@ export function Series() {
     }
   };
 
-  // After any edit, reload the list and keep the open dialog pointed at the (possibly
-  // renamed/merged) series so the user sees the result immediately.
   const handleEditSaved = async (message: string) => {
     notifySuccess(message);
     const openKey = editing?.series_key ?? null;
@@ -107,16 +188,27 @@ export function Series() {
     setEditing(next);
   };
 
-  // --- UI-agent anchors (universal registry): the agent can search, watch, refresh and
-  // manage the waiting list here without any agent-side code. -------------------------------
+  const handleRefresh = async (key: string) => {
+    setRefreshingKey(key);
+    try {
+      await refresh(key);
+      toast.current?.show({ severity: 'success', summary: 'Refreshed', life: 2000 });
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Lookup failed');
+    } finally {
+      setRefreshingKey(null);
+    }
+  };
+
+  // --- UI-agent anchors --------------------------------------------------------------------
   const findSeries = (args?: Record<string, unknown>) => {
     const key = String(args?.key ?? args?.series ?? args?.name ?? '').trim().toLowerCase();
     const hit = series.find(
       (s) =>
         s.series_key.toLowerCase() === key ||
-        s.display_name.toLowerCase() === key ||
+        s.name.toLowerCase() === key ||
         (s.aliases ?? []).some((a) => a.toLowerCase() === key) ||
-        s.display_name.toLowerCase().includes(key),
+        s.name.toLowerCase().includes(key),
     );
     if (!hit) {
       throw new Error(`no series "${key}"; see series.list for valid keys`);
@@ -140,23 +232,45 @@ export function Series() {
     label: 'Series',
     description:
       'Series in the library with section (in_progress / owned / complete), watch flag and missing volumes. ' +
+      'State also carries the active filter (one of all, watching, in_progress, missing, complete, owned). ' +
       'Actions: "watch" / "unwatch" with args { key }, "refresh" with { key } (runs the release lookup), ' +
       '"edit" with { key } (opens the series edit dialog — see series.editDialog), ' +
-      '"open" with { book_id } to open an owned volume.',
+      '"open" with { book_id } to open an owned volume, ' +
+      '"set_filter" with { filter } to change the active filter (persisted per user), ' +
+      '"dismiss_alerts" with { keys?: [alert_key], all?: boolean } to mark notifications seen.',
     tab: 'series',
-    actions: ['watch', 'unwatch', 'refresh', 'edit', 'open'],
-    getState: () =>
-      filtered.map((s) => ({
+    actions: ['watch', 'unwatch', 'refresh', 'edit', 'open', 'set_filter', 'dismiss_alerts'],
+    getState: () => ({
+      filter,
+      unseen_alerts: alerts?.unseen_count ?? 0,
+      series: filtered.map((s) => ({
         key: s.series_key,
-        name: s.display_name,
+        name: s.name,
         section: s.section,
         watch: s.watch,
         missing: s.missing_volumes.map((m) => m.number),
       })),
-    items: () => filtered.map((s) => ({ id: s.series_key, title: s.display_name })),
+    }),
+    items: () => filtered.map((s) => ({ id: s.series_key, title: s.name })),
     invoke: async (action, args) => {
       if (action === 'open') {
         await openVolume(Number(args?.book_id));
+        return;
+      }
+      if (action === 'set_filter') {
+        const next = String(args?.filter ?? '').trim() as SeriesFilterId;
+        if (!FILTERS.some((f) => f.id === next)) {
+          throw new Error(
+            `unknown filter "${next}"; use all, watching, in_progress, missing, complete or owned`,
+          );
+        }
+        setFilter(next);
+        return;
+      }
+      if (action === 'dismiss_alerts') {
+        const keys = Array.isArray(args?.keys) ? (args?.keys as string[]) : undefined;
+        const all = Boolean(args?.all) || !keys;
+        await dismissAlerts(all ? { all: true } : { alert_keys: keys });
         return;
       }
       const hit = findSeries(args);
@@ -167,7 +281,7 @@ export function Series() {
       } else if (action === 'edit') {
         setEditing(hit);
       } else {
-        throw new Error(`unknown action "${action}"; use watch, unwatch, refresh, edit or open`);
+        throw new Error(`unknown action "${action}"`);
       }
     },
   });
@@ -282,18 +396,6 @@ export function Series() {
     },
   });
 
-  const handleRefresh = async (key: string) => {
-    setRefreshingKey(key);
-    try {
-      await refresh(key);
-      toast.current?.show({ severity: 'success', summary: 'Refreshed', life: 2000 });
-    } catch (err) {
-      notifyError(err instanceof Error ? err.message : 'Lookup failed');
-    } finally {
-      setRefreshingKey(null);
-    }
-  };
-
   const handleFavourite = async (id: number, next: boolean) => {
     try {
       await api.updateBook(id, { favourite: next });
@@ -321,8 +423,22 @@ export function Series() {
     }
   };
 
-  const alertCount = alerts?.count ?? 0;
-  const showAlerts = !alertsDismissed && alertCount > 0;
+  const unseenCount = alerts?.unseen_count ?? 0;
+  const allAlerts = alerts ? [...alerts.new_volume, ...alerts.in_progress] : [];
+  const unseenAlerts = allAlerts.filter((a) => !a.seen);
+  const seenAlerts = allAlerts.filter((a) => a.seen);
+  const showBanner = unseenCount > 0;
+
+  const dismissAll = () =>
+    dismissAlerts({ all: true }).catch((err) =>
+      notifyError(err instanceof Error ? err.message : 'Could not dismiss notifications'),
+    );
+
+  // Show the Watching section whenever the filter is "all" or "watching" (and there is
+  // something to show). A specific non-watching filter hides it to avoid duplicate cards.
+  const showWatching =
+    (filter === 'all' || filter === 'watching') && (watching.length > 0 || orphans.length > 0);
+  const showLowerSections = filter !== 'watching';
 
   return (
     <>
@@ -332,7 +448,11 @@ export function Series() {
         <div className="series-toolbar-head">
           <h2 className="series-title">
             <i className="pi pi-bookmark" aria-hidden="true" /> Series
-            {alertCount > 0 && <span className="series-badge">{alertCount}</span>}
+            {unseenCount > 0 && (
+              <span className="series-badge" aria-label={`${unseenCount} unseen notifications`}>
+                {unseenCount}
+              </span>
+            )}
           </h2>
           <span className="series-count">
             {loading ? 'Loading…' : `${filtered.length} of ${series.length} series`}
@@ -347,33 +467,38 @@ export function Series() {
             ariaLabel="Filter series"
           />
         </div>
+
+        <FilterBar
+          ariaLabel="Filter series"
+          value={filter}
+          onChange={setFilter}
+          options={FILTERS.map((f) => ({ id: f.id, label: f.label, count: counts[f.id] }))}
+        />
       </div>
 
-      {showAlerts && (
+      {showBanner && (
         <section className="series-alerts" aria-label="Series notifications">
           <div className="series-alerts-head">
             <strong>
-              <i className="pi pi-bell" aria-hidden="true" /> {alertCount} notification
-              {alertCount === 1 ? '' : 's'}
+              <i className="pi pi-bell" aria-hidden="true" /> {unseenCount} new notification
+              {unseenCount === 1 ? '' : 's'}
             </strong>
             <Button
               icon="pi pi-times"
               rounded
               text
               aria-label="Dismiss notifications"
-              onClick={() => setAlertsDismissed(true)}
+              onClick={dismissAll}
             />
           </div>
           <ul className="series-alerts-list">
-            {alerts?.new_volume.map((a) => (
-              <li key={`nv-${a.series_key}`}>
-                <i className="pi pi-sparkles" aria-hidden="true" /> {a.message}
-                {a.detail && <span className="series-alert-detail"> · {a.detail}</span>}
-              </li>
-            ))}
-            {alerts?.in_progress.map((a) => (
-              <li key={`ip-${a.series_key}`}>
-                <i className="pi pi-book" aria-hidden="true" /> {a.message}
+            {unseenAlerts.map((a) => (
+              <li key={a.alert_key}>
+                <i
+                  className={a.kind === 'new_volume' ? 'pi pi-sparkles' : 'pi pi-book'}
+                  aria-hidden="true"
+                />{' '}
+                {a.message}
                 {a.detail && <span className="series-alert-detail"> · {a.detail}</span>}
               </li>
             ))}
@@ -381,7 +506,46 @@ export function Series() {
         </section>
       )}
 
-      {error && <p style={{ color: 'var(--red-400)' }}>{error}</p>}
+      {!showBanner && seenAlerts.length > 0 && (
+        <div className="series-alerts-earlier">
+          <Button
+            link
+            label={showSeen ? 'Hide earlier notifications' : 'Show earlier notifications'}
+            icon={showSeen ? 'pi pi-chevron-up' : 'pi pi-chevron-down'}
+            onClick={() => setShowSeen((v) => !v)}
+          />
+        </div>
+      )}
+
+      {showBanner && seenAlerts.length > 0 && (
+        <div className="series-alerts-earlier">
+          <Button
+            link
+            label={showSeen ? 'Hide earlier notifications' : `Show ${seenAlerts.length} earlier`}
+            icon={showSeen ? 'pi pi-chevron-up' : 'pi pi-chevron-down'}
+            onClick={() => setShowSeen((v) => !v)}
+          />
+        </div>
+      )}
+
+      {showSeen && seenAlerts.length > 0 && (
+        <section className="series-alerts series-alerts--seen" aria-label="Earlier notifications">
+          <ul className="series-alerts-list">
+            {seenAlerts.map((a) => (
+              <li key={a.alert_key}>
+                <i
+                  className={a.kind === 'new_volume' ? 'pi pi-sparkles' : 'pi pi-book'}
+                  aria-hidden="true"
+                />{' '}
+                {a.message}
+                {a.detail && <span className="series-alert-detail"> · {a.detail}</span>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {error && <p style={{ color: 'var(--accent-red)' }}>{error}</p>}
 
       {!loading && series.length === 0 && (
         <div className="empty-state">
@@ -390,42 +554,113 @@ export function Series() {
         </div>
       )}
 
-      {SECTIONS.map((section) => {
-        const items = grouped[section.id];
-        if (items.length === 0) {
-          return null;
-        }
-        return (
-          <section key={section.id} className="series-section">
-            <div className="series-section-head">
-              <h3>
-                <i className={section.icon} aria-hidden="true" /> {section.label}
-                <span className="series-section-count">{items.length}</span>
-              </h3>
-              <p className="series-section-hint">{section.hint}</p>
+      {/* Watching: watched series first, each with its next expected volume, plus the
+          waiting-list items of that series; orphan waiting-list items follow. */}
+      {showWatching && (
+        <section className="series-section" aria-label="Watching">
+          <div className="series-section-head">
+            <h3>
+              <i className="pi pi-bell" aria-hidden="true" /> Watching
+              <span className="series-section-count">{watching.length}</span>
+            </h3>
+            <p className="series-section-hint">
+              Series you watch for new volumes, nearest known release first.
+            </p>
+          </div>
+          <div className="series-grid">
+            {watching.map((s) => {
+              const waiting = expectedBySeries.get(s.series_key) ?? [];
+              return (
+                <div key={s.series_key} className="series-watch-group">
+                  <SeriesCard
+                    series={s}
+                    onOpenVolume={openVolume}
+                    onToggleWatch={(key, watch) =>
+                      setWatch(key, watch).catch((err) =>
+                        notifyError(err instanceof Error ? err.message : 'Could not toggle watch'),
+                      )
+                    }
+                    onRefresh={handleRefresh}
+                    onEdit={openEdit}
+                    refreshing={refreshingKey === s.series_key}
+                  />
+                  {waiting.length > 0 && (
+                    <ul className="series-waiting-list series-watch-waiting">
+                      {waiting.map((e) => (
+                        <WaitingRow
+                          key={e.id}
+                          item={e}
+                          onRemove={(id) =>
+                            removeExpected(id).catch((err) =>
+                              notifyError(err instanceof Error ? err.message : 'Could not remove'),
+                            )
+                          }
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {orphans.length > 0 && (
+            <div className="series-watch-orphans">
+              <p className="series-section-hint">Waiting-list items with no series</p>
+              <ul className="series-waiting-list">
+                {orphans.map((e) => (
+                  <WaitingRow
+                    key={e.id}
+                    item={e}
+                    onRemove={(id) =>
+                      removeExpected(id).catch((err) =>
+                        notifyError(err instanceof Error ? err.message : 'Could not remove'),
+                      )
+                    }
+                  />
+                ))}
+              </ul>
             </div>
-            <div className="series-grid">
-              {items.map((s) => (
-                <SeriesCard
-                  key={s.series_key}
-                  series={s}
-                  onOpenVolume={openVolume}
-                  onToggleWatch={(key, watch) =>
-                    setWatch(key, watch).catch((err) =>
-                      notifyError(err instanceof Error ? err.message : 'Could not toggle watch'),
-                    )
-                  }
-                  onRefresh={handleRefresh}
-                  onEdit={openEdit}
-                  refreshing={refreshingKey === s.series_key}
-                />
-              ))}
-            </div>
-          </section>
-        );
-      })}
+          )}
+        </section>
+      )}
 
-      {/* Waiting list: not-yet-owned upcoming books. */}
+      {showLowerSections &&
+        SECTIONS.map((section) => {
+          const items = grouped[section.id];
+          if (items.length === 0) {
+            return null;
+          }
+          return (
+            <section key={section.id} className="series-section">
+              <div className="series-section-head">
+                <h3>
+                  <i className={section.icon} aria-hidden="true" /> {section.label}
+                  <span className="series-section-count">{items.length}</span>
+                </h3>
+                <p className="series-section-hint">{section.hint}</p>
+              </div>
+              <div className="series-grid">
+                {items.map((s) => (
+                  <SeriesCard
+                    key={s.series_key}
+                    series={s}
+                    onOpenVolume={openVolume}
+                    onToggleWatch={(key, watch) =>
+                      setWatch(key, watch).catch((err) =>
+                        notifyError(err instanceof Error ? err.message : 'Could not toggle watch'),
+                      )
+                    }
+                    onRefresh={handleRefresh}
+                    onEdit={openEdit}
+                    refreshing={refreshingKey === s.series_key}
+                  />
+                ))}
+              </div>
+            </section>
+          );
+        })}
+
+      {/* Waiting list: every not-yet-owned upcoming book. */}
       <section className="series-section">
         <div className="series-section-head">
           <h3>
@@ -444,36 +679,15 @@ export function Series() {
         ) : (
           <ul className="series-waiting-list">
             {expected.map((e) => (
-              <li key={e.id} className="series-waiting-item">
-                <div className="series-waiting-main">
-                  <span className="series-waiting-title">{e.title}</span>
-                  <span className="series-waiting-meta">
-                    {e.author}
-                    {e.series_name && ` · ${e.series_name}`}
-                    {e.volume && ` · vol. ${e.volume}`}
-                    {e.expected_date && ` · ${e.expected_date}`}
-                  </span>
-                </div>
-                <div className="series-waiting-actions">
-                  {e.source_url && (
-                    <a href={e.source_url} target="_blank" rel="noreferrer noopener">
-                      source
-                    </a>
-                  )}
-                  <Button
-                    icon="pi pi-trash"
-                    rounded
-                    text
-                    severity="danger"
-                    aria-label={`Remove ${e.title} from the waiting list`}
-                    onClick={() =>
-                      removeExpected(e.id).catch((err) =>
-                        notifyError(err instanceof Error ? err.message : 'Could not remove'),
-                      )
-                    }
-                  />
-                </div>
-              </li>
+              <WaitingRow
+                key={e.id}
+                item={e}
+                onRemove={(id) =>
+                  removeExpected(id).catch((err) =>
+                    notifyError(err instanceof Error ? err.message : 'Could not remove'),
+                  )
+                }
+              />
             ))}
           </ul>
         )}
