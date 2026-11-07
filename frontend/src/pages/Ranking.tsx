@@ -3,7 +3,6 @@ import { Column } from 'primereact/column';
 import { DataTable } from 'primereact/datatable';
 import { Dropdown } from 'primereact/dropdown';
 import { InputSwitch } from 'primereact/inputswitch';
-import { InputText } from 'primereact/inputtext';
 import { ProgressBar } from 'primereact/progressbar';
 import { Skeleton } from 'primereact/skeleton';
 import { Toast } from 'primereact/toast';
@@ -27,6 +26,7 @@ import {
 } from '../ranking';
 import { api } from '../services/api';
 import type { Book, RatingPair, Winner } from '../types';
+import { SearchInput } from '../ui';
 
 const ALL_SHELVES = '__all__';
 const UI_BUS_EVENT = 'shelfie:ui';
@@ -324,30 +324,31 @@ export function Ranking() {
     <>
       <Toast ref={toast} position="bottom-right" />
 
-      <div className="toolbar">
-        <Button
-          label="Recalculate scores"
-          icon="pi pi-refresh"
-          onClick={() => void handleRecompute()}
-          loading={recomputing}
-        />
-        <span style={{ color: 'var(--app-text-muted)' }}>
-          {loading ? 'Loading…' : `${ratedBooks.length} rated book${ratedBooks.length === 1 ? '' : 's'}`}
-        </span>
-      </div>
-
-      {error && <p style={{ color: 'var(--red-400)' }}>{error}</p>}
-
-      <div className="rank-infobox" role="note">
-        <i className="pi pi-info-circle" aria-hidden="true" />
-        <div>
-          <strong>How the score works.</strong> Your star rating sets a <em>band</em>: a 5★ book
-          lives in <code>4.6–5.0</code>, a 4.5★ book in <code>4.1–4.5</code>, and so on. Each
-          comparison nudges the book you did <em>not</em> pick down by one 0.1 step within its band
-          (never more), so the order by stars is always kept and refinement is gradual. Comparisons
-          are always between two books in the <em>same category</em>.
+      <div className="rank-page">
+        <div className="rank-toolbar">
+          <Button
+            label="Recalculate scores"
+            icon="pi pi-refresh"
+            onClick={() => void handleRecompute()}
+            loading={recomputing}
+          />
+          <span className="rank-toolbar-count">
+            {loading ? 'Loading…' : `${ratedBooks.length} rated book${ratedBooks.length === 1 ? '' : 's'}`}
+          </span>
         </div>
-      </div>
+
+        {error && <p className="rank-error">{error}</p>}
+
+        <div className="rank-infobox" role="note">
+          <i className="pi pi-info-circle" aria-hidden="true" />
+          <div>
+            <strong>How the score works.</strong> Your star rating sets a <em>band</em>: a 5★ book
+            lives in <code>4.6–5.0</code>, a 4.5★ book in <code>4.1–4.5</code>, and so on. Each
+            comparison nudges the book you did <em>not</em> pick down by one 0.1 step within its band
+            (never more), so the order by stars is always kept and refinement is gradual. Comparisons
+            are always between two books in the <em>same category</em>.
+          </div>
+        </div>
 
       {/* --- Compare section --------------------------------------------------------- */}
       <section className="rank-section">
@@ -378,26 +379,28 @@ export function Ranking() {
           </div>
         </div>
 
-        {loading || pairLoading ? (
-          <div className="rank-compare-skeleton">
-            <Skeleton width="100%" height="360px" />
-          </div>
-        ) : ratedBooks.length < 2 ? (
-          <div className="empty-state">
-            <i className="pi pi-sort-amount-down" style={{ fontSize: '2.5rem' }} />
-            <p>Rate at least two books with stars to start comparing them.</p>
-          </div>
-        ) : pair ? (
-          <ComparePair left={pair.left} right={pair.right} sending={sending} onChoose={(w) => void handleChoose(w)} />
-        ) : (
-          <div className="empty-state">
-            <p>
-              No more pairs to compare
-              {focus != null ? ' for this book' : ' in this category'}. Pick another category or
-              book, or the ranking is as refined as it gets for now.
-            </p>
-          </div>
-        )}
+        <div className="rank-compare-panel">
+          {loading || pairLoading ? (
+            <div className="rank-compare-skeleton">
+              <Skeleton width="100%" height="360px" />
+            </div>
+          ) : ratedBooks.length < 2 ? (
+            <div className="empty-state">
+              <i className="pi pi-sort-amount-down" style={{ fontSize: '2.5rem' }} />
+              <p>Rate at least two books with stars to start comparing them.</p>
+            </div>
+          ) : pair ? (
+            <ComparePair left={pair.left} right={pair.right} sending={sending} onChoose={(w) => void handleChoose(w)} />
+          ) : (
+            <div className="empty-state">
+              <p>
+                No more pairs to compare
+                {focus != null ? ' for this book' : ' in this category'}. Pick another category or
+                book, or the ranking is as refined as it gets for now.
+              </p>
+            </div>
+          )}
+        </div>
       </section>
 
       {/* --- Ranking table ----------------------------------------------------------- */}
@@ -405,25 +408,14 @@ export function Ranking() {
         <div className="rank-section-head">
           <h2>Ranking</h2>
           <div className="rank-section-controls">
-            <span className="p-input-icon-left rank-search">
-              <i className="pi pi-search" />
-              <InputText
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search title, author, series"
-                aria-label="Search the ranking"
-              />
-              {search && (
-                <button
-                  type="button"
-                  className="rank-search-clear"
-                  aria-label="Clear search"
-                  onClick={() => setSearch('')}
-                >
-                  <i className="pi pi-times" />
-                </button>
-              )}
-            </span>
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Search title, author, series"
+              ariaLabel="Search the ranking"
+              fullWidth={false}
+              className="rank-search"
+            />
             <Dropdown
               value={shelf}
               options={shelfOptions}
@@ -438,27 +430,30 @@ export function Ranking() {
           </div>
         </div>
 
-        <DataTable
-          value={ranked}
-          loading={loading}
-          paginator
-          rows={15}
-          dataKey="id"
-          emptyMessage="No rated books match these filters."
-          className="rank-table"
-        >
-          <Column header="#" body={rankBody} style={{ width: '4rem' }} />
-          <Column header="Cover" body={coverBody} style={{ width: '4rem' }} />
-          <Column header="Title" body={titleBody} />
-          <Column header="Stars" body={starsBody} style={{ width: '10rem' }} />
-          <Column header="Score" body={scoreBody} style={{ width: '6rem' }} />
-          <Column header="Band" body={bandBody} style={{ width: '7rem' }} />
-          <Column header="Comparisons" field="comparison_count" style={{ width: '8rem' }} />
-          <Column header="Confidence" body={confidenceBody} style={{ width: '9rem' }} />
-          <Column header="±" body={uncertaintyBody} style={{ width: '6rem' }} />
-          <Column header="Focus" body={focusBody} style={{ width: '5rem' }} />
-        </DataTable>
+        <div className="rank-table-panel">
+          <DataTable
+            value={ranked}
+            loading={loading}
+            paginator
+            rows={15}
+            dataKey="id"
+            emptyMessage="No rated books match these filters."
+            className="rank-table"
+          >
+            <Column header="#" body={rankBody} style={{ width: '4rem' }} />
+            <Column header="Cover" body={coverBody} style={{ width: '4rem' }} />
+            <Column header="Title" body={titleBody} />
+            <Column header="Stars" body={starsBody} style={{ width: '10rem' }} />
+            <Column header="Score" body={scoreBody} style={{ width: '6rem' }} />
+            <Column header="Band" body={bandBody} style={{ width: '7rem' }} />
+            <Column header="Comparisons" field="comparison_count" style={{ width: '8rem' }} />
+            <Column header="Confidence" body={confidenceBody} style={{ width: '9rem' }} />
+            <Column header="±" body={uncertaintyBody} style={{ width: '6rem' }} />
+            <Column header="Focus" body={focusBody} style={{ width: '5rem' }} />
+          </DataTable>
+        </div>
       </section>
+      </div>
     </>
   );
 }
