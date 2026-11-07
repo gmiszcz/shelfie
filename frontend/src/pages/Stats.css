@@ -19,18 +19,11 @@
   min-width: 0;
 }
 
-.stats-control > label {
-  color: var(--app-text-muted);
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
 /* SelectButtons must wrap instead of overflowing behind the chat panel on narrow widths. */
 .stats-control .p-selectbutton {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--small-gap);
+  gap: var(--small-padding);
 }
 
 .stats-range {
@@ -44,75 +37,30 @@
   width: 100%;
 }
 
-/* --- Summary KPI cards ------------------------------------------------------------------ */
+/* --- Summary KPI grid (StatCards) ------------------------------------------------------- */
 .stats-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--default-gap);
+  gap: var(--big-gap);
 }
 
-.stats-card {
-  background: var(--app-surface);
-  border: 1px solid var(--app-border);
-  border-radius: var(--custom-border-radius);
-}
-
-/* PrimeReact nests children in .p-card-body > .p-card-content; keep the body padded
-   and let our own inner wrapper own the label/value column + gap so they never touch. */
-.stats-card .p-card-body {
-  padding: var(--card-padding);
-}
-
-.stats-card .p-card-content {
-  padding: 0;
-}
-
-.stats-card-inner {
+/* Skeleton placeholder mirrors a StatCard's label / value / spark stack. */
+.stats-kpi {
   display: flex;
   flex-direction: column;
   gap: var(--small-gap);
 }
 
-.stats-card-label {
-  color: var(--app-text-muted);
-  font-size: 0.85rem;
-  line-height: 1.2;
-}
-
-.stats-card-value {
-  font-size: 1.6rem;
+/* Period value is longer than a number; keep it on the baseline but smaller. */
+.stats-period-value {
+  font-size: 1.05rem;
   font-weight: 600;
-  line-height: 1.2;
-  color: var(--app-text);
-}
-
-/* Period dates: smaller, and allowed to wrap onto their own lines cleanly. */
-.stats-card-period {
-  font-size: 1rem;
-  font-weight: 500;
-  line-height: 1.35;
+  line-height: 1.3;
+  letter-spacing: 0;
   overflow-wrap: anywhere;
 }
 
-/* --- Chart & table cards ---------------------------------------------------------------- */
-.stats-chart-card,
-.stats-table-card {
-  background: var(--app-surface);
-  border: 1px solid var(--app-border);
-  border-radius: var(--custom-border-radius);
-}
-
-.stats-chart-card .p-card-body,
-.stats-table-card .p-card-body {
-  padding: var(--card-padding);
-}
-
-.stats-chart-card .p-card-content,
-.stats-table-card .p-card-content {
-  padding: 0;
-}
-
-/* --- Table with search ------------------------------------------------------------------ */
+/* --- Table ------------------------------------------------------------------------------ */
 .stats-table {
   display: flex;
   flex-direction: column;
@@ -133,7 +81,9 @@
 
 .stats-table-count {
   color: var(--app-text-muted);
-  font-size: 0.9rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
   white-space: nowrap;
 }
 
@@ -146,4 +96,27 @@
 
 .stats-muted {
   color: var(--app-text-muted);
+}
+
+/* --- Responsive ------------------------------------------------------------------------- */
+/* Phones: KPIs in a tidy 2x2, controls stack full width, value a touch smaller. */
+@media (max-width: 640px) {
+  .stats-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--default-gap);
+  }
+  .stats-summary .ui-statcard-value {
+    font-size: 1.7rem;
+  }
+  .stats-controls {
+    gap: var(--default-gap);
+  }
+  .stats-control,
+  .stats-range,
+  .stats-range .p-calendar {
+    width: 100%;
+  }
+  .stats-range .p-calendar .p-inputtext {
+    width: 100%;
+  }
 }

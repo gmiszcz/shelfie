@@ -1,5 +1,4 @@
 import { Calendar } from 'primereact/calendar';
-import { Card } from 'primereact/card';
 import { Column } from 'primereact/column';
 import { DataTable } from 'primereact/datatable';
 import { Message } from 'primereact/message';
@@ -22,7 +21,7 @@ import {
   type StatsMetric,
 } from '../statsView';
 import type { Book, GroupBy, StatsResponse } from '../types';
-import { BookCover, SearchInput } from '../ui';
+import { BookCover, Panel, SearchInput, SectionLabel, StatCard } from '../ui';
 
 import './Stats.css';
 
@@ -55,11 +54,16 @@ function readBarColors(): BarColors {
   const read = (name: string, fallback: string) =>
     getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
   return {
-    bar: read('--app-accent', '#8b9cff'),
-    text: read('--app-text', '#e6e8ee'),
-    muted: read('--app-text-muted', '#9aa0b0'),
-    border: read('--app-border', '#2e3342'),
+    bar: read('--app-accent', '#4c6ef5'),
+    text: read('--app-text', '#1b1f27'),
+    muted: read('--app-text-muted', '#6b7280'),
+    border: read('--app-border', '#e7e9ee'),
   };
+}
+
+/** Read a single themed accent colour (for sparkline strokes). */
+function readVar(name: string, fallback: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 }
 
 function formatPeriod(from: string | null, to: string | null): string {
@@ -80,7 +84,7 @@ export function Stats() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Theme key: recompute chart colors when the theme toggles.
+  // Theme key: recompute chart/spark colors when the theme toggles.
   const [themeKey, setThemeKey] = useState(0);
   useEffect(() => {
     const observer = new MutationObserver(() => setThemeKey((k) => k + 1));
@@ -127,6 +131,21 @@ export function Stats() {
 
   const summary = data?.summary;
 
+  // Sparkline trends built from the monthly (or whatever grouping) buckets.
+  const booksTrend = useMemo(() => (data ? data.buckets.map((b) => b.books) : []), [data]);
+  const pagesTrend = useMemo(() => (data ? data.buckets.map((b) => b.pages) : []), [data]);
+
+  // Themed spark colours (recomputed on theme toggle via themeKey).
+  const sparkColors = useMemo(
+    () => ({
+      accent: readVar('--app-accent', '#4c6ef5'),
+      green: readVar('--accent-green', '#1f9d6b'),
+      orange: readVar('--accent-orange', '#e08a2b'),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [themeKey],
+  );
+
   const allBooks = useMemo(() => data?.books ?? [], [data]);
   const filteredBooks = useMemo(
     () => filterBooks(allBooks, tableSearch),
@@ -158,100 +177,101 @@ export function Stats() {
 
   return (
     <div className="stats-page">
-      <div className="stats-controls">
-        <div className="stats-control">
-          <label>Period</label>
-          <div className="stats-range">
+      <Panel label="Reading · overview" icon="pi pi-chart-bar" className="stats-controls-panel">
+        <div className="stats-controls">
+          <div className="stats-control">
+            <SectionLabel as="span">Period</SectionLabel>
+            <div className="stats-range">
+              <SelectButton
+                value={preset}
+                options={PRESETS}
+                onChange={(e) => {
+                  if (e.value == null) return;
+                  setPreset(e.value);
+                  setCustomRange(null);
+                }}
+                allowEmpty={false}
+              />
+              <Calendar
+                value={customRange as Date[] | null}
+                onChange={(e) => setCustomRange((e.value as (Date | null)[] | null) ?? null)}
+                selectionMode="range"
+                readOnlyInput
+                showButtonBar
+                placeholder="Custom range"
+                dateFormat="yy-mm-dd"
+              />
+            </div>
+          </div>
+          <div className="stats-control">
+            <SectionLabel as="span">Group by</SectionLabel>
             <SelectButton
-              value={preset}
-              options={PRESETS}
-              onChange={(e) => {
-                if (e.value == null) return;
-                setPreset(e.value);
-                setCustomRange(null);
-              }}
+              value={groupBy}
+              options={GROUP_OPTIONS}
+              onChange={(e) => e.value != null && setGroupBy(e.value)}
               allowEmpty={false}
             />
-            <Calendar
-              value={customRange as Date[] | null}
-              onChange={(e) => setCustomRange((e.value as (Date | null)[] | null) ?? null)}
-              selectionMode="range"
-              readOnlyInput
-              showButtonBar
-              placeholder="Custom range"
-              dateFormat="yy-mm-dd"
+          </div>
+          <div className="stats-control">
+            <SectionLabel as="span">Metric</SectionLabel>
+            <SelectButton
+              value={metric}
+              options={METRIC_OPTIONS}
+              onChange={(e) => e.value != null && setMetric(e.value)}
+              allowEmpty={false}
             />
           </div>
         </div>
-        <div className="stats-control">
-          <label>Group by</label>
-          <SelectButton
-            value={groupBy}
-            options={GROUP_OPTIONS}
-            onChange={(e) => e.value != null && setGroupBy(e.value)}
-            allowEmpty={false}
-          />
-        </div>
-        <div className="stats-control">
-          <label>Metric</label>
-          <SelectButton
-            value={metric}
-            options={METRIC_OPTIONS}
-            onChange={(e) => e.value != null && setMetric(e.value)}
-            allowEmpty={false}
-          />
-        </div>
-      </div>
+      </Panel>
 
       {error && <Message severity="error" text={error} className="stats-error" />}
 
-      <div className="stats-summary">
-        {loading || !summary ? (
-          Array.from({ length: 4 }).map((_, i) => (
-            <Card key={i} className="stats-card">
-              <div className="stats-card-inner">
-                <Skeleton width="60%" height="0.9rem" />
-                <Skeleton width="40%" height="1.6rem" />
+      <Panel label="Signals · this range">
+        <div className="stats-summary">
+          {loading || !summary ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="stats-kpi">
+                <Skeleton width="55%" height="0.75rem" />
+                <Skeleton width="45%" height="2rem" />
+                <Skeleton width="100%" height="1.5rem" />
               </div>
-            </Card>
-          ))
-        ) : (
-          <>
-            <Card className="stats-card">
-              <div className="stats-card-inner">
-                <span className="stats-card-label">Books read</span>
-                <span className="stats-card-value">{summary.books.toLocaleString()}</span>
-              </div>
-            </Card>
-            <Card className="stats-card">
-              <div className="stats-card-inner">
-                <span className="stats-card-label">Pages read</span>
-                <span className="stats-card-value">{summary.pages.toLocaleString()}</span>
-              </div>
-            </Card>
-            <Card className="stats-card">
-              <div className="stats-card-inner">
-                <span className="stats-card-label">Average stars</span>
-                <span className="stats-card-value">
-                  {summary.average_stars != null ? summary.average_stars.toFixed(2) : '—'}
-                </span>
-              </div>
-            </Card>
-            <Card className="stats-card">
-              <div className="stats-card-inner">
-                <span className="stats-card-label">Period</span>
-                <span className="stats-card-value stats-card-period">
-                  {formatPeriod(data?.date_from ?? null, data?.date_to ?? null)}
-                </span>
-              </div>
-            </Card>
-          </>
-        )}
-      </div>
+            ))
+          ) : (
+            <>
+              <StatCard
+                label="Books read"
+                value={summary.books.toLocaleString()}
+                trend={booksTrend}
+                sparkColor={sparkColors.accent}
+              />
+              <StatCard
+                label="Pages read"
+                value={summary.pages.toLocaleString()}
+                trend={pagesTrend}
+                sparkColor={sparkColors.green}
+              />
+              <StatCard
+                label="Average stars"
+                value={summary.average_stars != null ? summary.average_stars.toFixed(2) : '—'}
+                tone={summary.average_stars != null ? 'green' : 'muted'}
+              />
+              <StatCard
+                label="Period"
+                value={
+                  <span className="stats-period-value">
+                    {formatPeriod(data?.date_from ?? null, data?.date_to ?? null)}
+                  </span>
+                }
+                tone="muted"
+              />
+            </>
+          )}
+        </div>
+      </Panel>
 
-      <Card className="stats-chart-card">
+      <Panel label={metric === 'pages' ? 'Pages read · by period' : 'Books read · by period'}>
         {loading ? (
-          <Skeleton width="100%" height="350px" />
+          <Skeleton width="100%" height="360px" />
         ) : chartOption && data && data.buckets.length > 0 ? (
           <PlotChart option={chartOption} height={360} />
         ) : (
@@ -260,9 +280,18 @@ export function Stats() {
             <p>No finished books in this range.</p>
           </div>
         )}
-      </Card>
+      </Panel>
 
-      <Card className="stats-table-card">
+      <Panel
+        label="Finished books"
+        actions={
+          !loading && (
+            <span className="stats-table-count">
+              {filteredBooks.length} of {allBooks.length}
+            </span>
+          )
+        }
+      >
         {loading ? (
           <Skeleton width="100%" height="300px" />
         ) : (
@@ -273,12 +302,9 @@ export function Stats() {
                 onChange={setTableSearch}
                 ariaLabel="Search finished books"
                 placeholder="Search title, author, series, shelf or tag…"
-                fullWidth={false}
+                fullWidth
                 className="stats-table-search"
               />
-              <span className="stats-table-count">
-                {filteredBooks.length} of {allBooks.length}
-              </span>
             </div>
             <DataTable
               value={filteredBooks}
@@ -303,7 +329,7 @@ export function Stats() {
             </DataTable>
           </div>
         )}
-      </Card>
+      </Panel>
     </div>
   );
 }

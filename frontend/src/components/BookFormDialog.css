@@ -65,3 +65,24 @@
   padding: var(--default-padding) var(--big-padding);
   gap: var(--small-gap);
 }
+
+/* Phones: the eight tabs scroll horizontally instead of wrapping/clipping, and the
+   form is a single column (handled by .bf-grid above). */
+@media (max-width: 640px) {
+  .bf-tabs .p-tabview-nav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .bf-tabs .p-tabview-nav::-webkit-scrollbar {
+    display: none;
+  }
+  .bf-tabs .p-tabview-nav-link {
+    white-space: nowrap;
+    min-height: var(--touch-target);
+  }
+  .bf-grid {
+    padding-top: var(--small-gap);
+  }
+}

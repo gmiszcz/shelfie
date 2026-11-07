@@ -1,37 +1,141 @@
+/* =====================================================================================
+   Shelfie design system — "quiet dashboard" look.
+   A very light page with a faint dotted grid; content lives in large white panels with
+   soft 1px borders and generous radius; nested soft-tinted sub-panels; small muted
+   monospace section labels; big bold KPI numbers with inline sparklines; soft-tinted
+   status pills; one accent colour per category used consistently.
+
+   All spacing comes from the :root scale below (single source of truth). Light is the
+   default theme; dark mirrors the structure with dark surfaces. The PrimeReact theme CSS
+   (lara-light / lara-dark) is swapped at runtime in App.tsx; the overrides at the end of
+   this file retint PrimeReact widgets to match either theme.
+   ===================================================================================== */
+
 :root {
-  /* Spacing — single source of truth (per the react-primereact-frontend skill) */
+  /* --- Spacing — single source of truth (react-primereact-frontend skill) ------------- */
   --hairline-gap: 0.125rem; /* optical gap between star glyphs */
   --small-padding: 0.25rem;
   --default-padding: 0.5rem;
   --big-padding: 1rem;
   --content-padding: 1.5rem;
+  --panel-padding: 1.75rem; /* generous panel inset for the dashboard look */
   --small-gap: 0.5rem;
   --default-gap: 1rem;
   --big-gap: 1.5rem;
   --card-padding: var(--big-padding);
-  --custom-border-radius: 0.5rem;
+
+  /* --- Radius scale ------------------------------------------------------------------- */
+  --custom-border-radius: 0.5rem; /* legacy alias kept for existing rules */
+
+  /* --- Breakpoints (documented; used in media queries throughout the app) -------------
+     Phones:  <= --bp-phone  (390x844, 375x667)      → single column, bottom tab bar,
+                                                        full-screen dialogs/chat, 44px targets.
+     Tablets: <= --bp-tablet (iPad portrait 768/820) → 2-col grids, wrapped controls.
+     Desktop: >  --bp-tablet                          → full multi-column layout.
+     Media queries cannot read CSS variables, so these are the single documented source of
+     the pixel values the `@media (max-width: …)` blocks below use; keep them in sync. */
+  --bp-phone: 640px;
+  --bp-tablet: 1024px;
+
+  /* Minimum comfortable touch target on coarse pointers. */
+  --touch-target: 44px;
+  --radius-sm: 0.5rem; /* small controls, tags */
+  --radius-md: 0.75rem; /* sub-panels, inputs */
+  --radius-lg: 1rem; /* panels (~16px) */
+  --radius-pill: 999px; /* status pills */
+
+  /* --- Elevation — one authored shadow (offset + soft blur), never a halo ------------- */
+  --shadow-panel: 0 1px 2px rgba(17, 24, 39, 0.04), 0 8px 24px rgba(17, 24, 39, 0.05);
+  --shadow-pop: 0 10px 40px rgba(17, 24, 39, 0.14);
+
+  /* --- Typography --------------------------------------------------------------------- */
+  --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', ui-monospace, 'Cascadia Mono', Consolas,
+    'Liberation Mono', monospace;
+  --label-size: 0.72rem;
+  --label-tracking: 0.12em;
+
+  /* --- Accent palette — one hue per category, used consistently ----------------------- */
+  --accent-green: #1f9d6b;
+  --accent-green-soft: #e4f4ec;
+  --accent-green-text: #157a52;
+  --accent-orange: #e08a2b;
+  --accent-orange-soft: #fbeedd;
+  --accent-orange-text: #b56912;
+  --accent-red: #e5484d;
+  --accent-red-soft: #fbe4e5;
+  --accent-red-text: #c0343a;
+  --accent-blue: #4c6ef5;
+  --accent-blue-soft: #e6ebfe;
+  --accent-blue-text: #3a53c4;
+  --accent-violet: #8b5cf6;
+  --accent-violet-soft: #efe8fd;
+  --accent-violet-text: #6d3fd1;
+  --accent-grey-soft: #eef0f3;
+  --accent-grey-text: #6b7280;
 }
 
-/* Dark theme surface tokens. The PrimeReact dark theme is loaded in App.tsx;
-   these back the custom chrome (header, cards, skeletons). */
-:root[data-theme='dark'] {
-  --app-bg: #0f1117;
-  --app-surface: #1a1d27;
-  --app-surface-2: #232733;
-  --app-border: #2e3342;
-  --app-text: #e6e8ee;
-  --app-text-muted: #9aa0b0;
-  --app-accent: #8b9cff;
-}
-
+/* --- Light theme (default) ------------------------------------------------------------ */
+:root,
 :root[data-theme='light'] {
-  --app-bg: #f4f5f8;
-  --app-surface: #ffffff;
-  --app-surface-2: #f0f1f5;
-  --app-border: #dcdfe6;
-  --app-text: #1c1f27;
-  --app-text-muted: #5b6172;
-  --app-accent: #4356d6;
+  --app-bg: #f4f5f7;
+  --app-bg-dot: #d8dbe2; /* dotted grid colour */
+  --app-surface: #ffffff; /* panels */
+  --app-surface-2: #f6f7f9; /* nested sub-panels */
+  --app-surface-3: #eff1f4; /* even quieter insets */
+  --app-border: #e7e9ee; /* soft 1px panel border */
+  --app-border-strong: #d7dae1;
+  --app-text: #1b1f27;
+  --app-text-muted: #6b7280;
+  --app-text-faint: #9aa1ad;
+  --app-accent: #4c6ef5;
+  --app-accent-soft: var(--accent-blue-soft);
+  /* The one dark feature panel (like the reference's near-black callout). */
+  --app-feature-bg: #141821;
+  --app-feature-text: #f3f4f6;
+  --app-feature-muted: #a9b0bd;
+  color-scheme: light;
+}
+
+/* --- Dark theme — same structure, dark surfaces --------------------------------------- */
+:root[data-theme='dark'] {
+  --app-bg: #0d0f14;
+  --app-bg-dot: #1d212b;
+  --app-surface: #161a22;
+  --app-surface-2: #1d222c;
+  --app-surface-3: #222834;
+  --app-border: #2a303c;
+  --app-border-strong: #3a4150;
+  --app-text: #e9ebf0;
+  --app-text-muted: #9aa1b0;
+  --app-text-faint: #6c7483;
+  --app-accent: #8b9cff;
+  --app-accent-soft: #232a46;
+  --app-feature-bg: #0a0c11;
+  --app-feature-text: #f3f4f6;
+  --app-feature-muted: #a9b0bd;
+  color-scheme: dark;
+
+  /* Retint the soft pill backgrounds for dark surfaces so they stay legible. */
+  --accent-green: #4ade9c;
+  --accent-green-soft: #16271f;
+  --accent-green-text: #6ee7b0;
+  --accent-orange: #f0ad4e;
+  --accent-orange-soft: #2a2114;
+  --accent-orange-text: #f3bd6b;
+  --accent-red: #ff6b6f;
+  --accent-red-soft: #2a1618;
+  --accent-red-text: #ff9497;
+  --accent-blue: #8b9cff;
+  --accent-blue-soft: #1c2340;
+  --accent-blue-text: #aab6ff;
+  --accent-violet: #b794ff;
+  --accent-violet-soft: #221a3a;
+  --accent-violet-text: #c9b0ff;
+  --accent-grey-soft: #222834;
+  --accent-grey-text: #9aa1b0;
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-pop: 0 10px 40px rgba(0, 0, 0, 0.55);
 }
 
 * {
@@ -46,17 +150,250 @@ body,
 }
 
 body {
-  background: var(--app-bg);
   color: var(--app-text);
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv11', 'ss01';
+  /* Faint dotted grid over a flat light surface. */
+  background-color: var(--app-bg);
+  background-image: radial-gradient(var(--app-bg-dot) 1px, transparent 1px);
+  background-size: 22px 22px;
+  background-position: -1px -1px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* --- App bar ---------------------------------------------------------------------------- */
+/* Theme the browser surfaces the design system otherwise skips. */
+::selection {
+  background: var(--app-accent-soft);
+  color: var(--app-text);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--app-border-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--app-border-strong);
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* =====================================================================================
+   Shared primitives (also exported as React components in src/ui/).
+   ===================================================================================== */
+
+/* --- Panel: the large white card -------------------------------------------------------- */
+.ui-panel {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+  padding: var(--panel-padding);
+}
+
+.ui-panel--flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Panel header row: monospace label on the left, controls/counts on the right. */
+.ui-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--default-gap);
+  margin-bottom: var(--big-gap);
+  flex-wrap: wrap;
+}
+.ui-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+  flex-wrap: wrap;
+}
+/* A flush panel's header still needs its inset so the label is not against the edge. */
+.ui-panel--flush > .ui-panel-head {
+  margin: 0;
+  padding: var(--big-padding) var(--panel-padding) 0;
+}
+/* The dark feature panel keeps its label readable. */
+.ui-panel--feature .ui-section-label {
+  color: var(--app-feature-muted);
+}
+
+/* A nested, soft-tinted sub-panel inside a panel. */
+.ui-subpanel {
+  background: var(--app-surface-2);
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-md);
+  padding: var(--big-padding);
+}
+
+.ui-subpanel--tint-green {
+  background: var(--accent-green-soft);
+  border-color: transparent;
+}
+.ui-subpanel--tint-blue {
+  background: var(--accent-blue-soft);
+  border-color: transparent;
+}
+.ui-subpanel--tint-orange {
+  background: var(--accent-orange-soft);
+  border-color: transparent;
+}
+.ui-subpanel--tint-violet {
+  background: var(--accent-violet-soft);
+  border-color: transparent;
+}
+
+/* The single dark feature panel. */
+.ui-panel--feature {
+  background: var(--app-feature-bg);
+  border-color: transparent;
+  color: var(--app-feature-text);
+}
+
+/* --- SectionLabel: small muted monospace label above a section -------------------------- */
+.ui-section-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-gap);
+  font-family: var(--font-mono);
+  font-size: var(--label-size);
+  font-weight: 500;
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--app-text-faint);
+  line-height: 1;
+}
+
+/* --- Pill: soft-tinted status chip ------------------------------------------------------ */
+.ui-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-padding);
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  white-space: nowrap;
+  background: var(--accent-grey-soft);
+  color: var(--accent-grey-text);
+}
+.ui-pill--green {
+  background: var(--accent-green-soft);
+  color: var(--accent-green-text);
+}
+.ui-pill--orange {
+  background: var(--accent-orange-soft);
+  color: var(--accent-orange-text);
+}
+.ui-pill--red {
+  background: var(--accent-red-soft);
+  color: var(--accent-red-text);
+}
+.ui-pill--blue {
+  background: var(--accent-blue-soft);
+  color: var(--accent-blue-text);
+}
+.ui-pill--violet {
+  background: var(--accent-violet-soft);
+  color: var(--accent-violet-text);
+}
+.ui-pill--grey {
+  background: var(--accent-grey-soft);
+  color: var(--accent-grey-text);
+}
+.ui-pill-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+/* --- StatCard: mono label + big value + optional sparkline ------------------------------ */
+.ui-statcard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+  min-width: 0;
+}
+.ui-statcard-value {
+  font-size: 2.1rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--app-text);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.ui-statcard-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--small-gap);
+  flex-wrap: wrap;
+}
+.ui-statcard-caption {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--app-text-muted);
+}
+.ui-statcard-value--green {
+  color: var(--accent-green-text);
+}
+.ui-statcard-value--muted {
+  color: var(--app-text-muted);
+}
+.ui-statcard-spark {
+  display: block;
+  height: 1.5rem;
+  width: 100%;
+}
+
+/* --- Sparkline -------------------------------------------------------------------------- */
+.ui-spark {
+  display: block;
+  overflow: visible;
+}
+.ui-spark-line {
+  fill: none;
+  stroke: var(--app-accent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.ui-spark-area {
+  stroke: none;
+  opacity: 0.14;
+}
+
+/* =====================================================================================
+   App chrome
+   ===================================================================================== */
 .app-bar {
   display: flex;
   align-items: center;
   gap: var(--big-gap);
-  padding: var(--default-padding) var(--content-padding);
+  padding: var(--big-padding) var(--content-padding);
   background: var(--app-surface);
   border-bottom: 1px solid var(--app-border);
   position: sticky;
@@ -68,20 +405,20 @@ body {
   display: flex;
   align-items: center;
   gap: var(--small-gap);
-  font-size: 1.25rem;
+  font-size: 1.2rem;
   font-weight: 700;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.01em;
 }
 
 .app-brand i {
   color: var(--app-accent);
-  font-size: 1.3rem;
+  font-size: 1.25rem;
 }
 
 .app-nav {
   display: flex;
   align-items: stretch;
-  gap: var(--small-gap);
+  gap: var(--small-padding);
   flex: 1;
   min-width: 0;
   overflow-x: auto;
@@ -93,25 +430,27 @@ body {
   gap: var(--small-gap);
   padding: var(--default-padding) var(--big-padding);
   background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
   color: var(--app-text-muted);
   font: inherit;
   font-weight: 500;
+  font-size: 0.92rem;
   cursor: pointer;
   white-space: nowrap;
   transition:
-    color 0.12s ease,
-    border-color 0.12s ease;
+    color 0.14s ease,
+    background-color 0.14s ease;
 }
 
 .app-nav-item:hover {
   color: var(--app-text);
+  background: var(--app-surface-2);
 }
 
 .app-nav-item.active {
   color: var(--app-accent);
-  border-bottom-color: var(--app-accent);
+  background: var(--app-accent-soft);
 }
 
 .app-bar-actions {
@@ -123,18 +462,23 @@ body {
 
 .app-main {
   padding: var(--content-padding);
-  max-width: 1400px;
+  max-width: 1320px;
   margin: 0 auto;
 }
 
-/* --- Library toolbar -------------------------------------------------------------------- */
-/* Three independent rows, each separated by a gap from :root. The search bar
-   is its own full-width row, completely decoupled from the star filter. */
+/* =====================================================================================
+   Library
+   ===================================================================================== */
 .library-toolbar {
   display: flex;
   flex-direction: column;
   gap: var(--default-gap);
   margin-bottom: var(--big-gap);
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+  padding: var(--big-padding) var(--panel-padding);
 }
 
 .library-toolbar-actions {
@@ -159,7 +503,9 @@ body {
 
 .library-count {
   color: var(--app-text-muted);
-  font-size: 0.9rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
   margin-left: auto;
 }
 
@@ -176,19 +522,20 @@ body {
 .book-card {
   background: var(--app-surface);
   border: 1px solid var(--app-border);
-  border-radius: var(--custom-border-radius);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
   overflow: hidden;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   transition:
-    transform 0.12s ease,
-    border-color 0.12s ease;
+    transform 0.16s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.16s ease;
 }
 
 .book-card:hover {
   transform: translateY(-3px);
-  border-color: var(--app-accent);
+  border-color: var(--app-border-strong);
 }
 
 .book-card .body {
@@ -199,7 +546,6 @@ body {
   flex: 1;
 }
 
-/* Primary block — title and (series volume) subtitle sit tight together. */
 .book-card .card-heading {
   display: flex;
   flex-direction: column;
@@ -210,6 +556,7 @@ body {
   font-weight: 700;
   font-size: 0.98rem;
   line-height: 1.25;
+  letter-spacing: -0.01em;
   color: var(--app-text);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -218,7 +565,6 @@ body {
   overflow: hidden;
 }
 
-/* The subtitle is the volume's real title — emphasised, just below the title. */
 .book-card .card-subtitle {
   font-weight: 600;
   font-size: 0.85rem;
@@ -231,7 +577,6 @@ body {
   overflow: hidden;
 }
 
-/* Secondary block — author/year, series, pages grouped and muted. */
 .book-card .card-meta {
   display: flex;
   flex-direction: column;
@@ -262,8 +607,19 @@ body {
   text-align: center;
   color: var(--app-text-muted);
   padding: var(--content-padding);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--small-gap);
 }
 
+.empty-state i {
+  color: var(--app-text-faint);
+}
+
+/* =====================================================================================
+   Book detail dialog
+   ===================================================================================== */
 .detail-grid {
   display: flex;
   gap: var(--big-gap);
@@ -292,7 +648,7 @@ body {
 
 .detail-description {
   color: var(--app-text);
-  line-height: 1.5;
+  line-height: 1.6;
   max-height: 320px;
   overflow: auto;
 }
@@ -309,7 +665,7 @@ body {
   align-items: center;
   padding: var(--default-padding);
   border: 1px solid var(--app-border);
-  border-radius: var(--custom-border-radius);
+  border-radius: var(--radius-md);
   background: var(--app-surface-2);
 }
 
@@ -327,7 +683,6 @@ body {
   font-size: 0.85rem;
 }
 
-/* Search dialog toolbar: full-width search + language + button on one row. */
 .search-dialog-bar {
   display: flex;
   gap: var(--default-gap);
@@ -340,7 +695,6 @@ body {
   min-width: 0;
 }
 
-/* --- Book card extras (settings-driven fields) ------------------------------------------ */
 .book-card .card-series,
 .book-card .card-pages {
   color: var(--app-text-muted);
@@ -374,7 +728,6 @@ body {
   font-size: 0.72rem;
 }
 
-/* --- Book detail sections --------------------------------------------------------------- */
 .detail-section {
   margin-top: var(--big-gap);
 }
@@ -383,7 +736,12 @@ body {
   margin: 0 0 var(--small-gap);
   padding-bottom: var(--small-padding);
   border-bottom: 1px solid var(--app-border);
-  font-size: 1rem;
+  font-family: var(--font-mono);
+  font-size: var(--label-size);
+  font-weight: 500;
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--app-text-faint);
 }
 
 .detail-field {
@@ -412,21 +770,23 @@ body {
 
 .detail-note h5 {
   margin: 0 0 var(--small-padding);
-  color: var(--app-text-muted);
-  font-size: 0.85rem;
+  color: var(--app-text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--label-size);
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: var(--label-tracking);
 }
 
 .detail-note p {
   margin: 0;
-  line-height: 1.5;
+  line-height: 1.6;
   white-space: pre-wrap;
 }
 
 .detail-quote {
   background: var(--app-surface-2);
-  border-radius: var(--custom-border-radius);
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-md);
   padding: var(--default-padding) var(--big-padding);
   font-style: italic;
 }
@@ -440,7 +800,9 @@ body {
   border-top: 1px solid var(--app-border);
 }
 
-/* --- Settings sidebar ------------------------------------------------------------------- */
+/* =====================================================================================
+   Settings sidebar
+   ===================================================================================== */
 .settings-title {
   display: inline-flex;
   align-items: center;
@@ -451,7 +813,7 @@ body {
 .settings-body {
   display: flex;
   flex-direction: column;
-  gap: var(--default-gap);
+  gap: var(--big-gap);
   padding: var(--big-padding) 0;
 }
 
@@ -463,7 +825,12 @@ body {
 
 .settings-section h4 {
   margin: 0;
-  font-size: 1rem;
+  font-family: var(--font-mono);
+  font-size: var(--label-size);
+  font-weight: 500;
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--app-text-faint);
 }
 
 .settings-hint {
@@ -489,31 +856,207 @@ body {
   align-self: flex-start;
 }
 
-/* --- Global spacing pass: dialogs, sidebar, app bar ------------------------------------- */
-/* Every panel is padded from :root; nothing sits flush against an edge. */
-.p-dialog .p-dialog-header {
-  padding: var(--content-padding);
-  gap: var(--small-gap);
-}
+/* =====================================================================================
+   PrimeReact widget overrides — retint to the design system in both themes.
+   ===================================================================================== */
 
-.p-dialog .p-dialog-content {
-  padding: 0 var(--content-padding) var(--content-padding);
+/* Dialogs & sidebar: soft panel surface, generous radius, authored shadow. */
+.p-dialog,
+.p-sidebar {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+  border: 1px solid var(--app-border);
+  background: var(--app-surface);
 }
-
-.p-dialog .p-dialog-footer {
-  padding: var(--content-padding);
-  gap: var(--small-gap);
-}
-
+.p-dialog .p-dialog-header,
 .p-sidebar .p-sidebar-header {
-  padding: var(--content-padding) var(--content-padding) var(--default-padding);
+  background: var(--app-surface);
+  border: none;
+  padding: var(--content-padding);
+  gap: var(--small-gap);
 }
-
+.p-dialog .p-dialog-content,
 .p-sidebar .p-sidebar-content {
+  background: var(--app-surface);
   padding: 0 var(--content-padding) var(--content-padding);
 }
+.p-dialog .p-dialog-footer {
+  background: var(--app-surface);
+  border: none;
+  padding: var(--content-padding);
+  gap: var(--small-gap);
+}
+.p-dialog .p-dialog-header .p-dialog-title {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
 
-/* Detail dialog: separate the action row from the content above it. */
+/* Buttons: pill, soft accent fill, no harsh ring. */
+.p-button {
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  box-shadow: none;
+  transition:
+    background-color 0.14s ease,
+    border-color 0.14s ease,
+    color 0.14s ease;
+}
+.p-button:not(.p-button-outlined):not(.p-button-text):not(.p-button-secondary) {
+  background: var(--app-accent);
+  border-color: var(--app-accent);
+}
+.p-button.p-button-outlined {
+  border-color: var(--app-border-strong);
+  color: var(--app-text);
+}
+.p-button.p-button-outlined:hover {
+  background: var(--app-surface-2);
+  border-color: var(--app-border-strong);
+}
+.p-button.p-button-text {
+  color: var(--app-text-muted);
+}
+.p-button.p-button-text:hover {
+  background: var(--app-surface-2);
+  color: var(--app-text);
+}
+
+/* SelectButton: segmented pill group matching the reference toggles.
+   The lara theme paints the selected segment solid accent with low-contrast text;
+   force a readable soft-accent chip instead (hence the !important on colours). */
+.p-selectbutton {
+  gap: var(--small-padding);
+}
+.p-selectbutton .p-button {
+  border-radius: var(--radius-pill) !important;
+  border: 1px solid var(--app-border) !important;
+  background: var(--app-surface) !important;
+  color: var(--app-text-muted) !important;
+  font-weight: 500;
+}
+.p-selectbutton .p-button.p-highlight,
+.p-selectbutton .p-button.p-highlight:hover {
+  background: var(--app-accent-soft) !important;
+  border-color: transparent !important;
+  color: var(--app-accent) !important;
+}
+.p-selectbutton .p-button:not(.p-highlight):hover {
+  background: var(--app-surface-2) !important;
+  color: var(--app-text) !important;
+}
+.p-selectbutton .p-button:focus {
+  box-shadow: 0 0 0 2px var(--app-accent-soft) !important;
+}
+
+/* Inputs / dropdowns: soft surface, medium radius. */
+.p-inputtext,
+.p-dropdown,
+.p-multiselect,
+.p-inputnumber-input,
+.p-calendar .p-inputtext {
+  border-radius: var(--radius-md);
+  border-color: var(--app-border);
+  background: var(--app-surface);
+  color: var(--app-text);
+}
+.p-inputtext:enabled:focus,
+.p-dropdown:not(.p-disabled).p-focus,
+.p-multiselect:not(.p-disabled).p-focus {
+  border-color: var(--app-accent);
+  box-shadow: 0 0 0 2px var(--app-accent-soft);
+}
+.p-dropdown-panel,
+.p-multiselect-panel,
+.p-calendar-panel,
+.p-datepicker {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--app-border);
+  box-shadow: var(--shadow-pop);
+  background: var(--app-surface);
+}
+
+/* Tags → look like our soft pills. */
+.p-tag {
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  padding: 0.18rem 0.55rem;
+  background: var(--accent-grey-soft);
+  color: var(--accent-grey-text);
+}
+.p-tag.p-tag-success {
+  background: var(--accent-green-soft);
+  color: var(--accent-green-text);
+}
+.p-tag.p-tag-info {
+  background: var(--accent-blue-soft);
+  color: var(--accent-blue-text);
+}
+.p-tag.p-tag-warning {
+  background: var(--accent-orange-soft);
+  color: var(--accent-orange-text);
+}
+.p-tag.p-tag-danger {
+  background: var(--accent-red-soft);
+  color: var(--accent-red-text);
+}
+
+/* Chip (assistant filter) → soft accent pill. */
+.p-chip {
+  border-radius: var(--radius-pill);
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
+}
+
+/* DataTable: quiet rows, mono-flavoured header, generous cells. */
+.p-datatable {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.p-datatable .p-datatable-thead > tr > th {
+  background: var(--app-surface-2);
+  color: var(--app-text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--label-size);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-color: var(--app-border);
+}
+.p-datatable .p-datatable-tbody > tr {
+  background: var(--app-surface);
+  color: var(--app-text);
+}
+.p-datatable .p-datatable-tbody > tr > td {
+  border-color: var(--app-border);
+}
+.p-datatable .p-datatable-tbody > tr:hover {
+  background: var(--app-surface-2);
+}
+.p-paginator {
+  background: var(--app-surface);
+  border: none;
+}
+
+/* Cards (PrimeReact) used on Stats inherit the panel look. */
+.p-card {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+}
+
+/* Messages. */
+.p-message {
+  border-radius: var(--radius-md);
+}
+
+/* =====================================================================================
+   Misc legacy hooks kept for compatibility
+   ===================================================================================== */
 .detail-actions {
   display: flex;
   align-items: center;
@@ -522,4 +1065,185 @@ body {
   margin-top: var(--big-gap);
   padding-top: var(--default-padding);
   border-top: 1px solid var(--app-border);
+}
+
+/* =====================================================================================
+   Responsive layer
+   Phones (<= --bp-phone 640px): single column, a fixed bottom tab bar instead of the
+   scrolling top nav, full-screen dialogs/sidebar/chat, 44px touch targets.
+   Tablets (641px .. --bp-tablet 1024px): denser multi-column that still breathes.
+   ===================================================================================== */
+
+/* --- Tablet range: keep panels and grids comfortable, let controls wrap. ------------- */
+@media (max-width: 1024px) {
+  .app-main {
+    padding: var(--big-padding);
+  }
+  .book-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: var(--default-gap);
+  }
+  .ui-panel {
+    padding: var(--content-padding);
+  }
+  .library-toolbar {
+    padding: var(--big-padding);
+  }
+}
+
+/* --- Phones: the big adaptation. ----------------------------------------------------- */
+@media (max-width: 640px) {
+  /* Coarse-pointer comfort: nav items, buttons and icon buttons reach 44px. */
+  .app-nav-item,
+  .p-button {
+    min-height: var(--touch-target);
+  }
+  .app-bar-actions .p-button.p-button-icon-only,
+  .p-button.p-button-rounded.p-button-icon-only {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+    width: var(--touch-target);
+    height: var(--touch-target);
+  }
+
+  /* Top bar keeps only brand + theme/settings; the nav moves to a bottom tab bar. */
+  .app-bar {
+    padding: var(--default-padding) var(--big-padding);
+    gap: var(--default-gap);
+  }
+  .app-bar-actions {
+    margin-left: auto;
+  }
+
+  /* Bottom tab bar: fits 5+ tabs at 375px, respects the home-indicator safe area. */
+  .app-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 900;
+    overflow: visible;
+    display: flex;
+    justify-content: space-around;
+    gap: 0;
+    padding: var(--small-padding) var(--small-padding)
+      calc(var(--small-padding) + env(safe-area-inset-bottom, 0px));
+    background: var(--app-surface);
+    border-top: 1px solid var(--app-border);
+    box-shadow: 0 -2px 16px rgba(17, 24, 39, 0.06);
+  }
+  .app-nav-item {
+    flex: 1 1 0;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--small-padding) 2px;
+    border-radius: var(--radius-md);
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+  .app-nav-item i {
+    font-size: 1.1rem;
+  }
+  .app-nav-item span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .app-nav-item.active {
+    background: var(--app-accent-soft);
+  }
+  /* Keep page content clear of the fixed bottom bar. */
+  .app-main {
+    padding: var(--big-padding);
+    padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Library toolbar: full-width stacked, add buttons share a row. */
+  .library-toolbar {
+    padding: var(--big-padding);
+    border-radius: var(--radius-md);
+  }
+  .library-toolbar-actions .p-button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+  .library-count {
+    width: 100%;
+    margin-left: 0;
+    order: 3;
+  }
+
+  /* Two covers per row on a phone — the grid stays legible, not cramped. */
+  .book-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--default-gap);
+  }
+
+  /* Dialogs and the settings sidebar go full-screen on a phone (dvh for mobile chrome). */
+  .p-dialog.p-component {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border-radius: 0;
+    border: none;
+  }
+  .p-dialog .p-dialog-content {
+    /* Let the body scroll; keep the footer actions reachable. */
+    max-height: none;
+  }
+  .p-sidebar.p-sidebar-right,
+  .p-sidebar.p-sidebar-left {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    border-radius: 0;
+  }
+
+  /* Book detail: stack the cover above the text, cover centered and smaller. */
+  .detail-grid {
+    flex-direction: column;
+    gap: var(--default-gap);
+  }
+  .detail-grid .ui-cover--detail {
+    width: 8rem;
+    align-self: center;
+  }
+  .detail-field {
+    flex-direction: column;
+    gap: var(--small-padding);
+  }
+  .detail-field-label {
+    min-width: 0;
+  }
+  .detail-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .detail-actions .p-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Any DataTable scrolls horizontally rather than squashing columns. */
+  .p-datatable-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .p-datatable table {
+    min-width: 640px;
+  }
+}
+
+/* The chat panel already goes full-screen at <=640px in ChatWidget.css; here we just
+   ensure it uses dynamic viewport height so iOS Safari's URL bar never clips it. */
+@media (max-width: 640px) {
+  .chat-panel {
+    height: 100dvh;
+    max-height: 100dvh;
+  }
 }

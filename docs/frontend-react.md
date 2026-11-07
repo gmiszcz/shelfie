@@ -31,8 +31,19 @@ frontend/
   for sibling spacing (use flex/grid `gap`). `--hairline-gap` exists only for the optical gap
   between star glyphs.
 - Dark/light theme via CSS swap: the PrimeReact theme files are imported locally with Vite
-  `?url` (`App.tsx`) and swapped on one `<link id="primereact-theme">`. No CDN.
+  `?url` (`App.tsx`) and swapped on one `<link id="primereact-theme">`. No CDN. **Light is the
+  default theme.** The `data-theme` attribute on `<html>` swaps the app token set (surfaces,
+  accents, soft pill tints) in lockstep with the PrimeReact lara light/dark theme.
 - Redux Toolkit for UI/config/library state; typed hooks.
+
+## Design system
+
+The UI follows one small "quiet dashboard" visual system — a light dotted-grid page, large
+white panels with soft borders and generous radius, monospace section labels, big KPI numbers
+with sparklines, and soft-tinted status pills (one accent hue per category). Tokens live in
+`index.css :root` (spacing, `--radius-*`, `--shadow-*`, `--font-sans`/`--font-mono`, the accent
+palette and theme surfaces). Full reference, including a "how to build a new tab" guide:
+[features/design-system.md](features/design-system.md).
 
 ## Shared components (`frontend/src/ui/`)
 
@@ -40,11 +51,17 @@ Reusable components live only here and are imported from `../ui`. Never re-imple
 
 | Component | Used in | What it owns |
 |---|---|---|
+| `Panel` | every page section, dialogs' content | large white (or dark `feature`) surface card; optional monospace `label` heading, `actions`, soft `tint` sub-panel, `flush` for tables |
+| `SectionLabel` | section/stat headings everywhere | small muted monospace, letter-spaced, uppercase label |
+| `StatCard` | Statistics KPIs (and new tabs) | mono label + big bold value + optional inline `Sparkline` from a `trend` series |
+| `Sparkline` | `StatCard`, inline trends | tiny inline SVG line + soft area; themed accent or per-instance colour |
+| `Pill` | status/label chips, list rows | soft-tinted chip, one `tone` per category, optional leading dot |
 | `SearchInput` | Library, Ranking, Statistics table, Add-book search | icon + clear button in reserved padding, never overlapping text |
 | `BookCover` | book card, detail dialog, compare pair, ranking and stats tables, search hits | 2:3 poster box, image or centered book icon; size presets `fill`, `detail`, `compare`, `thumb`, `hit` |
-| `StatusTag` | book card, detail dialog | reading-status label and colour |
+| `StatusTag` | book card, detail dialog | reading-status label and colour (renders as a soft pill) |
 
 A new component that a second screen needs moves into `ui/` and is exported from `ui/index.ts`.
+PrimeReact widgets are kept but retinted to the system by overrides at the end of `index.css`.
 
 ## Key surfaces
 
