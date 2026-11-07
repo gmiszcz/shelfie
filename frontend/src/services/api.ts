@@ -14,16 +14,51 @@ import type {
   VolumeSearchResult,
   Winner,
 } from '../types';
+import type {
+  AdminUser,
+  AuthUser,
+  CreatedUser,
+  SetupLink,
+  SetupTokenInfo,
+} from '../auth/authTypes';
 
 const BASE = '/api';
 
 export class ApiError extends Error {
+  /** Present on a 429 when the server sent a Retry-After header: seconds to wait. */
+  retryAfter?: number;
+
   constructor(
     public status: number,
     message: string,
+    retryAfter?: number,
   ) {
     super(message);
     this.name = 'ApiError';
+    this.retryAfter = retryAfter;
+  }
+}
+
+/**
+ * Central 401 notification. The auth layer subscribes once; any request that
+ * comes back 401 (session missing or expired) notifies every subscriber so the
+ * app can drop back to the login screen while keeping the current route. Auth
+ * probes (GET /api/auth/me) opt out via `silent401` so the initial "am I logged
+ * in?" check does not fire the global handler.
+ */
+type UnauthorizedListener = () => void;
+const unauthorizedListeners = new Set<UnauthorizedListener>();
+
+export function onUnauthorized(listener: UnauthorizedListener): () => void {
+  unauthorizedListeners.add(listener);
+  return () => {
+    unauthorizedListeners.delete(listener);
+  };
+}
+
+function notifyUnauthorized(): void {
+  for (const listener of unauthorizedListeners) {
+    listener();
   }
 }
 
@@ -39,16 +74,46 @@ async function errorFrom(resp: Response): Promise<ApiError> {
   } catch {
     // non-JSON error body
   }
-  return new ApiError(resp.status, detail);
+  let retryAfter: number | undefined;
+  if (resp.status === 429) {
+    const header = resp.headers.get('Retry-After');
+    const parsed = header ? Number.parseInt(header, 10) : NaN;
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      retryAfter = parsed;
+    }
+  }
+  return new ApiError(resp.status, detail, retryAfter);
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/**
+ * Every request is same-origin and carries `X-Shelfie-Client: web`. The cookie
+ * is sent automatically on same-origin requests (and on same-origin WebSocket
+ * handshakes for voice/transcribe, so those keep working without any change).
+ * The client header satisfies the server's CSRF check on state-changing calls.
+ *
+ * `silent401` suppresses the global unauthorized handler for the one probe that
+ * is allowed to see a 401 as a normal answer (the "who am I" check at startup).
+ */
+async function request<T>(
+  path: string,
+  init?: RequestInit & { silent401?: boolean },
+): Promise<T> {
+  const { silent401, headers, ...rest } = init ?? {};
   const resp = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
+    credentials: 'same-origin',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Shelfie-Client': 'web',
+      ...headers,
+    },
+    ...rest,
   });
   if (!resp.ok) {
-    throw await errorFrom(resp);
+    const err = await errorFrom(resp);
+    if (resp.status === 401 && !silent401) {
+      notifyUnauthorized();
+    }
+    throw err;
   }
   if (resp.status === 204) {
     return undefined as T;
@@ -98,9 +163,20 @@ export const api = {
   uploadCover: async (file: File): Promise<string> => {
     const form = new FormData();
     form.append('file', file);
-    const resp = await fetch(`${BASE}/covers`, { method: 'POST', body: form });
+    // Multipart body: let the browser set Content-Type (boundary); still send
+    // credentials and the client header so the CSRF check and session pass.
+    const resp = await fetch(`${BASE}/covers`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'X-Shelfie-Client': 'web' },
+      body: form,
+    });
     if (!resp.ok) {
-      throw await errorFrom(resp);
+      const err = await errorFrom(resp);
+      if (resp.status === 401) {
+        notifyUnauthorized();
+      }
+      throw err;
     }
     return ((await resp.json()) as { url: string }).url;
   },
@@ -163,7 +239,12 @@ export const api = {
   ) =>
     fetch(`${BASE}/agent/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shelfie-Client': 'web',
+        Accept: 'text/event-stream',
+      },
       body: JSON.stringify({ message, session_id: sessionId, scope }),
       signal,
     }),
@@ -254,4 +335,60 @@ export const api = {
 
   deleteExpected: (id: number) =>
     request<void>(`/series/expected/${id}`, { method: 'DELETE' }),
+
+  // --- accounts, login (auth; docs/features/auth.md) ---
+
+  /**
+   * Who is logged in. `silent401` so the startup probe treats "not logged in"
+   * as a normal answer instead of firing the global unauthorized handler.
+   */
+  me: () => request<AuthUser>('/auth/me', { silent401: true }),
+
+  login: (email: string, password: string) =>
+    request<AuthUser>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
+
+  logout: () => request<void>('/auth/logout', { method: 'POST' }),
+
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<void>('/auth/password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
+
+  /** Resolve a setup/reset token to the person it is for (public). 410 when expired/used. */
+  getSetupToken: (token: string) =>
+    request<SetupTokenInfo>(`/auth/setup/${encodeURIComponent(token)}`, { silent401: true }),
+
+  /** Set the password for a setup/reset token; logs the person in on success (public). */
+  completeSetup: (token: string, password: string) =>
+    request<AuthUser>('/auth/setup', {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
+      silent401: true,
+    }),
+
+  // --- admin: user management (admin only) ---
+
+  listUsers: () => request<AdminUser[]>('/admin/users'),
+
+  addUser: (email: string, displayName: string) =>
+    request<CreatedUser>('/admin/users', {
+      method: 'POST',
+      body: JSON.stringify({ email, display_name: displayName }),
+    }),
+
+  updateUser: (
+    id: number,
+    changes: { display_name?: string; disabled?: boolean; is_admin?: boolean },
+  ) =>
+    request<AdminUser>(`/admin/users/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(changes),
+    }),
+
+  newSetupLink: (id: number) =>
+    request<SetupLink>(`/admin/users/${id}/setup-link`, { method: 'POST' }),
 };

@@ -1,0 +1,163 @@
+.users-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--default-gap);
+}
+
+.users-error {
+  margin: 0 0 var(--default-gap);
+  color: var(--accent-red-text);
+  font-size: 0.9rem;
+}
+
+.users-empty {
+  margin: 0;
+  color: var(--app-text-muted);
+}
+
+.users-name-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+  flex-wrap: wrap;
+}
+
+.users-name {
+  font-weight: 600;
+  color: var(--app-text);
+}
+
+.users-books {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--app-text);
+}
+
+.users-row-actions {
+  display: flex;
+  gap: var(--small-gap);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+/* --- Desktop table vs phone cards: show one, hide the other. -------------------------- */
+.users-cards {
+  display: none;
+}
+
+/* --- The new-link dialog intro ------------------------------------------------------- */
+.users-link-intro {
+  margin: 0;
+  color: var(--app-text-muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+/* --- Setup-link box (copyable URL + expiry) ------------------------------------------ */
+.setup-link-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+  padding: var(--big-padding);
+  background: var(--app-surface-2);
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-md);
+}
+
+.setup-link-row {
+  display: flex;
+  gap: var(--small-gap);
+  align-items: stretch;
+}
+
+.setup-link-input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--default-padding) var(--big-padding);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--app-text);
+  background: var(--app-surface);
+  border: 1px solid var(--app-border-strong);
+  border-radius: var(--radius-md);
+}
+
+.setup-link-input:focus-visible {
+  outline: none;
+  border-color: var(--app-accent);
+  box-shadow: 0 0 0 3px var(--app-accent-soft);
+}
+
+.setup-link-expiry {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--app-text-muted);
+  line-height: 1.45;
+}
+
+@media (max-width: 1024px) {
+  .users-row-actions {
+    justify-content: flex-start;
+  }
+}
+
+/* Tablet portrait and phones: swap the wide table for cards (no clipped action
+   column). Desktop and landscape tablets keep the table. */
+@media (max-width: 1024px) {
+  .users-table {
+    display: none;
+  }
+  .users-cards {
+    display: flex;
+    flex-direction: column;
+    gap: var(--default-gap);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .users-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--small-gap);
+    padding: var(--big-padding);
+    background: var(--app-surface-2);
+    border: 1px solid var(--app-border);
+    border-radius: var(--radius-md);
+  }
+  .users-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--small-gap);
+    flex-wrap: wrap;
+  }
+  .users-card-email {
+    font-size: 0.88rem;
+    color: var(--app-text-muted);
+    word-break: break-all;
+  }
+  .users-card-meta {
+    display: flex;
+    gap: var(--small-gap);
+    align-items: center;
+    font-size: 0.82rem;
+    color: var(--app-text-muted);
+  }
+}
+
+/* Phones: full-width stacked actions and a single-column link row. */
+@media (max-width: 640px) {
+  .users-card .users-row-actions {
+    justify-content: stretch;
+  }
+  .users-card .users-row-actions .p-button {
+    flex: 1;
+    justify-content: center;
+  }
+  .setup-link-row {
+    flex-direction: column;
+  }
+  .setup-link-row .p-button {
+    justify-content: center;
+  }
+}

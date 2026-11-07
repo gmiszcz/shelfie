@@ -460,6 +460,15 @@ body {
   margin-left: auto;
 }
 
+/* The account control appears in the top bar on desktop/tablet, and as a bottom
+   tab-bar entry on phones. Each placement is hidden where the other applies. */
+.app-bar-account {
+  display: inline-flex;
+}
+.app-nav-account {
+  display: none;
+}
+
 .app-main {
   padding: var(--content-padding);
   max-width: 1320px;
@@ -1159,6 +1168,19 @@ body {
   }
   .app-nav-item.active {
     background: var(--app-accent-soft);
+  }
+  /* Phone account control: hide the top-bar avatar, show the bottom-bar tab. */
+  .app-bar-account {
+    display: none;
+  }
+  .app-nav-account {
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .app-nav-account > * {
+    flex: 1 1 0;
+    min-width: 0;
   }
   /* Keep page content clear of the fixed bottom bar. */
   .app-main {

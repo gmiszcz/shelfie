@@ -8,7 +8,14 @@ const BOOKS: Book[] = [makeBook({ id: 1, title: 'Dune', series: 'Dune', stars: 5
 
 vi.mock('./services/api', () => ({
   ApiError: class ApiError extends Error {},
+  onUnauthorized: () => () => {},
   api: {
+    // Auth: the AuthProvider loads "who am I" on mount; resolve to an admin so
+    // the app shell renders for the anchor-coverage guards.
+    me: vi.fn(async () => ({ id: 1, email: 'admin@shelfie.app', display_name: 'Admin', is_admin: true })),
+    logout: vi.fn(async () => undefined),
+    changePassword: vi.fn(async () => undefined),
+    listUsers: vi.fn(async () => []),
     listBooks: vi.fn(async () => BOOKS),
     updateBook: vi.fn(async () => BOOKS[0]),
     deleteBook: vi.fn(async () => undefined),
@@ -31,6 +38,8 @@ vi.mock('./services/api', () => ({
 
 // eslint-disable-next-line import/first
 import App from './App';
+// eslint-disable-next-line import/first
+import { AuthProvider } from './auth';
 // eslint-disable-next-line import/first
 import {
   _resetRegistry,
@@ -83,7 +92,11 @@ afterEach(() => {
 });
 
 async function renderApp() {
-  render(<App />);
+  render(
+    <AuthProvider>
+      <App />
+    </AuthProvider>,
+  );
   // Wait until the registry has the nav anchor (App mounted) and the library tab mounted.
   await waitFor(() => expect(getAnchor('nav.tab')).toBeTruthy());
   await waitFor(() => expect(getAnchor('library.search')).toBeTruthy());

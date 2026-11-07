@@ -1,0 +1,209 @@
+/* The centered auth screen: full-height, dashboard surface + dotted grid (inherited
+   from body), one white card holding the form. Shared by login and setup. */
+.ui-authscreen {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--content-padding);
+}
+
+.ui-authscreen-inner {
+  width: 100%;
+  max-width: 24rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--big-gap);
+  align-items: center;
+}
+
+.ui-authscreen-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--app-text);
+}
+
+.ui-authscreen-brand i {
+  color: var(--app-accent);
+  font-size: 1.4rem;
+}
+
+.ui-authcard {
+  width: 100%;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+  padding: var(--panel-padding);
+  display: flex;
+  flex-direction: column;
+  gap: var(--big-gap);
+}
+
+.ui-authcard-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-padding);
+}
+
+.ui-authcard-title {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--app-text);
+}
+
+.ui-authcard-subtitle {
+  margin: 0;
+  color: var(--app-text-muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.ui-authscreen-footer {
+  color: var(--app-text-muted);
+  font-size: 0.85rem;
+  text-align: center;
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .ui-authscreen {
+    padding: var(--big-padding);
+    align-items: flex-start;
+    padding-top: 2.5rem;
+  }
+  .ui-authcard {
+    padding: var(--content-padding);
+  }
+}
+
+/* --- Form primitives shared by login / setup / change-password ----------------------- */
+.ui-authform {
+  display: flex;
+  flex-direction: column;
+  gap: var(--default-gap);
+}
+
+.ui-authfield {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+}
+
+.ui-authfield-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--app-text);
+  letter-spacing: -0.01em;
+}
+
+.ui-authfield-input {
+  width: 100%;
+  min-height: var(--touch-target);
+  padding: var(--default-padding) var(--big-padding);
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--app-text);
+  background: var(--app-surface);
+  border: 1px solid var(--app-border-strong);
+  border-radius: var(--radius-md);
+  transition:
+    border-color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.ui-authfield-input::placeholder {
+  color: var(--app-text-faint);
+}
+
+.ui-authfield-input:hover {
+  border-color: var(--app-text-faint);
+}
+
+.ui-authfield-input:focus-visible {
+  outline: none;
+  border-color: var(--app-accent);
+  box-shadow: 0 0 0 3px var(--app-accent-soft);
+}
+
+.ui-authfield-input:disabled {
+  background: var(--app-surface-3);
+  color: var(--app-text-muted);
+  cursor: not-allowed;
+}
+
+.ui-authfield-input[aria-invalid='true'] {
+  border-color: var(--accent-red);
+}
+
+.ui-authfield-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--app-text-muted);
+  line-height: 1.45;
+}
+
+.ui-authfield-hint[data-tone='ok'] {
+  color: var(--accent-green-text);
+}
+.ui-authfield-hint[data-tone='warn'] {
+  color: var(--accent-orange-text);
+}
+
+/* Inline form-level message (invalid credentials, throttle, mismatch). */
+.ui-authmsg {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--small-gap);
+  padding: var(--default-padding) var(--big-padding);
+  border-radius: var(--radius-md);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.ui-authmsg i {
+  margin-top: 0.1rem;
+  flex: none;
+}
+
+.ui-authmsg--error {
+  background: var(--accent-red-soft);
+  color: var(--accent-red-text);
+}
+
+.ui-authmsg--info {
+  background: var(--accent-blue-soft);
+  color: var(--accent-blue-text);
+}
+
+/* The primary submit button fills the card width. */
+.ui-authform .p-button.ui-authsubmit {
+  width: 100%;
+  justify-content: center;
+  min-height: var(--touch-target);
+}
+
+/* Dialog footer actions (change-password, confirms): right-aligned row. */
+.ui-authdialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--small-gap);
+  flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  .ui-authdialog-actions {
+    flex-direction: column-reverse;
+  }
+  .ui-authdialog-actions .p-button {
+    width: 100%;
+    justify-content: center;
+  }
+}
