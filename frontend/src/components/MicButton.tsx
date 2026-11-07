@@ -18,6 +18,8 @@ export interface MicButtonProps {
   language: TranscriptLanguage;
   /** Disable the control (e.g. while the assistant is streaming a reply). */
   disabled?: boolean;
+  /** A chat request is in flight: show a circular loading ring around the mic. */
+  busy?: boolean;
   /** Override VAD/silence timings (tests). */
   config?: VoiceMachineConfig;
 }
@@ -42,6 +44,7 @@ export function MicButton({
   scope,
   language,
   disabled = false,
+  busy = false,
   config,
 }: MicButtonProps) {
   const voice = useVoiceInput(onFinal, scope, config);
@@ -83,7 +86,7 @@ export function MicButton({
   const ringLevel = Math.min(1, level * 6);
 
   return (
-    <div className="mic-button-wrap">
+    <div className={`mic-button-wrap${busy ? ' busy' : ''}`}>
       {recording && partial && (
         <div className="mic-partial" role="status" aria-live="polite">
           {partial}
@@ -91,15 +94,17 @@ export function MicButton({
       )}
       <button
         type="button"
-        className={`mic-button${recording ? ' recording' : ''}`}
+        className={`mic-button${recording ? ' recording' : ''}${busy ? ' busy' : ''}`}
         style={{ ['--mic-level' as string]: String(ringLevel) }}
         aria-label={recording ? 'Stop voice input' : 'Start voice input'}
         aria-pressed={recording}
+        aria-busy={busy}
         title={title}
         disabled={disabled || requesting}
         onClick={onClick}
       >
         <span className="mic-ring" aria-hidden="true" />
+        {busy && <span className="mic-progress" aria-hidden="true" />}
         <i
           className={`pi ${requesting ? 'pi-spin pi-spinner' : 'pi-microphone'}`}
           aria-hidden="true"

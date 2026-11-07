@@ -43,6 +43,49 @@
   cursor: default;
 }
 
+/* While a chat request is in flight the mic stays disabled but must not look
+   dead: keep it fully opaque so the loading ring around it reads clearly. */
+.mic-button.busy:disabled {
+  opacity: 1;
+}
+
+/* Circular loading ring AROUND the mic button while the chat request is in
+   flight (after send, until the reply finishes). A rotating conic-gradient arc
+   masked to a thin ring, sitting just outside the button edge. */
+.mic-progress {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+  background: conic-gradient(
+    var(--app-accent) 0deg,
+    var(--app-accent) 90deg,
+    transparent 90deg,
+    transparent 360deg
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  animation: mic-progress-spin 0.9s linear infinite;
+}
+
+@keyframes mic-progress-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mic-progress {
+    animation: none;
+    /* A steady full ring so the in-flight state is still visible. */
+    background: conic-gradient(
+      color-mix(in srgb, var(--app-accent) 45%, transparent) 0deg,
+      color-mix(in srgb, var(--app-accent) 45%, transparent) 360deg
+    );
+  }
+}
+
 .mic-button i {
   position: relative;
   z-index: 1;

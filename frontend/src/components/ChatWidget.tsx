@@ -504,6 +504,7 @@ export function ChatWidget() {
               scope={mode}
               language={voiceLang}
               disabled={streaming}
+              busy={streaming}
             />
             <InputTextarea
               ref={inputRef}
