@@ -135,3 +135,19 @@ against the library before inserting; a match raises `DuplicateBookError`, which
 the route turns into **HTTP 409 "Book already in library"**. The search dialog
 also disables the **Add** button for a hit whose `google_volume_id` is already in
 the grid (shown as "In library").
+
+## Search quota and budget messages (2026-11-07)
+
+`GET /api/search` never returns a silent "no matches" when Google Books could not be asked.
+
+| Google state | OpenLibrary | Response | UI |
+|---|---|---|---|
+| answered | - | `200`, Google results | results |
+| `429` daily limit | has hits | `200` + `notice` "Google Books daily limit reached. Showing OpenLibrary results instead. Try Google again tomorrow." | yellow banner + results |
+| call budget spent (`GOOGLE_BOOKS_MAX_CALLS`) | has hits | `200` + `notice` "Google Books is paused on this server…" | yellow banner + results |
+| `429` or budget | nothing | `429`, detail "…OpenLibrary found nothing. Try again tomorrow, or add the book manually." | red banner + "Add manually" |
+
+Before this, a spent budget raised `GoogleBooksBudgetExceeded` unhandled (`500`) and the
+dialog showed "No matches.". Code: `app/api/routes/search.py`, tests in `tests/test_search.py`,
+UI in `frontend/src/components/SearchDialog.tsx`. The dialog shows one "Add manually"
+button now (the footer one hides while the empty state shows its own).

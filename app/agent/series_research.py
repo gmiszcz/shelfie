@@ -72,24 +72,81 @@ _SYSTEM_PROMPT = (
     "- Always include the source_url you took a title/date from.\n"
     "- confidence: 'high' if a publisher/author page states it, 'medium' for a retailer/"
     "aggregator, 'low' if inferred from weak evidence.\n"
+    "- A page saying the book is out (a 'release day' post, 'available now', a past "
+    "publication date on the author's/publisher's/retailer's page) means status 'released' "
+    "with that date. A future date means 'announced'.\n"
+    "- Read dates in any language (e.g. Polish 'premiera: 15 stycznia 2026').\n"
+    "- Prefer fetching the author's or publisher's page over searching again.\n"
     "- Keep tool calls minimal; you have a strict call budget.\n"
     "Return ONLY the structured result for both editions (pl and en)."
 )
 
 
-def _build_prompt(series: str, author: str, owned: list[float]) -> str:
+def _next_number(owned: list[float]) -> int | None:
+    whole = [int(v) for v in owned if float(v).is_integer()]
+    return (max(whole) + 1) if whole else None
+
+
+def seed_queries(series: str, author: str, owned: list[float], aliases: list[str]) -> list[str]:
+    """The two searches every run starts with (one per edition), so the model has good leads.
+
+    EN: ``<author> <series> book <n> release date``. PL: ``<Polish name> tom <n> <author>``,
+    where the Polish name is the first alias that differs from the main name (else the
+    main name).
+    """
+    n = _next_number(owned)
+    num = f" {n}" if n else ""
+    pl_name = next((a for a in aliases if a and a.strip().lower() != series.lower()), series)
+    who = f"{author} " if author else ""
+    return [
+        f"{who}{series} book{num} release date".strip(),
+        f"{pl_name} tom{num} {author} premiera".strip(),
+    ]
+
+
+def _format_leads(leads: list[tuple[str, list[dict[str, str]]]]) -> str:
+    lines: list[str] = []
+    for query, results in leads:
+        lines.append(f"Search: {query}")
+        if not results:
+            lines.append("  (no results)")
+        for r in results[:6]:
+            snippet = (r.get("snippet") or "")[:160]
+            lines.append(f"  - {r.get('title', '')} | {r.get('url', '')} | {snippet}")
+    return "\n".join(lines)
+
+
+def _build_prompt(
+    series: str,
+    author: str,
+    owned: list[float],
+    aliases: list[str] | None = None,
+    leads: str = "",
+) -> str:
     owned_sorted = sorted({int(v) if float(v).is_integer() else v for v in owned})
     highest = max(owned_sorted) if owned_sorted else "unknown"
     owned_str = ", ".join(str(v) for v in owned_sorted) if owned_sorted else "none recorded"
-    return (
+    other = ", ".join(a for a in (aliases or []) if a) or "none"
+    nxt = _next_number(owned)
+    text = (
         f"Series: {series}\n"
+        f"Other names (other languages/editions): {other}\n"
         f"Author: {author or 'unknown'}\n"
         f"Owned volume numbers: {owned_str}\n"
-        f"Highest owned: {highest}\n\n"
+        f"Highest owned: {highest}\n"
+        f"Next volume to find: {nxt if nxt else 'unknown'}\n\n"
         "Find the next volume after the highest owned one for BOTH the Polish edition and the "
-        "original/English edition. Return pl and en, each with title, date, status, source_url, "
+        "original/English edition. The Polish edition is usually listed under the Polish "
+        "name above. Return pl and en, each with title, date, status, source_url, "
         "confidence. Use 'unknown' with a null date where you cannot find a concrete date."
     )
+    if leads:
+        text += (
+            "\n\nStarting leads (already searched for you; fetch_url the most official one "
+            "for each edition — the author's or publisher's site first — to read the date):\n"
+            + leads
+        )
+    return text
 
 
 def _build_model(settings: Settings) -> Model:
@@ -140,6 +197,7 @@ async def research_next_volumes(
     settings: Settings | None = None,
     model: Model | None = None,
     budget: CallBudget | None = None,
+    aliases: list[str] | None = None,
 ) -> ResearchResult:
     """Research the next PL and EN volumes for a series on the web.
 
@@ -166,7 +224,15 @@ async def research_next_volumes(
         # Phase 1: let the model actually USE the web tools. structured_output alone does
         # not run the tool loop, so we first run a normal turn where it searches/fetches,
         # then (phase 2) ask it to distil the conversation into the strict schema.
-        await agent.invoke_async(_build_prompt(series, author, owned_volumes))
+        # Seed one search per edition ourselves so the model starts from good leads
+        # (they count against the same budget and are disk-cached like any search).
+        leads = [
+            (q, web_research.web_search(q, budget=budget))
+            for q in seed_queries(series, author, owned_volumes, aliases or [])
+        ]
+        await agent.invoke_async(
+            _build_prompt(series, author, owned_volumes, aliases, _format_leads(leads))
+        )
         result = await agent.structured_output_async(
             ResearchResult,
             "From everything you found above, return the next volume for the Polish edition "

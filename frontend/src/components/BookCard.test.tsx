@@ -21,6 +21,7 @@ function seedCardFields(overrides: Partial<Record<CardField, boolean>>): void {
     cardFields: { ...all(CARD_FIELDS), ...overrides },
     detailSections: all(DETAIL_SECTIONS),
     showAllDetails: false,
+    showVoiceButton: true,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
 }

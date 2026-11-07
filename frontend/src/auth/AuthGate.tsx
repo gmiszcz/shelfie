@@ -2,7 +2,9 @@ import { useEffect, useState, type ReactNode } from 'react';
 
 import { useAuth } from './AuthProvider';
 import { AuthSplash } from './AuthSplash';
+import { api } from '../services/api';
 import { LoginPage } from './LoginPage';
+import { RegisterPage } from './RegisterPage';
 import { SetupPasswordPage } from './SetupPasswordPage';
 
 /** Read the current path + query so we can detect the /setup link and the return route. */
@@ -31,6 +33,24 @@ function isSetupPath(path: string): boolean {
 export function AuthGate({ children }: { children: ReactNode }) {
   const { status } = useAuth();
   const [loc, setLoc] = useState(readLocation);
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [registrationOpen, setRegistrationOpen] = useState(false);
+
+  // Ask the server whether self-registration is on (public endpoint).
+  useEffect(() => {
+    let cancelled = false;
+    Promise.resolve()
+      .then(() => api.authConfig())
+      .then((cfg) => {
+        if (!cancelled) setRegistrationOpen(cfg.registration_enabled);
+      })
+      .catch(() => {
+        if (!cancelled) setRegistrationOpen(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Track back/forward navigation so the gate stays in sync with the URL.
   useEffect(() => {
@@ -50,7 +70,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
     setLoc(readLocation());
   }
 
-  if (onSetup) {
+  // A bare /setup without a token is not a usable link: fall through to login.
+  if (onSetup && loc.token) {
     // The setup page is public: it resolves its own token and logs the person in.
     return <SetupPasswordPage token={loc.token ?? ''} onDone={leaveSetup} />;
   }
@@ -60,7 +81,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }
 
   if (status === 'anonymous') {
-    return <LoginPage />;
+    if (mode === 'register' && registrationOpen) {
+      return <RegisterPage onLogin={() => setMode('login')} />;
+    }
+    return <LoginPage onRegister={registrationOpen ? () => setMode('register') : undefined} />;
   }
 
   // Authenticated: the remembered route is simply the current URL (the SPA keeps

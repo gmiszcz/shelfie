@@ -198,3 +198,22 @@ outer `Start-Job` + `Wait-Job -Timeout 55` window. Playwright and its Chromium
 are reused from the environment's `node_modules` (`PLAYWRIGHT_MODULE` /
 `KIROCREW_SCRATCH` override discovery); the check needs a built `frontend/dist`
 (`npm run build`).
+
+## Live caption (2026-11-07)
+
+While recording, `MicButton` shows a caption card: a red blinking dot, "LISTENING", then
+the live transcript in normal reading size (1rem). Before the first words arrive it shows
+"Say what you want to do…". Long text keeps the newest words: `captionTail()` shows
+"… <last ~120 chars>", cut at a word.
+
+The old bubble was absolutely positioned inside the 2.5rem mic wrapper, so its width
+shrank to the button and the text wrapped one syllable per line. Now:
+
+| Placement | Anchor | Width |
+|---|---|---|
+| chat (`variant="chat"`) | `.chat-input` (`position: relative`) | whole composer row, just above it |
+| global (`variant="global"`) | viewport (`position: fixed`), centred above the floating buttons | `min(32rem, 100vw - 2 x padding)`; on phones lifted over the tab bar |
+
+The UI-agent request (`frontend/src/agui/client.ts`, `POST /api/agui/run`) now sends
+`credentials: 'same-origin'` and `X-Shelfie-Client: web`, like `services/api.ts`. Without
+the header the CSRF middleware returned `403 Missing or invalid X-Shelfie-Client header`.

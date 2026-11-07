@@ -248,11 +248,6 @@ function AppShell() {
               <span>{p.label}</span>
             </button>
           ))}
-          {/* Account lives in the bottom tab bar on phones only; the top-bar
-              avatar covers it on wider screens. */}
-          <span className="app-nav-account">
-            <UserMenu variant="tab" active={page === 'users'} onOpenUsers={() => setPage('users')} />
-          </span>
         </nav>
 
         <div className="app-bar-actions">
@@ -270,7 +265,7 @@ function AppShell() {
             aria-label="Settings"
             onClick={() => setSettingsOpen(true)}
           />
-          {/* Desktop top-bar account control (hidden on phones). */}
+          {/* Account control: top-right on every screen size, phones included. */}
           <span className="app-bar-account">
             <UserMenu variant="bar" onOpenUsers={() => setPage('users')} />
           </span>

@@ -371,6 +371,27 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
 
+  /** Create an account (public). Logs the person in on success. 409 e-mail taken, 422 weak password. */
+  register: (email: string, displayName: string, password: string) =>
+    request<AuthUser>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, display_name: displayName, password }),
+      silent401: true,
+    }),
+
+  /** Public login-screen settings: is self-registration on, minimum password length. */
+  authConfig: () =>
+    request<{ registration_enabled: boolean; password_min_length: number }>('/auth/config', {
+      silent401: true,
+    }),
+
+  /** Change your own display name. */
+  updateMe: (displayName: string) =>
+    request<AuthUser>('/auth/me', {
+      method: 'PATCH',
+      body: JSON.stringify({ display_name: displayName }),
+    }),
+
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
 
   changePassword: (currentPassword: string, newPassword: string) =>

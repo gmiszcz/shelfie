@@ -201,3 +201,37 @@ flowchart LR
 - `App.test.tsx` — App-level bus listeners (navigate/settings/theme/set_setting) (5).
 
 Run the full gate with `just check`.
+
+## Update 2026-11-07: settings menu and book card layout
+
+**Settings drawer** (`frontend/src/settings/SettingsSidebar.tsx`) is a two-level menu:
+
+| Screen | Content |
+|---|---|
+| Menu | rows "Library cards" (`N of 9 fields shown`) and "Book detail" (`N of 12 sections shown`) with a chevron; switches "Show all details" and "Voice button"; "Reset to defaults" |
+| Library cards / Book detail | the checkbox list for that group; the header becomes a back arrow to the menu |
+
+The drawer always reopens on the menu.
+
+**Book card** (`frontend/src/components/BookCard.tsx`), top to bottom:
+
+1. title, subtitle (volume title, accent colour);
+2. author · year; series line (icon + one ellipsised line); page count;
+3. one row of small chips: shelves, then status (e.g. `Fantasy` `Finished`);
+4. bottom row, pinned with a divider: stars left, score value right (just `4.9`, no "Score" label).
+
+Stars and score are no longer either/or: each follows its own setting.
+Phones (≤640px) get a lighter card: smaller text and chips, subtitle on one line, page count hidden.
+
+## Update 2026-11-07: ranking compare on phones
+
+On phones (≤640px) the compare pair stays **side by side** (left vs right) instead of
+stacking, so both "I preferred this" buttons fit on one screen without scrolling.
+
+- `frontend/src/components/ComparePair.css`: two equal columns, cover `min(150px, 22vh)`,
+  smaller title (2 lines max), author on one line, small stars, no button icon, arrow-key
+  hint hidden; pick buttons keep a 44px touch target.
+- `frontend/src/pages/Ranking.tsx` / `Ranking.css`: "How the score works" is a collapsed
+  `<details>` (tap to open); category and focus dropdowns share one row; smaller toolbar.
+
+Checked on 390x844 and 375x667: on 390 the whole pair + "About the same" fit above the tab bar.

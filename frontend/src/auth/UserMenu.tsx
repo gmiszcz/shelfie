@@ -3,6 +3,7 @@ import { Menu } from 'primereact/menu';
 import type { MenuItem } from 'primereact/menuitem';
 import { useRef, useState } from 'react';
 
+import { AccountDialog } from './AccountDialog';
 import { ChangePasswordDialog } from './ChangePasswordDialog';
 import { useAuth } from './AuthProvider';
 import './UserMenu.css';
@@ -37,6 +38,7 @@ export function UserMenu({ onOpenUsers, variant = 'bar', active = false }: UserM
   const { user, logout } = useAuth();
   const menuRef = useRef<Menu>(null);
   const [changeOpen, setChangeOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
 
   if (!user) return null;
 
@@ -56,6 +58,11 @@ export function UserMenu({ onOpenUsers, variant = 'bar', active = false }: UserM
       ),
     },
     { separator: true },
+    {
+      label: 'Account',
+      icon: 'pi pi-user',
+      command: () => setAccountOpen(true),
+    },
     {
       label: 'Change password',
       icon: 'pi pi-key',
@@ -110,6 +117,14 @@ export function UserMenu({ onOpenUsers, variant = 'bar', active = false }: UserM
           </span>
         </Button>
       )}
+      <AccountDialog
+        visible={accountOpen}
+        onHide={() => setAccountOpen(false)}
+        onChangePassword={() => {
+          setAccountOpen(false);
+          setChangeOpen(true);
+        }}
+      />
       <ChangePasswordDialog visible={changeOpen} onHide={() => setChangeOpen(false)} />
     </>
   );

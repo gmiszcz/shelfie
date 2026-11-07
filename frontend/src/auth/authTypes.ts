@@ -1,5 +1,8 @@
 /** Auth domain types — the shape of the accounts/login contract (docs/features/auth.md). */
 
+/** Minimum length for a password chosen in the app (server: password_min_length). */
+export const MIN_PASSWORD = 8;
+
 /** The logged-in person, as returned by GET /api/auth/me and the login/setup endpoints. */
 export interface AuthUser {
   id: number;

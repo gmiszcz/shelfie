@@ -73,3 +73,35 @@
     min-width: 13rem;
   }
 }
+
+/* Account dialog (user panel). */
+.account-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--big-gap);
+}
+
+.account-role {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--app-text-muted);
+}
+
+.account-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--small-gap);
+  flex-wrap: wrap;
+  padding-top: var(--big-padding);
+  border-top: 1px solid var(--app-border);
+}
+
+@media (max-width: 640px) {
+  .account-actions {
+    flex-direction: column;
+  }
+  .account-actions .p-button {
+    width: 100%;
+    justify-content: center;
+  }
+}

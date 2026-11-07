@@ -43,7 +43,11 @@ class CsrfMiddleware(BaseHTTPMiddleware):
             if origin:
                 origin_host = urlparse(origin).netloc
                 request_host = request.headers.get("host") or request.url.netloc
-                if origin_host and request_host and origin_host != request_host:
+                # Behind the Vite dev proxy (changeOrigin) Host is rewritten to the
+                # backend address; the browser-facing host is in X-Forwarded-Host.
+                forwarded = request.headers.get("x-forwarded-host", "")
+                allowed = {request_host, *(h.strip() for h in forwarded.split(",") if h.strip())}
+                if origin_host and request_host and origin_host not in allowed:
                     return JSONResponse(
                         status_code=403, content={"detail": "Origin does not match host"}
                     )

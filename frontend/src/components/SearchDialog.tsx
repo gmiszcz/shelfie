@@ -1,6 +1,7 @@
 import { Button } from 'primereact/button';
 import { Dialog } from 'primereact/dialog';
 import { Dropdown } from 'primereact/dropdown';
+import { Message } from 'primereact/message';
 import { ProgressSpinner } from 'primereact/progressspinner';
 import { useEffect, useState } from 'react';
 
@@ -49,6 +50,7 @@ export function SearchDialog({
     }
   }, [visible, initialQuery]);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
   const [adding, setAdding] = useState<string | null>(null);
 
@@ -56,10 +58,12 @@ export function SearchDialog({
     if (!query.trim()) return;
     setLoading(true);
     setError(null);
+    setNotice(null);
     setSearched(true);
     try {
       const resp = await api.search(query.trim(), lang || undefined);
       setResults(resp.items);
+      setNotice(resp.notice ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Search failed');
       setResults([]);
@@ -129,7 +133,12 @@ export function SearchDialog({
         <Button label="Search" icon="pi pi-search" onClick={() => void runSearch()} loading={loading} />
       </div>
 
-      {error && <p style={{ color: 'var(--red-400)' }}>{error}</p>}
+      {error && (
+        <Message severity="error" text={error} className="search-dialog-message" />
+      )}
+      {!error && notice && (
+        <Message severity="warn" text={notice} className="search-dialog-message" />
+      )}
 
       {loading && (
         <div className="flex justify-content-center p-4">
@@ -193,7 +202,8 @@ export function SearchDialog({
         })}
       </div>
 
-      {onAddManually && (searched || results.length > 0) && (
+      {/* Footer link only when the empty state (which has its own button) is not shown. */}
+      {onAddManually && (results.length > 0 || (searched && !!error)) && (
         <div className="flex justify-content-center mt-3">
           <Button
             label="Can't find it? Add manually"

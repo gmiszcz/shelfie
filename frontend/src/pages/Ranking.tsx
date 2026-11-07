@@ -359,16 +359,20 @@ export function Ranking() {
 
         {error && <p className="rank-error">{error}</p>}
 
-        <div className="rank-infobox" role="note">
-          <i className="pi pi-info-circle" aria-hidden="true" />
-          <div>
-            <strong>How the score works.</strong> Your star rating sets a <em>band</em>: a 5★ book
+        {/* Collapsed by default so the compare pair sits near the top (phones). */}
+        <details className="rank-infobox" role="note">
+          <summary className="rank-infobox-summary">
+            <i className="pi pi-info-circle" aria-hidden="true" />
+            <strong>How the score works</strong>
+          </summary>
+          <div className="rank-infobox-body">
+            Your star rating sets a <em>band</em>: a 5★ book
             lives in <code>4.6–5.0</code>, a 4.5★ book in <code>4.1–4.5</code>, and so on. Each
             comparison nudges the book you did <em>not</em> pick down by one 0.1 step within its band
             (never more), so the order by stars is always kept and refinement is gradual. Comparisons
             are always between two books in the <em>same category</em>.
           </div>
-        </div>
+        </details>
 
       {/* --- Compare section --------------------------------------------------------- */}
       <section className="rank-section">

@@ -63,6 +63,15 @@ export interface MicButtonProps {
   label?: string;
 }
 
+/** Keep the newest words visible: long transcripts show "… <last ~120 chars>", cut at a word. */
+export function captionTail(text: string, max = 120): string {
+  const t = text.trim();
+  if (t.length <= max) return t;
+  const tail = t.slice(-max);
+  const space = tail.indexOf(' ');
+  return `… ${space > 0 ? tail.slice(space + 1) : tail}`;
+}
+
 /**
  * Microphone button, reused by the chat input (`variant="chat"`) and the main
  * view's floating global mic (`variant="global"`).
@@ -171,9 +180,15 @@ export const MicButton = forwardRef<MicHandle, MicButtonProps>(function MicButto
 
   return (
     <div className={`mic-button-wrap mic-${variant}${busy ? ' busy' : ''}`}>
-      {recording && partial && (
-        <div className="mic-partial" role="status" aria-live="polite">
-          {partial}
+      {recording && (
+        <div className="mic-caption" role="status" aria-live="polite">
+          <span className="mic-caption-head">
+            <span className="mic-caption-dot" aria-hidden="true" />
+            Listening
+          </span>
+          <p className={`mic-caption-text${partial ? '' : ' placeholder'}`}>
+            {partial ? captionTail(partial) : 'Say what you want to do…'}
+          </p>
         </div>
       )}
       <button

@@ -156,30 +156,104 @@
   }
 }
 
-/* Live partial transcript, floated just above the button. */
-.mic-partial {
+/* Live caption while recording. It is NOT sized by the tiny mic wrapper (that
+   made the text wrap one syllable per line); each placement anchors it to a
+   wide parent instead:
+   - chat: spans the whole composer row, just above it (ChatWidget.css makes
+     .chat-input the containing block);
+   - global: a centred bar above the floating buttons, viewport-wide on phones. */
+.mic-button-wrap.mic-chat,
+.mic-button-wrap.mic-global {
+  position: static;
+}
+
+.mic-caption {
   position: absolute;
-  bottom: calc(100% + 0.4rem);
-  left: 0;
-  max-width: 16rem;
-  padding: var(--small-padding) var(--default-padding);
-  font-size: 0.78rem;
-  line-height: 1.3;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+  padding: var(--default-padding) var(--big-padding);
   color: var(--app-text);
-  background: var(--app-surface-2);
+  background: var(--app-surface);
   border: 1px solid var(--app-border);
-  border-radius: var(--custom-border-radius, 8px);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
-  white-space: normal;
-  overflow-wrap: anywhere;
-  z-index: 2;
+  border-radius: var(--radius-md, 12px);
+  box-shadow: var(--shadow-pop, 0 8px 24px rgba(17, 24, 39, 0.12));
+  pointer-events: none;
+  animation: mic-caption-in 0.16s ease-out;
+}
+
+.mic-chat .mic-caption {
+  left: var(--default-padding);
+  right: var(--default-padding);
+  bottom: calc(100% + var(--small-gap));
+}
+
+.mic-global .mic-caption {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(32rem, calc(100vw - 2 * var(--content-padding)));
+  bottom: calc(var(--content-padding) + 3.5rem + var(--default-gap));
+}
+
+.mic-caption-head {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-gap);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #e5484d;
+}
+
+.mic-caption-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: #e5484d;
+  animation: mic-caption-blink 1.2s ease-in-out infinite;
+}
+
+.mic-caption-text {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.4;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.mic-caption-text.placeholder {
+  color: var(--app-text-muted);
+}
+
+@keyframes mic-caption-in {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+
+@keyframes mic-caption-blink {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mic-caption,
+  .mic-caption-dot {
+    animation: none;
+  }
 }
 
 .mic-error {
   position: absolute;
   bottom: calc(100% + 0.4rem);
   left: 0;
-  max-width: 16rem;
+  width: max-content;
+  max-width: min(16rem, calc(100vw - 2rem));
   padding: var(--small-padding) var(--default-padding);
   font-size: 0.76rem;
   color: #e5484d;

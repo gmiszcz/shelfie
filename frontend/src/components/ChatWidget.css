@@ -307,6 +307,8 @@
 
 /* Input */
 .chat-input {
+  /* Containing block for the mic's live caption, so it spans the composer. */
+  position: relative;
   display: flex;
   align-items: flex-end;
   gap: var(--small-gap);

@@ -172,6 +172,26 @@ async def _setup_link(settings: Settings, email: str, origin: str) -> int:
         await conn.close()
 
 
+async def _set_password(settings: Settings, email: str, password: str) -> int:
+    conn = await authdb.connect(settings.auth_database_file)
+    try:
+        user = await authdb.get_user_by_email(conn, email)
+        if user is None:
+            print(f"No user with e-mail {email}.", file=sys.stderr)
+            return 2
+        await auth_service.operator_set_password(conn, user_id=user.id, password=password)
+        await authdb.invalidate_user_setup_tokens(conn, user.id)
+        print(f"Password set for {user.email}. Older sessions and setup links were revoked.")
+        if len(password) < settings.password_min_length:
+            print(
+                f"Note: shorter than the web minimum ({settings.password_min_length}); "
+                "change it in Account > Change password.",
+            )
+        return 0
+    finally:
+        await conn.close()
+
+
 async def _list(settings: Settings) -> int:
     conn = await authdb.connect(settings.auth_database_file)
     try:
@@ -244,11 +264,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     users.add_parser("list", help="List accounts")
 
+    setpw = users.add_parser("set-password", help="Set a password from the host (no length rule)")
+    setpw.add_argument("--email", required=True)
+    setpw.add_argument("--password", required=True)
+
     series = sub.add_parser("series", help="Series maintenance").add_subparsers(
         dest="action", required=True
     )
     check = series.add_parser("check", help="Re-check watched series")
     check.add_argument("--all-users", action="store_true", help="Check every active user's library")
+
+    backup = sub.add_parser("backup", help="Back up auth.sqlite and every user folder")
+    backup.add_argument("--to", default=None, help="Backup root (default: <data_dir>/backups)")
+    backup.add_argument(
+        "--keep", type=int, default=14, help="How many backups to keep (default 14)"
+    )
 
     return parser
 
@@ -266,11 +296,26 @@ def main(argv: list[str] | None = None) -> int:
             return asyncio.run(_setup_link(settings, args.email, args.origin))
         if args.action == "list":
             return asyncio.run(_list(settings))
+        if args.action == "set-password":
+            return asyncio.run(_set_password(settings, args.email, args.password))
     if args.group == "series" and args.action == "check":
         if not args.all_users:
             print("Only --all-users is supported from the CLI.", file=sys.stderr)
             return 2
         return asyncio.run(_series_check_all(settings))
+    if args.group == "backup":
+        from app.backup import run_backup
+
+        data_dir = Path(settings.data_path)
+        root = Path(args.to) if args.to else data_dir / "backups"
+        from app.config import resolve_path
+
+        auth_file = resolve_path(settings.auth_db_path) if settings.auth_db_path else None
+        result = run_backup(data_dir, root, keep=args.keep, auth_file=auth_file)
+        print(f"Backup: {result.path} ({result.users} users, {result.files} files)")
+        for old in result.removed:
+            print(f"removed old backup {old.name}")
+        return 0
     return 1
 
 

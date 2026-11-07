@@ -70,6 +70,9 @@ class VolumeSearchResult(BaseModel):
 class SearchResponse(BaseModel):
     total_items: int
     items: list[VolumeSearchResult]
+    # Set when Google Books was unavailable (daily quota / call budget) and the results
+    # came from OpenLibrary instead; the UI shows it so the user knows to retry later.
+    notice: str | None = None
 
 
 class BookFields(BaseModel):

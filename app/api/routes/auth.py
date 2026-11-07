@@ -1,7 +1,7 @@
 """Authentication endpoints: login, logout, me, password change, setup links.
 
-Public routes: ``POST /login``, ``POST /setup``, ``GET /setup/{token}`` (plus
-``GET /api/health``). Everything else needs a valid session cookie. The session cookie is
+Public routes: ``POST /login``, ``POST /register``, ``GET /config``, ``POST /setup``,
+``GET /setup/{token}`` (plus ``GET /api/health``). Everything else needs a valid session cookie. The session cookie is
 set here on login/setup and cleared on logout; its flags follow ``docs/features/auth.md``.
 """
 
@@ -12,8 +12,11 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from app.api.deps import AppSettings, AuthConn, CurrentAuthUser, client_ip
 from app.config import Settings
 from app.schemas.auth import (
+    AuthConfigOut,
     LoginIn,
     PasswordChangeIn,
+    ProfilePatch,
+    RegisterIn,
     SetupCompleteIn,
     SetupInfo,
     UserOut,
@@ -87,6 +90,51 @@ async def login(
     return _user_out(result.user)
 
 
+@router.get("/config", response_model=AuthConfigOut)
+async def auth_config(settings: AppSettings) -> AuthConfigOut:
+    """What the login screen needs before anyone is logged in."""
+    return AuthConfigOut(
+        registration_enabled=settings.registration_enabled,
+        password_min_length=settings.password_min_length,
+    )
+
+
+@router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+async def register(
+    data: RegisterIn,
+    request: Request,
+    response: Response,
+    settings: AppSettings,
+    auth_conn: AuthConn,
+) -> UserOut:
+    try:
+        result = await auth_service.register(
+            auth_conn,
+            settings,
+            email=data.email,
+            display_name=data.display_name,
+            password=data.password,
+            user_agent=request.headers.get("user-agent"),
+            ip=client_ip(request),
+        )
+    except auth_service.Throttled as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=exc.args[0],
+            headers={"Retry-After": str(exc.retry_after)},
+        ) from exc
+    except auth_service.RegistrationClosed as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.args[0]) from exc
+    except auth_service.EmailTaken as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.args[0]) from exc
+    except auth_service.WeakPassword as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.args[0]
+        ) from exc
+    _set_session_cookie(response, settings, request, result)
+    return _user_out(result.user)
+
+
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
     request: Request, response: Response, settings: AppSettings, auth_conn: AuthConn
@@ -100,6 +148,14 @@ async def logout(
 @router.get("/me", response_model=UserOut)
 async def me(user: CurrentAuthUser) -> UserOut:
     return _user_out(user)
+
+
+@router.patch("/me", response_model=UserOut)
+async def update_me(data: ProfilePatch, auth_conn: AuthConn, user: CurrentAuthUser) -> UserOut:
+    updated = await auth_service.update_profile(
+        auth_conn, user=user, display_name=data.display_name
+    )
+    return _user_out(updated)
 
 
 @router.post("/password", status_code=status.HTTP_204_NO_CONTENT)

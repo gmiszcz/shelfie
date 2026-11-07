@@ -84,13 +84,79 @@
   font-family: inherit;
 }
 
-/* Stack the two cards on narrow screens; the "vs" divider drops out of the flow. */
+/* Phones: keep both books side by side (left vs right) in a compact form, so a choice
+   never needs scrolling. The "vs" divider drops out; the gap separates the cards. */
 @media (max-width: 640px) {
+  .compare {
+    gap: var(--default-gap);
+  }
+
   .compare-pair {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--small-gap);
   }
 
   .compare-vs {
     display: none;
+  }
+
+  .compare-card {
+    gap: var(--small-gap);
+    padding: var(--small-gap);
+    min-width: 0;
+  }
+
+  .compare-card .ui-cover--compare {
+    height: min(150px, 22vh);
+  }
+
+  .compare-meta {
+    gap: var(--small-padding);
+    min-width: 0;
+  }
+
+  .compare-card .compare-title {
+    font-size: 0.85rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .compare-card .compare-authors {
+    font-size: 0.72rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .compare-stats {
+    gap: var(--small-padding);
+    flex-wrap: wrap;
+    font-size: 0.75rem;
+  }
+
+  .compare-stats .half-star-star {
+    font-size: 0.8rem;
+  }
+
+  .compare-card .compare-pick.p-button {
+    min-height: var(--touch-target);
+    padding: var(--small-padding) var(--small-gap);
+    font-size: 0.8rem;
+  }
+
+  .compare-tie .p-button {
+    padding: var(--small-padding) var(--big-padding);
+    font-size: 0.8rem;
+  }
+
+  .compare-pick.p-button .p-button-icon {
+    display: none;
+  }
+
+  .compare-hint {
+    display: none; /* arrow-key shortcuts mean nothing on a phone */
   }
 }

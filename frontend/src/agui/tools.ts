@@ -25,7 +25,7 @@
  * untouched, and the navigation schema is built on the fly at runtime.
  */
 
-import type { Book } from '../types';
+import type { Book, SeriesSummary } from '../types';
 import {
   describeUi,
   getAnchorState,
@@ -43,9 +43,20 @@ export interface AgentTool {
   execute: (args: Record<string, unknown>) => Promise<unknown> | unknown;
 }
 
+/** Series data access for the `series_releases` tool (injected; tests pass fakes). */
+export interface SeriesDeps {
+  list: () => Promise<SeriesSummary[]>;
+  get: (key: string) => Promise<SeriesSummary>;
+  /** Start the web release check; resolves with `checking: true`. */
+  refresh: (key: string) => Promise<SeriesSummary>;
+  pollMs?: number;
+  timeoutMs?: number;
+}
+
 /** What the tool layer needs from the host app: the loaded books (live). */
 export interface ToolContext {
   getBooks: () => Book[];
+  series?: SeriesDeps;
 }
 
 const objSchema = (
@@ -216,7 +227,118 @@ export function createTools(ctx: ToolContext): AgentTool[] {
     },
   };
 
-  return [describe, getState, set, invoke, navigate, findBooks];
+  const seriesReleases: AgentTool = {
+    name: 'series_releases',
+    description:
+      'Answer "when does the next/last volume come out" for a series, for the POLISH and the ' +
+      'ORIGINAL/ENGLISH edition. Matches the series by any of its names (e.g. "Kroniki Mroku" = ' +
+      '"King\'s Dark Tidings") or by a book title in it. Returns owned/missing volumes and the ' +
+      'stored next-volume info per edition (title, date, status, source). Pass refresh=true to ' +
+      'search the web for release news right now (takes up to ~60 s) — do that when the stored ' +
+      'info is missing, has no date, or the user asks to check. Never invent a date: report ' +
+      '"not announced" when the result has no date.',
+    parameters: objSchema(
+      { name: { type: 'string' }, refresh: { type: 'boolean' } },
+      ['name'],
+    ),
+    execute: async (args) => {
+      const deps = ctx.series;
+      if (!deps) return { ok: false, error: 'series data is not available' };
+      const name = (str(args.name) ?? '').trim();
+      if (!name) return { ok: false, error: 'pass a series name' };
+      const all = await deps.list();
+      const found = matchSeries(all, name, ctx.getBooks());
+      if (!found) {
+        return {
+          ok: false,
+          error: `no series matching "${name}"`,
+          series: all.slice(0, 40).map((s) => s.name),
+        };
+      }
+      let summary = found;
+      let refreshed = false;
+      if (args.refresh === true) {
+        summary = await deps.refresh(found.series_key);
+        const deadline = Date.now() + (deps.timeoutMs ?? 60_000);
+        while (summary.checking && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, deps.pollMs ?? 2_000));
+          summary = await deps.get(found.series_key);
+        }
+        refreshed = !summary.checking;
+      }
+      return { ok: true, refreshed, still_checking: summary.checking, ...seriesBrief(summary) };
+    },
+  };
+
+  return [describe, getState, set, invoke, navigate, findBooks, seriesReleases];
+}
+
+/** Compact series view for the model: names, progress and the per-edition next volume. */
+function seriesBrief(s: SeriesSummary): Record<string, unknown> {
+  const edition = (n: SeriesSummary['next_expected_pl']) =>
+    n
+      ? {
+          title: n.title,
+          date: n.date ?? 'not announced',
+          status: n.status ?? 'unknown',
+          source_url: n.source_url,
+          confidence: n.confidence,
+        }
+      : { date: 'not announced', status: 'unknown' };
+  return {
+    series: s.name,
+    aliases: s.aliases,
+    author: s.author,
+    watch: s.watch,
+    owned: s.owned_volumes.map((o) => ({ volume: o.volume_label ?? o.volume, title: o.title, status: o.status })),
+    missing_volumes: s.missing_volumes.map((m) => m.number ?? m.title),
+    total_known: s.total_known,
+    last_checked: s.last_checked,
+    next_polish: edition(s.next_expected_pl),
+    next_original: edition(s.next_expected_en),
+  };
+}
+
+const fold = (v: string): string =>
+  v
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ł/g, 'l')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+/** Find a series by name/alias (exact, then contains), else by a book title in it. */
+export function matchSeries(
+  all: SeriesSummary[],
+  query: string,
+  books: Book[],
+): SeriesSummary | null {
+  const q = fold(query);
+  if (!q) return null;
+  const names = (s: SeriesSummary) => [s.name, ...(s.aliases ?? [])].map(fold);
+  const exact = all.find((s) => names(s).includes(q));
+  if (exact) return exact;
+  const partial = all.find((s) => names(s).some((n) => n.includes(q) || q.includes(n)));
+  if (partial) return partial;
+  // Inflected / spoken forms ("kronik mroku" for "Kroniki Mroku"): every query word is a
+  // prefix of some name word, or shares its first 5 letters.
+  const qWords = q.split(' ').filter((w) => w.length > 2);
+  const wordHit = (qw: string, nw: string) =>
+    nw.startsWith(qw) || qw.startsWith(nw) || (qw.length >= 5 && nw.slice(0, 5) === qw.slice(0, 5));
+  const fuzzy = all.find((s) =>
+    names(s).some((n) => {
+      const nWords = n.split(' ');
+      return qWords.length > 0 && qWords.every((qw) => nWords.some((nw) => wordHit(qw, nw)));
+    }),
+  );
+  if (fuzzy) return fuzzy;
+  const book = books.find((b) => b.series && fold(b.title).includes(q));
+  if (book?.series) {
+    const key = fold(book.series);
+    return all.find((s) => names(s).includes(key)) ?? null;
+  }
+  return null;
 }
 
 /** JSON-schema definitions only (what is sent to the backend runner). */

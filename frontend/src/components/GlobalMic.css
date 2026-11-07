@@ -174,4 +174,9 @@
   .global-mic-toast {
     width: min(18rem, calc(100vw - 2 * var(--content-padding)));
   }
+
+  /* Live caption: above the lifted floating buttons. */
+  .global-mic .mic-global .mic-caption {
+    bottom: calc(4.5rem + 3.5rem + var(--default-gap) + env(safe-area-inset-bottom, 0px));
+  }
 }

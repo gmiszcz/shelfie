@@ -9,7 +9,7 @@ and frontend work follow.
 |---|---|
 | Login | E-mail + password now. Google sign-in may be added later (schema is ready for it). |
 | Data isolation | One separate data folder per person: own SQLite, own `books.json`, own covers. |
-| Who creates accounts | Only the admin. There is no public sign-up. |
+| Who creates accounts | Anyone can register (owner change, 2026-11-07); the admin can still add people with a setup link. `registration_enabled` turns sign-up off. |
 | Session length | 30 days, sliding. |
 | First admin | Patryk Batóg, `patryk.batog@gmail.com`. He owns all existing data. |
 | Next user | Added later by the admin; starts with an empty library. |
@@ -44,7 +44,8 @@ data/
 
 ## Security rules
 
-- Passwords: argon2id (`argon2-cffi`, library defaults or stronger). Minimum 10 characters.
+- Passwords: argon2id (`argon2-cffi`, library defaults or stronger). Minimum 8 characters
+  for passwords chosen in the app (was 10; see the 2026-11-07 update below).
   Unknown e-mail still runs one dummy verify so timing does not reveal accounts.
 - Session cookie `shelfie_session`: 32 random bytes (urlsafe), only the SHA-256 hash is
   stored. `HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` when the request came over HTTPS
@@ -58,7 +59,8 @@ data/
   returns `429` with `Retry-After`. Generic error text: "Invalid e-mail or password".
 - CSRF: `SameSite=Lax` plus every state-changing request (`POST/PUT/PATCH/DELETE`) must
   carry `X-Shelfie-Client: web` (the frontend adds it to every request) or it gets `403`.
-  If an `Origin` header is present it must match the request host.
+  If an `Origin` header is present it must match the request host or the
+  `X-Forwarded-Host` the dev proxy adds (see "Behind a proxy" below).
 - Every `/api/*` route needs a valid session except `GET /api/health`,
   `POST /api/auth/login`, `POST /api/auth/setup` and `GET /api/auth/setup/{token}`.
   WebSockets (voice/transcribe, chat streams) check the same cookie during the handshake
@@ -95,7 +97,9 @@ data/
 | PATCH | `/api/admin/users/{id}` | admin | `{display_name?, disabled?, is_admin?}`; the last active admin cannot be disabled or demoted |
 | POST | `/api/admin/users/{id}/setup-link` | admin | `{setup_url, expires_at}` (password reset link) |
 
-`setup_url` is built from the request's own origin: `<origin>/setup?token=<token>`.
+`setup_url` is built from the browser-facing origin: `<origin>/setup?token=<token>`.
+The `Origin` header wins; otherwise the first `X-Forwarded-Proto` / `X-Forwarded-Host`
+hop; only then `Host`.
 
 ## Command line
 
@@ -119,7 +123,8 @@ users) take `--user <email or id>` and resolve the per-user paths.
 - `/setup?token=...`: `SetupPasswordPage` shows who the link is for, password + repeat,
   strength hint (min 10), then logs in and opens the library.
 - Any `401` from the API sends the app back to the login page and keeps the target route.
-- User menu (top bar on desktop, More/Account on phones): name, "Change password",
+- User menu: the avatar top-right of the top bar on every screen size, phones included
+  (not in the bottom tab bar). Items: name, "Account", "Change password",
   "Users" (admin only), "Log out".
 - `Users` page (admin): table of accounts; "Add person" dialog (name, e-mail) that shows
   the setup link with a Copy button; per-row "New link" and "Disable/Enable".
@@ -166,3 +171,43 @@ resolved as follows; none change the request/response shape:
   `books` / `comparisons` / `series_info` / `expected_books` are unchanged, prints a setup link
   (origin default `http://127.0.0.1:5174`), and refuses to run twice. See
   [cli.md](cli.md).
+
+
+## Update 2026-11-07: self-registration and the account panel
+
+The owner asked for open registration, a simple admin password he changes later, and a
+user panel.
+
+| Change | Detail |
+|---|---|
+| `POST /api/auth/register` | Public. `{email, display_name, password}` -> `201 {user}` + session cookie. New accounts are never admins and start with an empty library. `409` e-mail taken, `422` weak password, `403` when `registration_enabled=false`, `429` shares the login throttle. |
+| `GET /api/auth/config` | Public. `{registration_enabled, password_min_length}` so the login screen knows whether to offer "Create one". |
+| `PATCH /api/auth/me` | Logged in. `{display_name}` -> `{user}`. |
+| `password_min_length` | Now 8 (was 10) for passwords chosen in the app. |
+| `users set-password --email E --password P` | Host CLI only. Sets a password with no length rule, revokes the user's sessions and setup links. Used to give the admin the temporary password `admin`. |
+| Frontend | Login screen has "No account yet? Create one" -> RegisterPage. User menu has "Account": a panel to edit your name, see your e-mail and role, change password, log out. A bare `/setup` without a token now shows the login screen. |
+
+## Behind a proxy (Vite dev server + Tailscale)
+
+Request path: browser -> `tailscale serve` (`https://home.<tailnet>.ts.net:8443`) ->
+Vite `127.0.0.1:5174` -> `/api` proxy -> uvicorn `127.0.0.1:8000`.
+
+The Vite proxy uses `changeOrigin: true`, so the backend sees `Host: 127.0.0.1:8000`.
+Two bugs came from that (fixed 2026-11-07):
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Login on the Tailscale URL said "Invalid e-mail or password" | CSRF check: `Origin` host != rewritten `Host` -> `403` | Vite `xfwd: true` sends `X-Forwarded-Host`; the middleware accepts it |
+| Setup links pointed at `https://127.0.0.1:8000/setup?...` | link built from `Host` | link built from `Origin`, then `X-Forwarded-Host` (test `test_setup_link_uses_browser_origin_behind_proxy`) |
+
+## Known weak points / to improve
+
+| Area | Problem | Suggested fix |
+|---|---|---|
+| Admin password | `admin` is set via CLI with no length rule | change it in Account -> Change password |
+| Open registration | anyone who can reach the site can create an account; no e-mail check | keep the site tailnet-only, or set `registration_enabled=false` / add invites |
+| IP throttle | `client_ip` trusts the first `X-Forwarded-For` value, which a client can set itself; behind the proxy every request is otherwise `127.0.0.1` | trust only the hop the proxy adds (last value), or throttle by e-mail only |
+| Forgotten password | no e-mail delivery; the admin must generate and send a reset link | add SMTP / transactional e-mail later |
+| Error messages | a `403` CSRF rejection is shown to the user as "Invalid e-mail or password" | show a distinct message for non-`401` errors |
+| Dev server in production role | the app is served by Vite dev mode | serve the built `dist/` from FastAPI or nginx for real use |
+| Backups | ~~per-user folders are not backed up automatically~~ | **done 2026-11-07**: see [backup.md](backup.md) |

@@ -136,15 +136,38 @@
 
 .rank-infobox {
   display: flex;
-  gap: var(--default-gap);
-  align-items: flex-start;
-  padding: var(--big-padding);
+  flex-direction: column;
+  gap: var(--small-gap);
+  padding: var(--default-padding) var(--big-padding);
   background: var(--app-surface);
   border: 1px solid var(--app-border);
   border-radius: var(--custom-border-radius);
   color: var(--app-text);
   font-size: 0.9rem;
   line-height: 1.5;
+}
+
+.rank-infobox-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+  min-height: var(--touch-target);
+  cursor: pointer;
+  list-style: none;
+}
+.rank-infobox-summary::-webkit-details-marker {
+  display: none;
+}
+.rank-infobox-summary::after {
+  content: '\e902'; /* pi-chevron-down */
+  font-family: 'primeicons';
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--app-text-faint);
+  transition: transform 0.15s ease;
+}
+.rank-infobox[open] .rank-infobox-summary::after {
+  transform: rotate(180deg);
 }
 
 .rank-infobox .pi-info-circle {
@@ -177,10 +200,16 @@
     flex-direction: column;
     align-items: stretch;
   }
+  /* Category + focus share one row; the counter goes under them. */
   .rank-section-controls {
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     align-items: stretch;
     gap: var(--small-gap);
+  }
+  .rank-counter {
+    grid-column: 1 / -1;
+    font-size: 0.8rem;
   }
   .rank-focus,
   .rank-category,
@@ -189,9 +218,30 @@
     min-width: 0;
     width: 100%;
   }
+  .rank-section-controls .p-dropdown .p-dropdown-label {
+    padding: var(--small-gap) var(--default-padding);
+    font-size: 0.85rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .rank-page {
+    gap: var(--default-gap);
+  }
   .rank-toolbar .p-button {
     flex: 1 1 auto;
     justify-content: center;
+    padding: var(--small-gap) var(--big-padding);
+    font-size: 0.85rem;
+  }
+  .rank-infobox {
+    padding: 0 var(--default-padding);
+    font-size: 0.82rem;
+  }
+  .rank-infobox[open] {
+    padding-bottom: var(--default-padding);
+  }
+  .rank-infobox-summary {
+    font-size: 0.85rem;
   }
   .rank-compare-panel,
   .rank-table-panel {

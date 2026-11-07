@@ -23,6 +23,7 @@ function seedSettings(partial: {
     cardFields: all(CARD_FIELDS),
     detailSections: { ...all(DETAIL_SECTIONS), ...(partial.detailSections ?? {}) },
     showAllDetails: partial.showAllDetails ?? true,
+    showVoiceButton: true,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
 }

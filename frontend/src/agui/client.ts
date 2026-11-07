@@ -109,7 +109,14 @@ async function runTurn(
 
   const resp = await fetchImpl(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    // Same auth contract as services/api.ts: session cookie + the CSRF client
+    // header every state-changing /api request must carry.
+    credentials: 'same-origin',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      'X-Shelfie-Client': 'web',
+    },
     body,
     signal,
   });

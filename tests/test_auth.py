@@ -124,6 +124,7 @@ def _protected_routes() -> list[tuple[str, str]]:
 
     public = {
         ("GET", "/api/health"),
+        ("GET", "/api/auth/config"),
         ("POST", "/api/auth/login"),
         ("POST", "/api/auth/setup"),
     }
@@ -217,6 +218,19 @@ def test_new_setup_link_invalidates_old(admin_client: TestClient, auth_client: T
     # Old one no longer resolves.
     assert auth_client.get(f"/api/auth/setup/{old_token}").status_code == 410
     assert auth_client.get(f"/api/auth/setup/{new_token}").status_code == 200
+
+
+def test_setup_link_uses_browser_origin_behind_proxy(admin_client: TestClient) -> None:
+    """Behind the Vite proxy Host is the backend; the link must use the browser's origin."""
+    created = _create_user(admin_client, "dora@example.com", "Dora")
+    uid = created["user"]["id"]
+    browser = "https://home.example.ts.net:8443"
+    resp = admin_client.post(
+        f"/api/admin/users/{uid}/setup-link",
+        headers={**WEB, "Origin": browser, "X-Forwarded-Host": "home.example.ts.net:8443"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["setup_url"].startswith(f"{browser}/setup?token=")
 
 
 def test_setup_token_expiry(admin_client: TestClient, auth_client: TestClient) -> None:

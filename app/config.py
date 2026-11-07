@@ -76,8 +76,11 @@ class Settings(BaseSettings):
     # Login throttle window (minutes) and the failed-attempt ceiling per e-mail/IP.
     login_window_minutes: int = Field(default=15, ge=1)
     login_max_attempts: int = Field(default=5, ge=1)
-    # Minimum password length.
-    password_min_length: int = Field(default=10, ge=1)
+    # Minimum password length for passwords chosen in the web app (register, setup, change).
+    password_min_length: int = Field(default=8, ge=1)
+    # Public self-registration (POST /api/auth/register). New accounts are never admins and
+    # start with an empty library.
+    registration_enabled: bool = True
 
     # Permissive by default for local dev (Vite on :5173 -> API on :8000).
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])

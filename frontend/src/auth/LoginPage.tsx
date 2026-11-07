@@ -18,7 +18,12 @@ function waitPhrase(seconds: number): string {
  * message with the wait time on 429. Autocomplete attributes let the browser's
  * password manager fill the form.
  */
-export function LoginPage() {
+interface LoginPageProps {
+  /** Open the create-account screen; omitted when registration is off. */
+  onRegister?: () => void;
+}
+
+export function LoginPage({ onRegister }: LoginPageProps = {}) {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -54,6 +59,16 @@ export function LoginPage() {
     <AuthCard
       title="Log in"
       subtitle="Sign in to your Shelfie library."
+      footer={
+        onRegister ? (
+          <span>
+            No account yet?{' '}
+            <button type="button" className="ui-authlink" onClick={onRegister}>
+              Create one
+            </button>
+          </span>
+        ) : undefined
+      }
     >
       <form className="ui-authform" onSubmit={onSubmit} noValidate>
         {throttled !== null && (

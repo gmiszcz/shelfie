@@ -55,6 +55,10 @@ export function describeAction(name: string, args: Record<string, unknown>): str
     }
     case 'navigate':
       return `Go to ${readableValue(args.tab) || 'a tab'}`;
+    case 'series_releases':
+      return args.refresh === true
+        ? `Checking new volumes "${String(args.name ?? '')}"…`
+        : `Series "${String(args.name ?? '')}"`;
     case 'find_books':
       return `Find books "${String(args.query ?? '')}"`;
     default:

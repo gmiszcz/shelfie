@@ -87,7 +87,7 @@ describe('SetupPasswordPage', () => {
     fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'short' } });
     fireEvent.change(screen.getByLabelText('Repeat password'), { target: { value: 'short' } });
 
-    expect(screen.getByText(/at least 10 characters/i)).toBeTruthy();
+    expect(screen.getByText(/at least 8 characters/i)).toBeTruthy();
     const submit = screen.getByRole('button', { name: /set password and log in/i }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
     expect(apiMock.completeSetup).not.toHaveBeenCalled();

@@ -280,7 +280,15 @@ async def research_series_releases(
         if research_fn is None:
             from app.agent.series_research import research_next_volumes
 
-            research_fn = research_next_volumes
+            aliases = list(summary.aliases or [])
+
+            async def _research(name: str, author: str, owned_: list[float]) -> Any:
+                # Pass the other-language names (e.g. "Kroniki Mroku" for "King's Dark
+                # Tidings") so the Polish edition is searched under its Polish title.
+                return await research_next_volumes(name, author, owned_, aliases=aliases)
+
+            research_fn = _research
+
         try:
             result = await research_fn(summary.name, summary.author, owned)
         except Exception:  # noqa: BLE001 - research is best-effort

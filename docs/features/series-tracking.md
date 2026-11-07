@@ -308,3 +308,36 @@ flagged as needing a Google re-check.
 All external calls (Google Books, OpenLibrary, DuckDuckGo, page fetches, Bedrock) are
 mocked in tests — no live call is made, and `conftest.py` disables enrichment and isolates
 every on-disk cache so the suite never touches the network or a stale cache.
+
+## Update 2026-11-07: UI agent answers release questions; better research
+
+**Problem.** Asked "kiedy wyjdzie siódma część Kronik Mroku", the UI agent only had
+`find_books` and answered "check the publisher yourself". The stored research for
+King's Dark Tidings also had no date: the research agent searched under the English name
+only and its own queries missed the author's release posts.
+
+**UI agent tool `series_releases(name, refresh?)`** (`frontend/src/agui/tools.ts`):
+
+| Step | What happens |
+|---|---|
+| match | series by name or alias, case/diacritics/inflection tolerant ("kronik mroku" → Kroniki Mroku), or by a book title in it (`matchSeries`) |
+| read | owned / missing volumes and the stored next volume per edition: `next_polish`, `next_original` (title, date or "not announced", status, source) |
+| `refresh=true` | `POST /api/series/{key}/refresh` (web research, never Google Books), then polls `GET /api/series/{key}` every 2 s up to 60 s |
+
+The UI-agent system prompt (`app/agent/ui_agent.py`) tells it to call this tool for release
+questions, refresh when the asked edition has no date, answer per edition and never guess.
+The action card reads "Checking new volumes …".
+
+**Research** (`app/agent/series_research.py`):
+- gets the series aliases (e.g. "Kroniki Mroku"), so the Polish edition is searched under
+  its Polish name;
+- starts with two seeded searches: `<author> <series> book <n> release date` and
+  `<Polish name> tom <n> <author> premiera`; the results go into the prompt as leads;
+- prompt rules: a release-day post / past publication date = `released` with that date;
+  read dates in any language; fetch the author's/publisher's page before searching again.
+
+Live result for King's Dark Tidings after the change: EN "Ritual of Ruin", released
+2025-11-11 (kelkade.com, medium); PL: no announcement found → "not announced". Both are on
+the waiting list (`source = series_research:pl|en`).
+
+Tests: `frontend/src/agui/seriesReleases.test.ts`, `frontend/src/agui/tools.test.ts`.

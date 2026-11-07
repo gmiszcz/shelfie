@@ -51,10 +51,18 @@ afterEach(() => {
 });
 
 describe('toolSchemas', () => {
-  it('exposes exactly the 6 generic browser tools with JSON-schema parameters', () => {
+  it('exposes exactly the 7 generic browser tools with JSON-schema parameters', () => {
     const schemas = toolSchemas(createTools({ getBooks: () => [] }));
     const names = schemas.map((s) => s.name);
-    expect(names).toEqual(['describe_ui', 'get_state', 'set', 'invoke', 'navigate', 'find_books']);
+    expect(names).toEqual([
+      'describe_ui',
+      'get_state',
+      'set',
+      'invoke',
+      'navigate',
+      'find_books',
+      'series_releases',
+    ]);
     for (const s of schemas) {
       expect(s.parameters).toMatchObject({ type: 'object' });
     }

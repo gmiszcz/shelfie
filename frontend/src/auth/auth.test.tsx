@@ -27,6 +27,9 @@ const h = vi.hoisted(() => {
     addUser: vi.fn(),
     updateUser: vi.fn(),
     newSetupLink: vi.fn(),
+    authConfig: vi.fn(),
+    register: vi.fn(),
+    updateMe: vi.fn(),
   };
   return { MockApiError, unauthorizedListeners, apiMock };
 });
@@ -198,5 +201,66 @@ describe('AuthGate 401 handling', () => {
     await screen.findByLabelText('E-mail');
     expect(apiMock.logout).toHaveBeenCalled();
     expect(screen.queryByText(/LIBRARY for/)).toBeNull();
+  });
+});
+
+
+describe('RegisterPage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    apiMock.me.mockRejectedValue(new MockApiError(401, 'Not logged in'));
+    apiMock.authConfig.mockResolvedValue({ registration_enabled: true, password_min_length: 8 });
+  });
+  afterEach(() => cleanup());
+
+  it('opens from the login screen, creates the account and enters the app', async () => {
+    apiMock.register.mockResolvedValue({ id: 2, email: 'ola@x.pl', display_name: 'Ola', is_admin: false });
+    render(
+      <AuthProvider>
+        <AuthGate>
+          <div>APP BODY</div>
+        </AuthGate>
+      </AuthProvider>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Create one' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Ola' } });
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'ola@x.pl' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'secret-pass' } });
+    fireEvent.change(screen.getByLabelText('Repeat password'), { target: { value: 'secret-pass' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+    await waitFor(() => expect(apiMock.register).toHaveBeenCalledWith('ola@x.pl', 'Ola', 'secret-pass'));
+    expect(await screen.findByText('APP BODY')).toBeTruthy();
+  });
+
+  it('hides the register link when registration is off', async () => {
+    apiMock.authConfig.mockResolvedValue({ registration_enabled: false, password_min_length: 8 });
+    render(
+      <AuthProvider>
+        <AuthGate>
+          <div>APP BODY</div>
+        </AuthGate>
+      </AuthProvider>,
+    );
+    await screen.findByRole('button', { name: 'Log in' });
+    await waitFor(() => expect(apiMock.authConfig).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: 'Create one' })).toBeNull();
+  });
+
+  it('shows a clear message when the e-mail is taken', async () => {
+    apiMock.register.mockRejectedValue(new MockApiError(409, 'taken'));
+    render(
+      <AuthProvider>
+        <AuthGate>
+          <div>APP BODY</div>
+        </AuthGate>
+      </AuthProvider>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Create one' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Ola' } });
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'admin@shelfie.app' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'secret-pass' } });
+    fireEvent.change(screen.getByLabelText('Repeat password'), { target: { value: 'secret-pass' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+    expect(await screen.findByText(/already exists/)).toBeTruthy();
   });
 });

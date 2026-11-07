@@ -26,10 +26,19 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 def _origin(request: Request, settings: Settings) -> str:
-    """The request's own origin: ``<scheme>://<host>``. Honours X-Forwarded-Proto."""
+    """The browser-facing origin the admin is using: ``<scheme>://<host>``.
+
+    Prefers the ``Origin`` header (the CSRF middleware has already checked it matches
+    the host). Otherwise uses the first ``X-Forwarded-Host``/``-Proto`` hop, because
+    the Vite dev proxy (changeOrigin) rewrites ``Host`` to the backend's own address.
+    """
+    origin = request.headers.get("origin", "").strip()
+    if origin and origin != "null":
+        return origin.rstrip("/")
     proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
     scheme = proto or request.url.scheme
-    host = request.headers.get("host") or request.url.netloc
+    fwd_host = request.headers.get("x-forwarded-host", "").split(",")[0].strip()
+    host = fwd_host or request.headers.get("host") or request.url.netloc
     return f"{scheme}://{host}"
 
 

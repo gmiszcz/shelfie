@@ -95,6 +95,10 @@ users-list:
 series-check-all-users:
     uv run --no-sync python -m app.cli series check --all-users
 
+# Back up auth.sqlite + every data/users/<id>/ into data/backups/<timestamp>/ (keeps 14).
+backup keep="14":
+    uv run --no-sync python -m app.cli backup --keep {{keep}}
+
 # Build the production frontend bundle
 build:
     npm --prefix frontend run build

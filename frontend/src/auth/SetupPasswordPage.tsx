@@ -5,9 +5,8 @@ import { ApiError, api } from '../services/api';
 import type { SetupTokenInfo } from './authTypes';
 import { AuthCard, AuthField, AuthMessage } from '../ui';
 import { useAuth } from './AuthProvider';
+import { MIN_PASSWORD } from './authTypes';
 
-/** Minimum password length (docs/features/auth.md security rules). */
-const MIN_PASSWORD = 10;
 
 type Phase = 'loading' | 'ready' | 'expired' | 'error';
 
@@ -20,7 +19,7 @@ interface SetupPasswordPageProps {
 
 /**
  * SetupPasswordPage — resolves the token to show who the link is for, then takes
- * a new password + repeat (min 10 chars). On success the person is logged in and
+ * a new password + repeat (min MIN_PASSWORD = 8 chars). On success the person is logged in and
  * sent to the library. A 410 means the link expired or was already used.
  */
 export function SetupPasswordPage({ token, onDone }: SetupPasswordPageProps) {

@@ -61,6 +61,11 @@ class EmailTaken(AuthError):
         super().__init__("A user with this e-mail already exists.", code="email_taken")
 
 
+class RegistrationClosed(AuthError):
+    def __init__(self) -> None:
+        super().__init__("Registration is turned off.", code="registration_closed")
+
+
 @dataclass
 class LoginResult:
     user: AuthUser
@@ -254,6 +259,64 @@ async def complete_setup(
     # A password set revokes any stale sessions, then we open a fresh one.
     await authdb.delete_sessions_for_user(conn, user.id)
     return await open_session(conn, settings, user, user_agent=user_agent, ip=ip)
+
+
+# --- self-registration and profile ------------------------------------------------------
+
+
+async def register(
+    conn: aiosqlite.Connection,
+    settings: Settings,
+    *,
+    email: str,
+    display_name: str,
+    password: str,
+    user_agent: str | None,
+    ip: str | None,
+) -> LoginResult:
+    """Create a normal (non-admin) account with an empty library and log the person in.
+
+    Registration shares the login throttle: more than ``login_max_attempts`` failed or
+    registration attempts from one IP/e-mail inside the window returns :class:`Throttled`.
+    """
+    if not settings.registration_enabled:
+        raise RegistrationClosed()
+    email = authdb.normalize_email(email)
+    failures = await authdb.count_recent_failures(
+        conn, email=email, ip=ip, window_minutes=settings.login_window_minutes
+    )
+    if failures >= settings.login_max_attempts:
+        raise Throttled(retry_after=settings.login_window_minutes * 60)
+    if len(password) < settings.password_min_length:
+        raise WeakPassword(settings.password_min_length)
+    if await authdb.get_user_by_email(conn, email) is not None:
+        # Counted like a failed login so the endpoint cannot be used to probe e-mails fast.
+        await authdb.record_login_attempt(conn, email=email, ip=ip, success=False)
+        raise EmailTaken()
+    user = await create_account(
+        conn, settings, email=email, display_name=display_name.strip() or email, is_admin=False
+    )
+    await authdb.set_password(conn, user.id, security.hash_password(password))
+    await authdb.record_login_attempt(conn, email=email, ip=ip, success=True)
+    fresh = await authdb.get_user(conn, user.id)
+    return await open_session(conn, settings, fresh or user, user_agent=user_agent, ip=ip)
+
+
+async def update_profile(
+    conn: aiosqlite.Connection, *, user: AuthUser, display_name: str
+) -> AuthUser:
+    """Let a user change their own display name."""
+    updated = await authdb.update_user(conn, user.id, display_name=display_name.strip())
+    return updated or user
+
+
+async def operator_set_password(conn: aiosqlite.Connection, *, user_id: int, password: str) -> None:
+    """Set a password from the host CLI (no length rule) and revoke the user's sessions.
+
+    Only the command line calls this: whoever runs it already controls the data folder.
+    """
+    await authdb.set_password(conn, user_id, security.hash_password(password))
+    await authdb.delete_sessions_for_user(conn, user_id)
 
 
 # --- user provisioning / admin ----------------------------------------------------------

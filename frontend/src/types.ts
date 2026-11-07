@@ -89,6 +89,8 @@ export interface Book extends Required<Omit<BookInput, 'stars' | 'insights'>> {
 export interface SearchResponse {
   total_items: number;
   items: VolumeSearchResult[];
+  /** Set when Google Books was over its daily limit and results came from OpenLibrary. */
+  notice?: string | null;
 }
 
 // --- stats -------------------------------------------------------------------------------

@@ -38,6 +38,26 @@ class SetupCompleteIn(BaseModel):
     password: str = Field(min_length=1, max_length=1024)
 
 
+class RegisterIn(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    display_name: str = Field(min_length=1, max_length=200)
+    password: str = Field(min_length=1, max_length=1024)
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, v: str) -> str:
+        return _valid_email(v)
+
+
+class ProfilePatch(BaseModel):
+    display_name: str = Field(min_length=1, max_length=200)
+
+
+class AuthConfigOut(BaseModel):
+    registration_enabled: bool
+    password_min_length: int
+
+
 class UserOut(BaseModel):
     id: int
     email: str

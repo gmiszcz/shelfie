@@ -21,6 +21,10 @@ export function BookCard({ book, onOpen, onToggleFavourite }: Props) {
   const hasSubtitle = typeof book.subtitle === 'string' && book.subtitle.trim().length > 0;
   const showSubtitle = f.subtitle && hasSubtitle;
   const showAuthorLine = (f.author && book.authors.length > 0) || (f.year && !!year);
+  const showShelves = f.shelves && book.shelves.length > 0;
+  const showStatus = f.status;
+  const showStars = f.stars && book.stars != null;
+  const showScore = f.score && book.display_score != null;
 
   return (
     <div
@@ -55,7 +59,7 @@ export function BookCard({ book, onOpen, onToggleFavourite }: Props) {
           )}
         </div>
 
-        {/* Secondary block: author/year, series, pages — smaller and muted. */}
+        {/* Secondary block: author/year, series, pages — one line each, small and muted. */}
         <div className="card-meta">
           {showAuthorLine && (
             <span className="author">
@@ -67,8 +71,11 @@ export function BookCard({ book, onOpen, onToggleFavourite }: Props) {
 
           {f.series && book.series && (
             <span className="card-series" title={book.series}>
-              <i className="pi pi-bookmark" /> {book.series}
-              {book.volume && ` · Vol. ${book.volume}`}
+              <i className="pi pi-bookmark" aria-hidden="true" />
+              <span className="card-series-name">
+                {book.series}
+                {book.volume && ` · Vol. ${book.volume}`}
+              </span>
             </span>
           )}
 
@@ -77,25 +84,33 @@ export function BookCard({ book, onOpen, onToggleFavourite }: Props) {
           )}
         </div>
 
-        {f.shelves && book.shelves.length > 0 && (
-          <div className="card-shelves">
-            {book.shelves.map((s) => (
-              <Tag key={s} value={s} severity="success" />
-            ))}
+        {/* Shelves and status share one row of small chips. */}
+        {(showShelves || showStatus) && (
+          <div className="card-tags">
+            {showShelves &&
+              book.shelves.map((s) => <Tag key={s} value={s} severity="success" />)}
+            {showStatus && <StatusTag status={book.status} />}
           </div>
         )}
 
-        <div className="card-footer">
-          {f.status && (
-            <StatusTag status={book.status} />
-          )}
-          {f.score && book.display_score != null ? (
-            <Tag value={`Score ${book.display_score.toFixed(1)}`} severity="info" />
-          ) : (
-            f.stars &&
-            book.stars != null && <Rating value={Math.round(book.stars)} readOnly cancel={false} />
-          )}
-        </div>
+        {/* Rating row at the very bottom: stars left, the score value right. */}
+        {(showStars || showScore) && (
+          <div className="card-footer">
+            {showStars && (
+              <Rating
+                className="card-stars"
+                value={Math.round(book.stars ?? 0)}
+                readOnly
+                cancel={false}
+              />
+            )}
+            {showScore && (
+              <span className="card-score" title="Score">
+                {book.display_score!.toFixed(1)}
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

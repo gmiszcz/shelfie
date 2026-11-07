@@ -170,7 +170,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   /** Run the UI agent over the shared thread, dispatching into the shared reducer. */
   const runUi = useCallback(async (text: string, controller: AbortController) => {
     await ensureBooks();
-    const tools = createTools({ getBooks: () => booksRef.current });
+    const tools = createTools({
+      getBooks: () => booksRef.current,
+      series: { list: api.listSeries, get: api.getSeries, refresh: api.refreshSeries },
+    });
     const history = uiMessagesRef.current;
     history.push({ role: 'user', content: text });
 

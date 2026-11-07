@@ -5,8 +5,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { ApiError } from '../services/api';
 import { AuthField, AuthMessage } from '../ui';
 import { useAuth } from './AuthProvider';
+import { MIN_PASSWORD } from './authTypes';
 
-const MIN_PASSWORD = 10;
 
 interface ChangePasswordDialogProps {
   visible: boolean;

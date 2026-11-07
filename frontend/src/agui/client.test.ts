@@ -19,10 +19,10 @@ function sseResponse(events: object[]): Response {
  * (parsed) so a test can assert what was sent to the backend each turn.
  */
 function scriptedFetch(turns: object[][]) {
-  const calls: { body: Record<string, unknown> }[] = [];
+  const calls: { body: Record<string, unknown>; init?: RequestInit }[] = [];
   let i = 0;
   const impl = (async (_url: string, init?: RequestInit) => {
-    calls.push({ body: JSON.parse(String(init?.body ?? '{}')) });
+    calls.push({ body: JSON.parse(String(init?.body ?? '{}')), init });
     const events = turns[Math.min(i, turns.length - 1)];
     i += 1;
     return sseResponse(events);
@@ -93,6 +93,9 @@ describe('runAgent — single text turn', () => {
     expect(result.toolCalls).toEqual([]);
     expect(deltas.join('')).toBe('Masz 3 książki.');
     expect(calls).toHaveLength(1);
+    // Auth contract: session cookie + CSRF client header (else the backend 403s).
+    expect(calls[0].init?.credentials).toBe('same-origin');
+    expect((calls[0].init?.headers as Record<string, string>)['X-Shelfie-Client']).toBe('web');
     // The generic tool schemas are sent to the backend.
     const sentTools = calls[0].body.tools as { name: string }[];
     expect(sentTools.map((t) => t.name)).toContain('find_books');

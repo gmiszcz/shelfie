@@ -24,6 +24,10 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   /** Change the current password; the server revokes other sessions. */
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  /** Create an account and log in. Throws ApiError (409 taken, 422 weak, 403 closed, 429). */
+  register: (email: string, displayName: string, password: string) => Promise<void>;
+  /** Change the current person's display name. */
+  updateProfile: (displayName: string) => Promise<void>;
   /** Adopt a user returned by the setup flow (already logged in server-side). */
   setUser: (user: AuthUser) => void;
 }
@@ -81,6 +85,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('authenticated');
   }, []);
 
+  const register = useCallback(
+    async (email: string, displayName: string, password: string) => {
+      const me = await api.register(email, displayName, password);
+      setUserState(me);
+      setStatus('authenticated');
+    },
+    [],
+  );
+
+  const updateProfile = useCallback(async (displayName: string) => {
+    const me = await api.updateMe(displayName);
+    setUserState(me);
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await api.logout();
@@ -107,8 +125,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ status, user, login, logout, changePassword, setUser }),
-    [status, user, login, logout, changePassword, setUser],
+    () => ({ status, user, login, register, updateProfile, logout, changePassword, setUser }),
+    [status, user, login, register, updateProfile, logout, changePassword, setUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
