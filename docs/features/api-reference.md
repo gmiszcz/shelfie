@@ -145,21 +145,49 @@ See [series-tracking.md](series-tracking.md) for the model and the check flow.
 All series derived from the library, with computed progress. **Response:** `SeriesSummary[]`
 (`series_key`, `name`, `author`, `aliases`, `owned_volumes[]`, `missing_volumes[]`,
 `owned_count`, `read_count`, `unread_owned_count`, `total_known`, `section`, `watch`,
-`next_expected`, `last_checked`, `notes`).
+`next_expected`, `next_expected_pl`, `next_expected_en`, `checking`, `last_checked`,
+`notes`). Each `NextExpected` is `{ title, date, source_url, confidence, status }` where
+`status ∈ {announced, released, unknown}`.
 
 ### `GET /api/series/{key}`
 One series by canonical key **or any alias** (e.g. `Kroniki Mroku` → King's Dark Tidings).
-**Response:** `SeriesSummary`, or `404`.
+Poll this while `checking` is true to see the researched release land. **Response:**
+`SeriesSummary`, or `404`.
 
 ### `PATCH /api/series/{key}`
-Toggle the watch flag. **Body:** `{ watch: bool }`. **Response:** `SeriesSummary`.
+Edit a series. **Body** (all optional, only the fields present are applied):
+`{ watch?, display_name?, aliases?: string[], author?, total_volumes?: int, notes? }`.
+Setting `watch=true` schedules the web release-research step as a background task and
+returns at once with `checking=true` (poll `GET /api/series/{key}`). To rename across all
+member books use `/rename`. **Response:** `SeriesSummary`. **Errors:** `404`.
+
+### `POST /api/series/{key}/books`
+Add a library book to the series (sets `book.series` + `book.volume`, mirrored to
+`books.json`). A brand-new series name as `{key}` is created. **Body:**
+`{ book_id: int, volume?: str }`. **Response:** `SeriesSummary`. **Errors:** `404`.
+
+### `DELETE /api/series/{key}/books/{book_id}`
+Remove a book from the series (clears its `series`/`volume`). **Response:** `SeriesSummary`.
+
+### `PATCH /api/series/{key}/books/{book_id}`
+Change a member book's volume. **Body:** `{ volume?: str }`. **Response:** `SeriesSummary`.
+
+### `POST /api/series/{key}/rename`
+Rename the series on every member book; the old name becomes an alias. **Body:**
+`{ name: str }`. **Response:** `SeriesSummary`.
+
+### `POST /api/series/{key}/merge`
+Merge another series into this one (its books move here, its names become aliases).
+**Body:** `{ other_key: str }`. **Response:** `SeriesSummary`.
 
 ### `POST /api/series/{key}/refresh`
-Run the external lookup for one series now (Google Books PL+EN cache/budget-guarded +
-OpenLibrary). **Response:** `SeriesSummary`.
+Re-run the web release-research step for one series (DuckDuckGo + page fetch, disk-cached,
+budget 12; **never Google Books**). Schedules it as a background task and returns at once
+with `checking=true`. **Response:** `SeriesSummary`.
 
 ### `POST /api/series/check`
-Re-check every watched series. **Response:** `{ checked, updated, series[], notes }`.
+Re-run web release research for every watched series. **Response:** `{ checked, updated,
+series[], notes }`.
 
 ### `GET /api/series/alerts`
 Notifications. **Response:** `{ count, in_progress: SeriesAlert[], new_volume: SeriesAlert[] }`.

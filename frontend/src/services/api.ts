@@ -183,6 +183,57 @@ export const api = {
       body: JSON.stringify({ watch }),
     }),
 
+  /** Edit a series' metadata (name, aliases, author, total volumes, notes). */
+  updateSeries: (
+    key: string,
+    changes: {
+      display_name?: string;
+      aliases?: string[];
+      author?: string;
+      total_volumes?: number;
+      notes?: string;
+      watch?: boolean;
+    },
+  ) =>
+    request<SeriesSummary>(`/series/${encodeURIComponent(key)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(changes),
+    }),
+
+  /** Add a library book to a series (sets book.series + book.volume). */
+  addSeriesBook: (key: string, bookId: number, volume: string | null) =>
+    request<SeriesSummary>(`/series/${encodeURIComponent(key)}/books`, {
+      method: 'POST',
+      body: JSON.stringify({ book_id: bookId, volume }),
+    }),
+
+  /** Remove a book from a series (clears its series + volume). */
+  removeSeriesBook: (key: string, bookId: number) =>
+    request<SeriesSummary>(`/series/${encodeURIComponent(key)}/books/${bookId}`, {
+      method: 'DELETE',
+    }),
+
+  /** Change a member book's volume number within a series. */
+  setSeriesBookVolume: (key: string, bookId: number, volume: string | null) =>
+    request<SeriesSummary>(`/series/${encodeURIComponent(key)}/books/${bookId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ volume }),
+    }),
+
+  /** Rename a series on every member book (old name kept as an alias). */
+  renameSeries: (key: string, name: string) =>
+    request<SeriesSummary>(`/series/${encodeURIComponent(key)}/rename`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+
+  /** Merge another series into this one. */
+  mergeSeries: (key: string, otherKey: string) =>
+    request<SeriesSummary>(`/series/${encodeURIComponent(key)}/merge`, {
+      method: 'POST',
+      body: JSON.stringify({ other_key: otherKey }),
+    }),
+
   refreshSeries: (key: string) =>
     request<SeriesSummary>(`/series/${encodeURIComponent(key)}/refresh`, { method: 'POST' }),
 

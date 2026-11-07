@@ -24,6 +24,18 @@ def _now() -> str:
 def _row_to_info(row: aiosqlite.Row) -> SeriesInfo:
     known_raw = json.loads(row["known_volumes"] or "[]")
     next_raw = json.loads(row["next_expected"]) if row["next_expected"] else None
+    keys = set(row.keys())
+    pl_raw = (
+        json.loads(row["next_expected_pl"])
+        if "next_expected_pl" in keys and row["next_expected_pl"]
+        else None
+    )
+    en_raw = (
+        json.loads(row["next_expected_en"])
+        if "next_expected_en" in keys and row["next_expected_en"]
+        else None
+    )
+    checking = bool(row["checking"]) if "checking" in keys else False
     return SeriesInfo(
         series_key=row["series_key"],
         display_name=row["display_name"] or "",
@@ -33,6 +45,9 @@ def _row_to_info(row: aiosqlite.Row) -> SeriesInfo:
         total_known=row["total_known"],
         watch=bool(row["watch"]),
         next_expected=NextExpected.model_validate(next_raw) if next_raw else None,
+        next_expected_pl=NextExpected.model_validate(pl_raw) if pl_raw else None,
+        next_expected_en=NextExpected.model_validate(en_raw) if en_raw else None,
+        checking=checking,
         notes=row["notes"],
         last_checked=row["last_checked"],
     )
@@ -67,13 +82,24 @@ async def upsert_info(
         if info.next_expected
         else None
     )
+    next_pl = (
+        json.dumps(info.next_expected_pl.model_dump(), ensure_ascii=False)
+        if info.next_expected_pl
+        else None
+    )
+    next_en = (
+        json.dumps(info.next_expected_en.model_dump(), ensure_ascii=False)
+        if info.next_expected_en
+        else None
+    )
     last_checked = _now() if touch_checked else info.last_checked
     await conn.execute(
         """
         INSERT INTO series_info
             (user_id, series_key, display_name, author, aliases, known_volumes,
-             total_known, watch, next_expected, notes, last_checked, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+             total_known, watch, next_expected, next_expected_pl, next_expected_en,
+             checking, notes, last_checked, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
         ON CONFLICT(user_id, series_key) DO UPDATE SET
             display_name = excluded.display_name,
             author = excluded.author,
@@ -82,6 +108,9 @@ async def upsert_info(
             total_known = excluded.total_known,
             watch = excluded.watch,
             next_expected = excluded.next_expected,
+            next_expected_pl = excluded.next_expected_pl,
+            next_expected_en = excluded.next_expected_en,
+            checking = excluded.checking,
             notes = excluded.notes,
             last_checked = excluded.last_checked,
             updated_at = datetime('now')
@@ -96,6 +125,9 @@ async def upsert_info(
             info.total_known,
             int(info.watch),
             next_expected,
+            next_pl,
+            next_en,
+            int(info.checking),
             info.notes,
             last_checked,
         ),

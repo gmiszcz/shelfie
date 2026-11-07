@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 
 from app.api.deps import AppSettings, CurrentUser, DbConn
 from app.schemas.series import (
     AlertsResponse,
     ExpectedBook,
     ExpectedBookCreate,
+    SeriesBookAdd,
+    SeriesBookVolume,
     SeriesCheckResult,
+    SeriesMerge,
+    SeriesPatch,
+    SeriesRename,
     SeriesSummary,
-    WatchPatch,
 )
 from app.services import series_service as service
 
@@ -68,19 +72,131 @@ async def get_series(series_key: str, user_id: CurrentUser, conn: DbConn) -> Ser
 
 @router.patch("/{series_key}", response_model=SeriesSummary)
 async def patch_series(
-    series_key: str, data: WatchPatch, user_id: CurrentUser, conn: DbConn
+    series_key: str,
+    data: SeriesPatch,
+    user_id: CurrentUser,
+    conn: DbConn,
+    background: BackgroundTasks,
+    settings: AppSettings,
 ) -> SeriesSummary:
-    summary = await service.set_watch(conn, user_id, series_key, watch=data.watch)
+    """Edit a series. Only the fields present in the body are applied.
+
+    Accepts the watch toggle (``watch``) and the editable metadata: ``display_name``,
+    ``aliases``, ``author``, ``total_volumes``, ``notes``. To rename the series on every
+    member book use ``POST /{series_key}/rename`` instead.
+
+    Turning ``watch`` ON schedules a web release-research run as a background task and
+    returns at once with ``checking=true``; the UI polls ``GET /{series_key}`` until the
+    result lands. Never calls Google Books.
+    """
+    summary = await service.update_series(
+        conn,
+        user_id,
+        series_key,
+        display_name=data.display_name,
+        aliases=data.aliases,
+        author=data.author,
+        total_volumes=data.total_volumes,
+        notes=data.notes,
+        watch=data.watch,
+    )
+    if summary is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Series not found")
+    if data.watch is True:
+        background.add_task(
+            service.research_series_releases, user_id, summary.series_key, settings=settings
+        )
+    return summary
+
+
+@router.post("/{series_key}/books", response_model=SeriesSummary)
+async def add_series_book(
+    series_key: str, data: SeriesBookAdd, user_id: CurrentUser, conn: DbConn
+) -> SeriesSummary:
+    """Add a library book to this series (sets book.series + book.volume; mirrors to JSON)."""
+    summary = await service.add_book_to_series(
+        conn, user_id, series_key, data.book_id, volume=data.volume
+    )
+    if summary is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Series or book not found"
+        )
+    return summary
+
+
+@router.delete("/{series_key}/books/{book_id}", response_model=SeriesSummary)
+async def remove_series_book(
+    series_key: str, book_id: int, user_id: CurrentUser, conn: DbConn
+) -> SeriesSummary:
+    """Remove a book from this series (clears book.series + book.volume; mirrors to JSON)."""
+    summary = await service.remove_book_from_series(conn, user_id, series_key, book_id)
+    if summary is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Series or book not found"
+        )
+    return summary
+
+
+@router.patch("/{series_key}/books/{book_id}", response_model=SeriesSummary)
+async def patch_series_book(
+    series_key: str,
+    book_id: int,
+    data: SeriesBookVolume,
+    user_id: CurrentUser,
+    conn: DbConn,
+) -> SeriesSummary:
+    """Change a member book's volume number within this series (mirrors to JSON)."""
+    summary = await service.set_book_volume(conn, user_id, series_key, book_id, volume=data.volume)
+    if summary is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Series or book not found"
+        )
+    return summary
+
+
+@router.post("/{series_key}/rename", response_model=SeriesSummary)
+async def rename_series(
+    series_key: str, data: SeriesRename, user_id: CurrentUser, conn: DbConn
+) -> SeriesSummary:
+    """Rename this series on every member book; the old name is kept as an alias."""
+    summary = await service.rename_series(conn, user_id, series_key, data.name)
     if summary is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Series not found")
     return summary
 
 
+@router.post("/{series_key}/merge", response_model=SeriesSummary)
+async def merge_series(
+    series_key: str, data: SeriesMerge, user_id: CurrentUser, conn: DbConn
+) -> SeriesSummary:
+    """Merge another series into this one: its books move here, its names become aliases."""
+    summary = await service.merge_series(conn, user_id, series_key, data.other_key)
+    if summary is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="One of the series was not found"
+        )
+    return summary
+
+
 @router.post("/{series_key}/refresh", response_model=SeriesSummary)
 async def refresh_series(
-    series_key: str, user_id: CurrentUser, conn: DbConn, settings: AppSettings
+    series_key: str,
+    user_id: CurrentUser,
+    conn: DbConn,
+    background: BackgroundTasks,
+    settings: AppSettings,
 ) -> SeriesSummary:
-    summary = await service.refresh_series(conn, user_id, series_key, settings=settings)
+    """Re-run the web release-research step for one series.
+
+    Schedules the research as a background task and returns at once with ``checking=true``;
+    the UI polls ``GET /{series_key}`` for the result. Same step the watch toggle and
+    ``POST /series/check`` use. Never calls Google Books.
+    """
+    await service.mark_checking(conn, user_id, series_key, checking=True)
+    summary = await service.get_series(conn, user_id, series_key)
     if summary is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Series not found")
+    background.add_task(
+        service.research_series_releases, user_id, summary.series_key, settings=settings
+    )
     return summary

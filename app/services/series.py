@@ -280,6 +280,9 @@ def _summarise(
         finished=finished,
         watch=bool(info.watch) if info else False,
         next_expected=info.next_expected if info else None,
+        next_expected_pl=info.next_expected_pl if info else None,
+        next_expected_en=info.next_expected_en if info else None,
+        checking=bool(info.checking) if info else False,
         last_checked=info.last_checked if info else None,
         notes=info.notes if info else None,
     )

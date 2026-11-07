@@ -135,9 +135,29 @@ These tabs were added after the registry and became agent-reachable only by regi
 | Anchor | Kind | Actions |
 |---|---|---|
 | `series.search` | search | set text |
-| `series.list` | list | `watch` / `unwatch` / `refresh` with `{ key }` (series key, name or alias), `open` with `{ book_id }` |
+| `series.list` | list | `watch` / `unwatch` / `refresh` / **`edit`** with `{ key }` (series key, name or alias), `open` with `{ book_id }` |
+| `series.editDialog` | dialog | `open` `{ key }` (open the dialog on that series), then `set` the fields (`display_name`, `author`, `aliases`, `total_volumes`, `notes`) + `save`; also `add_book` `{ book_id, volume? }`, `remove_book` `{ book_id }`, `set_volume` `{ book_id, volume }`, `rename` `{ name }`, `merge` `{ other_key }`, `cancel` |
 | `series.waitingList` | list | `remove` with `{ id }` |
 | `favourites.search` | search | set text |
 | `favourites.books` | list | `open` / `unfavourite` with `{ id }` |
 | `library.books` | list | `open`, and now `favourite` / `unfavourite` with `{ id }` |
+
+### The `series.editDialog` dialog anchor
+
+A **dialog**-kind anchor (new in wave 5) lets the UI agent drive the whole Series edit
+dialog without any agent-side code:
+
+1. `invoke("open", { key })` — opens the dialog on that series (resolves key/name/alias).
+2. `set({ display_name?, author?, aliases?, total_volumes?, notes? })` — stages the edited
+   metadata (merged across calls).
+3. `invoke("save")` — applies the staged metadata (renaming across all member books when
+   `display_name` changed) and reloads.
+4. Membership actions act immediately: `add_book` `{ book_id, volume? }`, `remove_book`
+   `{ book_id }`, `set_volume` `{ book_id, volume }`, plus `rename` `{ name }`, `merge`
+   `{ other_key }`, and `cancel`.
+
+`getState` reports whether the dialog is open and, when open, the series' current name,
+author, aliases, total, notes and member books — so the agent reads the live dialog before
+acting. It is a thin wrapper over the same `/api/series/...` endpoints the human dialog
+uses.
 

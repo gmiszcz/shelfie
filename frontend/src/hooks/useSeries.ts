@@ -46,6 +46,28 @@ export function useSeries(): UseSeries {
     void reload();
   }, [reload]);
 
+  // While any series is being researched (checking=true), poll the list every 3s so the
+  // card flips from the spinner to the found PL/EN release without a manual refresh. Stop
+  // once nothing is checking, or after 60s (20 polls) as a safety cap.
+  const anyChecking = series.some((s) => s.checking);
+  useEffect(() => {
+    if (!anyChecking) {
+      return;
+    }
+    let polls = 0;
+    const timer = setInterval(() => {
+      polls += 1;
+      void api
+        .listSeries()
+        .then((fresh) => setSeries(fresh))
+        .catch(() => undefined);
+      if (polls >= 20) {
+        clearInterval(timer);
+      }
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [anyChecking]);
+
   const setWatch = useCallback(async (key: string, watch: boolean) => {
     const updated = await api.setSeriesWatch(key, watch);
     setSeries((prev) => prev.map((s) => (s.series_key === key ? updated : s)));

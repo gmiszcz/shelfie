@@ -45,9 +45,17 @@ class Settings(BaseSettings):
     google_books_cache_dir: str = "data/cache/google_books"
     google_books_cache_ttl_days: int = Field(default=30, ge=0)
 
+    # Web release-research step (DuckDuckGo HTML + page fetch, disk-cached). Never Google Books.
+    web_cache_dir: str = "data/cache/web"
+    web_cache_ttl_days: int = Field(default=7, ge=0)
+    web_research_max_calls: int = Field(default=12, ge=1, le=100)
+
     # Library assistant (AWS Bedrock via strands-compose). Credentials come from the AWS chain.
     bedrock_model_id: str = "eu.anthropic.claude-haiku-5-5"
     aws_region: str = "eu-central-1"
+    # Whether adding/enriching a book runs the Bedrock insights model. Default true in
+    # production; the test suite sets it false so no test ever calls Bedrock or the network.
+    enrichment_enabled: bool = True
 
     # Auth seam (single-user now, JWT-ready). Not enforced yet in the MVP.
     jwt_secret: str = "change-me-long-random-secret"
@@ -88,6 +96,10 @@ class Settings(BaseSettings):
     @property
     def google_books_cache_path(self) -> Path:
         return resolve_path(self.google_books_cache_dir)
+
+    @property
+    def web_cache_path(self) -> Path:
+        return resolve_path(self.web_cache_dir)
 
     @property
     def static_path(self) -> Path:

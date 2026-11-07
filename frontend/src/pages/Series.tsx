@@ -4,6 +4,8 @@ import { useMemo, useRef, useState } from 'react';
 
 import { BookDetailDialog } from '../components/BookDetailDialog';
 import { SeriesCard } from '../components/SeriesCard';
+import { SeriesEditDialog } from '../components/SeriesEditDialog';
+import { useLibrary } from '../hooks/useLibrary';
 import { useSeries } from '../hooks/useSeries';
 import { api } from '../services/api';
 import { useAgentAnchor } from '../agent-ui';
@@ -33,16 +35,29 @@ function matches(series: SeriesSummary, needle: string): boolean {
 }
 
 export function Series() {
-  const { series, expected, alerts, loading, error, setWatch, refresh, removeExpected } =
+  const { series, expected, alerts, loading, error, reload, setWatch, refresh, removeExpected } =
     useSeries();
+  const { books } = useLibrary();
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Book | null>(null);
+  const [editing, setEditing] = useState<SeriesSummary | null>(null);
   const [refreshingKey, setRefreshingKey] = useState<string | null>(null);
   const [alertsDismissed, setAlertsDismissed] = useState(false);
   const toast = useRef<Toast>(null);
+  // Fields the UI agent stages on series.editDialog before calling its "save" action.
+  const editDialogDraft = useRef<{
+    display_name?: string;
+    author?: string;
+    aliases?: string[];
+    total_volumes?: number;
+    notes?: string;
+  }>({});
 
   const notifyError = (message: string) =>
     toast.current?.show({ severity: 'error', summary: 'Error', detail: message });
+
+  const notifySuccess = (message: string) =>
+    toast.current?.show({ severity: 'success', summary: 'Saved', detail: message, life: 2000 });
 
   const filtered = useMemo(
     () => series.filter((s) => matches(s, query.trim())),
@@ -67,6 +82,29 @@ export function Series() {
     } catch (err) {
       notifyError(err instanceof Error ? err.message : 'Could not open book');
     }
+  };
+
+  const openEdit = (key: string) => {
+    const hit = series.find((s) => s.series_key === key);
+    if (hit) {
+      setEditing(hit);
+    }
+  };
+
+  // After any edit, reload the list and keep the open dialog pointed at the (possibly
+  // renamed/merged) series so the user sees the result immediately.
+  const handleEditSaved = async (message: string) => {
+    notifySuccess(message);
+    const openKey = editing?.series_key ?? null;
+    const openName = editing?.name ?? null;
+    await reload();
+    const fresh = await api.listSeries();
+    const next =
+      fresh.find((s) => s.series_key === openKey) ||
+      fresh.find((s) => s.name === openName) ||
+      fresh.find((s) => (openName ? s.aliases.includes(openName) : false)) ||
+      null;
+    setEditing(next);
   };
 
   // --- UI-agent anchors (universal registry): the agent can search, watch, refresh and
@@ -103,9 +141,10 @@ export function Series() {
     description:
       'Series in the library with section (in_progress / owned / complete), watch flag and missing volumes. ' +
       'Actions: "watch" / "unwatch" with args { key }, "refresh" with { key } (runs the release lookup), ' +
+      '"edit" with { key } (opens the series edit dialog — see series.editDialog), ' +
       '"open" with { book_id } to open an owned volume.',
     tab: 'series',
-    actions: ['watch', 'unwatch', 'refresh', 'open'],
+    actions: ['watch', 'unwatch', 'refresh', 'edit', 'open'],
     getState: () =>
       filtered.map((s) => ({
         key: s.series_key,
@@ -125,9 +164,104 @@ export function Series() {
         await setWatch(hit.series_key, action === 'watch');
       } else if (action === 'refresh') {
         await handleRefresh(hit.series_key);
+      } else if (action === 'edit') {
+        setEditing(hit);
       } else {
-        throw new Error(`unknown action "${action}"; use watch, unwatch, refresh or open`);
+        throw new Error(`unknown action "${action}"; use watch, unwatch, refresh, edit or open`);
       }
+    },
+  });
+
+  useAgentAnchor({
+    id: 'series.editDialog',
+    kind: 'dialog',
+    label: 'Series edit dialog',
+    description:
+      'Edit one series. First invoke "open" with { key } (the series key/name) to open it — this ' +
+      'anchor then edits THAT series. Stage field values with set (JSON object with any of ' +
+      'display_name, author, aliases (array), total_volumes (number), notes), then invoke "save" to ' +
+      'apply them (renames across all member books when display_name changes). Other actions: ' +
+      '"add_book" { book_id, volume? }, "remove_book" { book_id }, "set_volume" { book_id, volume }, ' +
+      '"rename" { name }, "merge" { other_key }, "cancel" to close.',
+    tab: 'series',
+    actions: ['open', 'save', 'cancel', 'add_book', 'remove_book', 'set_volume', 'rename', 'merge'],
+    getState: () =>
+      editing
+        ? {
+            open: true,
+            key: editing.series_key,
+            name: editing.name,
+            author: editing.author,
+            aliases: editing.aliases,
+            total_volumes: editing.total_known,
+            notes: editing.notes,
+            books: editing.owned_volumes.map((o) => ({
+              book_id: o.book_id,
+              title: o.title,
+              volume: o.volume_label ?? o.volume,
+            })),
+          }
+        : { open: false },
+    set: (value) => {
+      if (value && typeof value === 'object') {
+        editDialogDraft.current = { ...editDialogDraft.current, ...(value as Record<string, unknown>) };
+      }
+    },
+    invoke: async (action, args) => {
+      if (action === 'open') {
+        const key = String(args?.key ?? args?.series ?? args?.name ?? '').trim().toLowerCase();
+        const hit = series.find(
+          (s) =>
+            s.series_key.toLowerCase() === key ||
+            s.name.toLowerCase() === key ||
+            s.aliases.some((a) => a.toLowerCase() === key) ||
+            s.name.toLowerCase().includes(key),
+        );
+        if (!hit) {
+          throw new Error(`no series "${key}"; see series.list for valid keys`);
+        }
+        editDialogDraft.current = {};
+        setEditing(hit);
+        return;
+      }
+      if (!editing) {
+        throw new Error('no series open; invoke "open" with { key } first');
+      }
+      const key = editing.series_key;
+      if (action === 'cancel') {
+        editDialogDraft.current = {};
+        setEditing(null);
+        return;
+      }
+      if (action === 'save') {
+        const d = editDialogDraft.current;
+        if (d.display_name && d.display_name.trim() && d.display_name.trim() !== editing.name) {
+          await api.renameSeries(key, d.display_name.trim());
+        }
+        await api.updateSeries(d.display_name?.trim() || key, {
+          aliases: d.aliases,
+          author: d.author,
+          total_volumes: d.total_volumes,
+          notes: d.notes,
+        });
+        editDialogDraft.current = {};
+        await handleEditSaved('Series saved');
+        return;
+      }
+      if (action === 'add_book') {
+        await api.addSeriesBook(key, Number(args?.book_id), (args?.volume as string) ?? null);
+      } else if (action === 'remove_book') {
+        await api.removeSeriesBook(key, Number(args?.book_id));
+      } else if (action === 'set_volume') {
+        await api.setSeriesBookVolume(key, Number(args?.book_id), (args?.volume as string) ?? null);
+      } else if (action === 'rename') {
+        await api.renameSeries(key, String(args?.name ?? ''));
+      } else if (action === 'merge') {
+        await api.mergeSeries(key, String(args?.other_key ?? args?.key ?? ''));
+      } else {
+        throw new Error(`unknown action "${action}"`);
+      }
+      await handleEditSaved('Series updated');
     },
   });
 
@@ -282,6 +416,7 @@ export function Series() {
                     )
                   }
                   onRefresh={handleRefresh}
+                  onEdit={openEdit}
                   refreshing={refreshingKey === s.series_key}
                 />
               ))}
@@ -352,6 +487,15 @@ export function Series() {
         onDelete={() => undefined}
         onEdit={() => undefined}
         onFavourite={handleFavourite}
+      />
+
+      <SeriesEditDialog
+        series={editing}
+        allSeries={series}
+        books={books}
+        onHide={() => setEditing(null)}
+        onSaved={handleEditSaved}
+        onError={notifyError}
       />
     </>
   );

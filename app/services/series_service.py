@@ -18,15 +18,18 @@ from app.integrations import series_lookup
 from app.integrations.google_books import GoogleBooksClient
 from app.repositories import books as books_repo
 from app.repositories import series as repo
+from app.schemas.books import Book, BookUpdate
 from app.schemas.series import (
     AlertsResponse,
     ExpectedBook,
     ExpectedBookCreate,
+    NextExpected,
     SeriesAlert,
     SeriesCheckResult,
     SeriesInfo,
     SeriesSummary,
 )
+from app.services import books_json
 from app.services import series as compute
 
 logger = logging.getLogger(__name__)
@@ -93,15 +96,31 @@ async def set_watch(
     summary = await get_series(conn, user_id, series_key)
     if summary is None:
         return None
-    await repo.set_watch(
-        conn,
-        user_id,
-        summary.series_key,
-        watch=watch,
+    info = await repo.get_info(conn, user_id, summary.series_key) or SeriesInfo(
+        series_key=summary.series_key,
         display_name=summary.name,
         author=summary.author,
     )
+    info.watch = watch
+    # Turning watch ON schedules a web release-research run; flag it so the UI can show a
+    # "Checking new volumes…" spinner while the background task runs. The caller (the route)
+    # kicks off research_series_releases() after this returns.
+    info.checking = watch
+    await repo.upsert_info(conn, user_id, info)
     return await get_series(conn, user_id, summary.series_key)
+
+
+async def mark_checking(
+    conn: aiosqlite.Connection, user_id: int, series_key: str, *, checking: bool
+) -> None:
+    """Set/clear the transient 'checking' flag on a series' cached row."""
+    summary = await get_series(conn, user_id, series_key)
+    key = summary.series_key if summary else compute.series_key(series_key)
+    info = await repo.get_info(conn, user_id, key)
+    if info is None:
+        return
+    info.checking = checking
+    await repo.upsert_info(conn, user_id, info)
 
 
 async def refresh_series(
@@ -111,11 +130,15 @@ async def refresh_series(
     *,
     settings: Settings | None = None,
 ) -> SeriesSummary | None:
-    """Run the external lookup for one series now and cache the result."""
+    """Run the web release-research step for one series now and store the result.
+
+    This is the same step the watch toggle and ``POST /api/series/check`` use. It never
+    calls Google Books — see :mod:`app.agent.series_research`.
+    """
     summary = await get_series(conn, user_id, series_key)
     if summary is None:
         return None
-    await _lookup_and_cache(conn, user_id, summary, settings=settings)
+    await research_series_releases(user_id, summary.series_key, settings=settings, conn=conn)
     return await get_series(conn, user_id, summary.series_key)
 
 
@@ -157,17 +180,12 @@ async def check_watched_series(
     *,
     settings: Settings | None = None,
 ) -> SeriesCheckResult:
-    """Re-check only the watched series for new volumes / release dates.
+    """Run the web release-research step for every watched series.
 
-    Opens its own connection so it can run detached (manual endpoint, ``just
-    check-series`` or a Kiro Crew cron). For each watched series it runs the external
-    lookup, refreshes the cached known volumes and the next-expected release, and
-    syncs the waiting list (upcoming volume -> an ``expected_books`` entry).
-
-    Release data comes from Google Books (future / newest published dates, PL + EN)
-    and OpenLibrary. The library's Bedrock agent performs deeper web research through
-    its own tools; this function stays HTTP-only by design (documented in
-    docs/features/series-tracking.md).
+    Opens its own connection so it can run detached (the ``POST /api/series/check``
+    endpoint, ``just check-series`` or a Kiro Crew cron). Watched series only. Each
+    series is researched on the open web (Polish + original/English editions) and the
+    result stored; the waiting list gets one entry per language. Never calls Google Books.
     """
     settings = settings or get_settings()
     db_file = db_file or settings.database_file
@@ -176,67 +194,177 @@ async def check_watched_series(
     checked = 0
     try:
         watched = await repo.list_watched(conn, user_id=SINGLE_USER_ID)
-        summaries = {s.series_key: s for s in await list_series(conn, SINGLE_USER_ID)}
         for info in watched:
-            summary = summaries.get(info.series_key)
-            if summary is None:
-                continue
             checked += 1
             try:
-                await _lookup_and_cache(
-                    conn, SINGLE_USER_ID, summary, settings=settings, find_next=True
+                summary = await research_series_releases(
+                    SINGLE_USER_ID, info.series_key, settings=settings, conn=conn
                 )
-                await _sync_waiting_list(conn, SINGLE_USER_ID, summary.series_key)
-                updated_names.append(summary.name)
+                if summary is not None:
+                    updated_names.append(summary.name)
             except Exception:  # noqa: BLE001 - one series failing must not abort the run
-                logger.exception("series check failed for %s", summary.name)
+                logger.exception("series research failed for %s", info.display_name)
     finally:
         await conn.close()
     return SeriesCheckResult(
         checked=checked,
         updated=len(updated_names),
         series=updated_names,
-        notes="Sources: Google Books (PL+EN) and OpenLibrary.",
+        notes="Source: web release research (Polish + original editions). Google Books not used.",
     )
 
 
-async def _sync_waiting_list(conn: aiosqlite.Connection, user_id: int, series_key: str) -> None:
-    """Mirror a watched series' next-expected volume into the waiting list."""
-    summary = await get_series(conn, user_id, series_key)
-    if summary is None or summary.next_expected is None:
-        return
-    nxt = summary.next_expected
-    if not nxt.title:
-        return
-    existing = await repo.find_expected_by_series(conn, user_id, series_key)
-    for entry in existing:
-        if (entry.title or "").casefold() == (nxt.title or "").casefold():
-            await repo.update_expected(
-                conn,
-                user_id,
-                entry.id,
-                {
-                    "expected_date": nxt.date,
-                    "source_url": nxt.source_url,
-                    "confidence": nxt.confidence,
-                    "source": "series_check",
-                },
-            )
-            return
-    await repo.add_expected(
-        conn,
-        user_id,
-        ExpectedBookCreate(
-            title=nxt.title,
-            author=summary.author,
-            series_name=summary.name,
-            expected_date=nxt.date,
-            source_url=nxt.source_url,
-            source="series_check",
-            confidence=nxt.confidence,
-        ),
-        series_key=series_key,
+def _next_expected_from_edition(edition: Any) -> NextExpected | None:
+    """Convert a research EditionResult into a NextExpected, or None when all-unknown."""
+    if edition is None:
+        return None
+    if not edition.title and not edition.date and edition.status == "unknown":
+        return None
+    return NextExpected(
+        title=edition.title,
+        date=edition.date,
+        source_url=edition.source_url,
+        confidence=edition.confidence,
+        status=edition.status,
     )
+
+
+def _highest_owned(summary: SeriesSummary) -> int:
+    nums = [o.volume for o in summary.owned_volumes if o.volume is not None]
+    return int(max(nums)) if nums else 0
+
+
+async def research_series_releases(
+    user_id: int,
+    series_key: str,
+    *,
+    settings: Settings | None = None,
+    conn: aiosqlite.Connection | None = None,
+    research_fn: Any | None = None,
+) -> SeriesSummary | None:
+    """Research the next PL/EN volume for one series on the web and store the result.
+
+    Stores the per-language next-expected into ``series_info`` (``next_expected_pl`` /
+    ``next_expected_en``), sets the combined ``next_expected`` to whichever edition has a
+    concrete date (preferring the original/English), upserts one ``expected_books`` entry
+    per language (keeping any manual entries), and bumps ``total_known`` when a newer
+    volume number is implied. Clears the ``checking`` flag at the end. Never calls Google
+    Books.
+
+    ``conn`` may be passed to reuse the caller's connection; otherwise a fresh one is
+    opened and closed. ``research_fn`` is injected by tests (a fake returning a
+    ResearchResult) to avoid AWS/network.
+    """
+    settings = settings or get_settings()
+    own_conn = conn is None
+    if own_conn:
+        conn = await connect(settings.database_file)
+    assert conn is not None
+    try:
+        summary = await get_series(conn, user_id, series_key)
+        if summary is None:
+            return None
+        key = summary.series_key
+        owned = [o.volume for o in summary.owned_volumes if o.volume is not None]
+
+        if research_fn is None:
+            from app.agent.series_research import research_next_volumes
+
+            research_fn = research_next_volumes
+        try:
+            result = await research_fn(summary.name, summary.author, owned)
+        except Exception:  # noqa: BLE001 - research is best-effort
+            logger.warning("release research raised for %s", summary.name, exc_info=True)
+            result = None
+
+        info = await repo.get_info(conn, user_id, key) or SeriesInfo(
+            series_key=key, display_name=summary.name, author=summary.author
+        )
+        info.display_name = summary.name
+        info.author = summary.author or info.author
+
+        pl = _next_expected_from_edition(result.pl) if result else None
+        en = _next_expected_from_edition(result.en) if result else None
+        info.next_expected_pl = pl
+        info.next_expected_en = en
+        # Combined next_expected (legacy card field): prefer the edition with a concrete
+        # date, original/English first.
+        info.next_expected = (
+            en if (en and en.date) else pl if (pl and pl.date) else en or pl or info.next_expected
+        )
+        # Mark the series not complete if a newer volume is known to exist.
+        highest = _highest_owned(summary)
+        if (pl and pl.status != "unknown") or (en and en.status != "unknown"):
+            info.total_known = max(info.total_known or 0, highest + 1)
+        info.checking = False
+        await repo.upsert_info(conn, user_id, info, touch_checked=True)
+
+        # Upsert one waiting-list entry per language (keep manual entries untouched).
+        await _sync_waiting_entry(conn, user_id, key, summary.name, summary.author, "pl", pl)
+        await _sync_waiting_entry(conn, user_id, key, summary.name, summary.author, "en", en)
+
+        return await get_series(conn, user_id, key)
+    finally:
+        if own_conn:
+            await conn.close()
+
+
+async def _sync_waiting_entry(
+    conn: aiosqlite.Connection,
+    user_id: int,
+    series_key: str,
+    series_name: str,
+    author: str,
+    lang: str,
+    nxt: NextExpected | None,
+) -> None:
+    """Upsert the waiting-list entry for one language's next-expected volume.
+
+    Identified by ``source == f"series_research:{lang}"`` so re-running updates the same
+    row and manual entries (source 'agent'/'user') are never touched. A ``None`` / titleless
+    result removes a previously-researched entry for that language.
+    """
+    source = f"series_research:{lang}"
+    existing = [
+        e
+        for e in await repo.find_expected_by_series(conn, user_id, series_key)
+        if (e.source or "") == source
+    ]
+    if nxt is None or not nxt.title:
+        for entry in existing:
+            await repo.delete_expected(conn, user_id, entry.id)
+        return
+    label = "PL" if lang == "pl" else "EN"
+    payload = {
+        "title": nxt.title,
+        "author": author,
+        "series_name": series_name,
+        "expected_date": nxt.date,
+        "source_url": nxt.source_url,
+        "source": source,
+        "confidence": nxt.confidence,
+        "notes": f"{label} edition · {nxt.status or 'unknown'}",
+    }
+    if existing:
+        await repo.update_expected(conn, user_id, existing[0].id, payload)
+        for extra in existing[1:]:
+            await repo.delete_expected(conn, user_id, extra.id)
+    else:
+        await repo.add_expected(
+            conn,
+            user_id,
+            ExpectedBookCreate(
+                title=nxt.title,
+                author=author,
+                series_name=series_name,
+                expected_date=nxt.date,
+                source_url=nxt.source_url,
+                source=source,
+                confidence=nxt.confidence,
+                notes=f"{label} edition · {nxt.status or 'unknown'}",
+            ),
+            series_key=series_key,
+        )
 
 
 async def alerts(conn: aiosqlite.Connection, user_id: int) -> AlertsResponse:
@@ -276,6 +404,239 @@ async def alerts(conn: aiosqlite.Connection, user_id: int) -> AlertsResponse:
         in_progress=in_progress,
         new_volume=new_volume,
     )
+
+
+# --- series editing (wave 5) -------------------------------------------------------------
+#
+# These change the series' cached metadata and its membership. Every change to a member
+# book's series/volume is written to the DB AND mirrored into data/books.json (via
+# app.services.books_json) so the two stores never drift. Reading data and the
+# comparisons table are never touched — only the book's `series` and `volume` fields.
+
+
+def _identity(book: Book) -> dict[str, Any]:
+    """The fields books_json uses to find a book's JSON record."""
+    return {
+        "google_volume_id": book.google_volume_id,
+        "isbn_13": book.isbn_13,
+        "isbn_10": book.isbn_10,
+        "external_id": book.external_id,
+        "title": book.title,
+        "authors": list(book.authors or []),
+    }
+
+
+async def _set_book_series(
+    conn: aiosqlite.Connection,
+    user_id: int,
+    book_id: int,
+    *,
+    series: str | None,
+    volume: str | None,
+) -> Book | None:
+    """Update one book's series/volume in the DB and mirror it into books.json."""
+    updated = await books_repo.update_book(
+        conn, user_id, book_id, BookUpdate(series=series, volume=volume)
+    )
+    if updated is not None:
+        books_json.sync_book_series(_identity(updated), series=series, volume=volume)
+    return updated
+
+
+async def update_series(
+    conn: aiosqlite.Connection,
+    user_id: int,
+    series_key: str,
+    *,
+    display_name: str | None = None,
+    aliases: list[str] | None = None,
+    author: str | None = None,
+    total_volumes: int | None = None,
+    notes: str | None = None,
+    watch: bool | None = None,
+) -> SeriesSummary | None:
+    """Edit a series' cached metadata (name shown on the card, aliases, author, total,
+    notes, watch flag). Only the arguments that are not ``None`` are applied.
+
+    This edits the ``series_info`` row only; it does NOT rename the series on the member
+    books (use :func:`rename_series` for that). ``display_name`` here changes the name the
+    Series card shows for the canonical key.
+    """
+    summary = await get_series(conn, user_id, series_key)
+    target_key = summary.series_key if summary else compute.series_key(series_key)
+    existing = await repo.get_info(conn, user_id, target_key)
+    info = existing or SeriesInfo(
+        series_key=target_key,
+        display_name=summary.name if summary else series_key,
+        author=summary.author if summary else "",
+    )
+    if display_name is not None and display_name.strip():
+        info.display_name = display_name.strip()
+    if aliases is not None:
+        info.aliases = sorted({a.strip() for a in aliases if a.strip()})
+    if author is not None:
+        info.author = author.strip()
+    if total_volumes is not None:
+        info.total_known = total_volumes
+    if notes is not None:
+        info.notes = notes.strip() or None
+    if watch is not None:
+        info.watch = watch
+        # Turning watch ON schedules a background research run (the route adds the task);
+        # flag it so the card shows the "Checking new volumes…" spinner while it runs.
+        if watch:
+            info.checking = True
+    await repo.upsert_info(conn, user_id, info)
+    return await get_series(conn, user_id, info.series_key)
+
+
+async def add_book_to_series(
+    conn: aiosqlite.Connection,
+    user_id: int,
+    series_key: str,
+    book_id: int,
+    *,
+    volume: str | None = None,
+) -> SeriesSummary | None:
+    """Add a library book to a series: set its ``series`` to the series' display name and
+    its ``volume``. Works for an existing series (resolved by key/alias) and for a brand
+    new series name passed as ``series_key``.
+    """
+    summary = await get_series(conn, user_id, series_key)
+    if summary is not None:
+        name = summary.name
+        key = summary.series_key
+    else:
+        # A new series: the caller passed its name. Keep that as the display name.
+        name = series_key
+        key = compute.series_key(series_key)
+    book = await books_repo.get_book(conn, user_id, book_id)
+    if book is None:
+        return None
+    await _set_book_series(conn, user_id, book_id, series=name, volume=volume)
+    # Ensure a cached row exists so the series is addressable even before a lookup.
+    if await repo.get_info(conn, user_id, key) is None:
+        await repo.upsert_info(
+            conn,
+            user_id,
+            SeriesInfo(
+                series_key=key, display_name=name, author=book.authors[0] if book.authors else ""
+            ),
+        )
+    return await get_series(conn, user_id, key)
+
+
+async def remove_book_from_series(
+    conn: aiosqlite.Connection,
+    user_id: int,
+    series_key: str,
+    book_id: int,
+) -> SeriesSummary | None:
+    """Remove a book from a series: clear its ``series`` and ``volume``."""
+    summary = await get_series(conn, user_id, series_key)
+    key = summary.series_key if summary else compute.series_key(series_key)
+    book = await books_repo.get_book(conn, user_id, book_id)
+    if book is None:
+        return None
+    await _set_book_series(conn, user_id, book_id, series=None, volume=None)
+    return await get_series(conn, user_id, key)
+
+
+async def set_book_volume(
+    conn: aiosqlite.Connection,
+    user_id: int,
+    series_key: str,
+    book_id: int,
+    *,
+    volume: str | None,
+) -> SeriesSummary | None:
+    """Change a member book's volume number within its series (series unchanged)."""
+    summary = await get_series(conn, user_id, series_key)
+    key = summary.series_key if summary else compute.series_key(series_key)
+    book = await books_repo.get_book(conn, user_id, book_id)
+    if book is None:
+        return None
+    await _set_book_series(conn, user_id, book_id, series=book.series, volume=volume)
+    return await get_series(conn, user_id, key)
+
+
+async def rename_series(
+    conn: aiosqlite.Connection,
+    user_id: int,
+    series_key: str,
+    new_name: str,
+) -> SeriesSummary | None:
+    """Rename a series on EVERY member book and keep the old name as an alias.
+
+    The old display name becomes an alias on the (new) cached row so the series is still
+    found by its previous name. Every member book's ``series`` is rewritten (DB + JSON).
+    """
+    summary = await get_series(conn, user_id, series_key)
+    if summary is None:
+        return None
+    new_name = new_name.strip()
+    if not new_name:
+        return summary
+    old_name = summary.name
+    new_key = compute.series_key(new_name)
+
+    for owned in summary.owned_volumes:
+        book = await books_repo.get_book(conn, user_id, owned.book_id)
+        if book is None:
+            continue
+        await _set_book_series(conn, user_id, owned.book_id, series=new_name, volume=book.volume)
+
+    old_info = await repo.get_info(conn, user_id, summary.series_key)
+    merged_aliases = set(old_info.aliases if old_info else [])
+    if old_name and compute.series_key(old_name) != new_key:
+        merged_aliases.add(old_name)
+    merged_aliases.discard(new_name)
+
+    new_info = await repo.get_info(conn, user_id, new_key) or SeriesInfo(series_key=new_key)
+    new_info.display_name = new_name
+    new_info.aliases = sorted({a for a in merged_aliases if a.strip()})
+    if old_info:
+        new_info.author = new_info.author or old_info.author
+        new_info.known_volumes = new_info.known_volumes or old_info.known_volumes
+        new_info.total_known = new_info.total_known or old_info.total_known
+        new_info.watch = new_info.watch or old_info.watch
+    await repo.upsert_info(conn, user_id, new_info)
+    return await get_series(conn, user_id, new_key)
+
+
+async def merge_series(
+    conn: aiosqlite.Connection,
+    user_id: int,
+    series_key: str,
+    other_key: str,
+) -> SeriesSummary | None:
+    """Merge ``other_key`` INTO ``series_key``: every book of the other series is moved to
+    this series' display name, and the other series' name + aliases are kept as aliases.
+    """
+    target = await get_series(conn, user_id, series_key)
+    other = await get_series(conn, user_id, other_key)
+    if target is None or other is None:
+        return None
+    if target.series_key == other.series_key:
+        return target
+
+    for owned in other.owned_volumes:
+        book = await books_repo.get_book(conn, user_id, owned.book_id)
+        if book is None:
+            continue
+        await _set_book_series(conn, user_id, owned.book_id, series=target.name, volume=book.volume)
+
+    target_info = await repo.get_info(conn, user_id, target.series_key) or SeriesInfo(
+        series_key=target.series_key, display_name=target.name, author=target.author
+    )
+    merged = set(target_info.aliases)
+    merged.update(other.aliases)
+    if other.name and compute.series_key(other.name) != target.series_key:
+        merged.add(other.name)
+    merged.discard(target.name)
+    target_info.aliases = sorted({a for a in merged if a.strip()})
+    await repo.upsert_info(conn, user_id, target_info)
+    return await get_series(conn, user_id, target.series_key)
 
 
 # --- waiting list ------------------------------------------------------------------------

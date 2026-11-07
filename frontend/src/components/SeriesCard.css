@@ -16,6 +16,13 @@
   gap: var(--default-gap);
 }
 
+.series-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+  flex: 0 0 auto;
+}
+
 .series-card-title {
   display: flex;
   flex-direction: column;
@@ -138,6 +145,25 @@
   gap: var(--small-gap);
   font-size: 0.85rem;
   color: var(--app-text);
+}
+
+.series-card-next-editions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-padding);
+  min-width: 0;
+}
+
+.series-card-checking {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-gap);
+  font-size: 0.85rem;
+  color: var(--app-text-muted);
+}
+
+.series-card-checking i {
+  color: var(--app-accent);
 }
 
 .series-card-next i {

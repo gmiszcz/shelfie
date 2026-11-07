@@ -114,6 +114,9 @@ CREATE TABLE IF NOT EXISTS series_info (
     total_known   INTEGER,
     watch         INTEGER NOT NULL DEFAULT 0,
     next_expected TEXT,
+    next_expected_pl TEXT,
+    next_expected_en TEXT,
+    checking      INTEGER NOT NULL DEFAULT 0,
     notes         TEXT,
     last_checked  TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
@@ -156,6 +159,18 @@ async def _migrate(conn: aiosqlite.Connection) -> None:
             # SQLite cannot ADD COLUMN with a non-constant default; drop it for added_at-style cols.
             safe_decl = decl.replace("DEFAULT (datetime('now'))", "DEFAULT ''")
             await conn.execute(f"ALTER TABLE books ADD COLUMN {name} {safe_decl}")
+
+    # series_info gained per-language next-expected and a transient "checking" flag in the
+    # wave-5 release-research step. Add them to an older cached table (idempotent).
+    cursor = await conn.execute("PRAGMA table_info(series_info)")
+    series_cols = {row[1] for row in await cursor.fetchall()}
+    for name, decl in (
+        ("next_expected_pl", "TEXT"),
+        ("next_expected_en", "TEXT"),
+        ("checking", "INTEGER NOT NULL DEFAULT 0"),
+    ):
+        if series_cols and name not in series_cols:
+            await conn.execute(f"ALTER TABLE series_info ADD COLUMN {name} {decl}")
 
 
 async def init_db(db_file: Path) -> None:
