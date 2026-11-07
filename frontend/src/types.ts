@@ -241,6 +241,7 @@ export interface NextExpected {
   date: string | null;
   source_url: string | null;
   confidence: string | null;
+  status: string | null;
 }
 
 export interface OwnedVolume {
@@ -279,6 +280,9 @@ export interface SeriesSummary {
   finished: boolean;
   watch: boolean;
   next_expected: NextExpected | null;
+  next_expected_pl: NextExpected | null;
+  next_expected_en: NextExpected | null;
+  checking: boolean;
   last_checked: string | null;
   notes: string | null;
 }

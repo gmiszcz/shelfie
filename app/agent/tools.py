@@ -867,3 +867,202 @@ def add_expected_book(
     )
     created = _run(_with_conn(lambda c: series_service.add_expected(c, SINGLE_USER_ID, data)))
     return {"ok": True, "added": created.model_dump()}
+
+
+# --- series editing tools (wave 5) -------------------------------------------------------
+#
+# These let the library assistant CHANGE a series when the user asks ("dodaj X do serii Y
+# jako tom 3", "zmień nazwę serii", "połącz serie"). They go through
+# app.services.series_service, which updates the DB and mirrors every book's series/volume
+# into data/books.json, so the two stores never drift. Reading data is never touched.
+
+
+def _resolve_book_id(ref: str, book_id: int) -> tuple[int | None, dict[str, Any] | None]:
+    """Resolve a book from an explicit id or a title/search phrase.
+
+    Returns ``(book_id, None)`` on a unique hit, or ``(None, error_dict)`` when nothing
+    matched or several books matched (the error carries candidates for the agent).
+    """
+    if book_id:
+        return int(book_id), None
+    needle = (ref or "").strip().lower()
+    if not needle:
+        return None, {"error": "pass a book title/id to identify the book"}
+    terms = [t for t in needle.split() if t]
+    hits = [b for b in _all_books() if all(t in _haystack(b) for t in terms)]
+    if not hits:
+        return None, {"error": f"no book matching {ref!r}"}
+    if len(hits) > 1:
+        return None, {
+            "error": "several books match; call with a specific book_id",
+            "candidates": [_brief(b) for b in hits[:5]],
+        }
+    return hits[0].id, None
+
+
+@tool
+def update_series(
+    name_or_alias: str,
+    new_name: str = "",
+    aliases: str = "",
+    author: str = "",
+    total_volumes: int = -1,
+    notes: str = "",
+) -> dict[str, Any]:
+    """Edit a series' details when the user asks to change them.
+
+    Resolve the series by any of its names/aliases. ``new_name`` renames the series on
+    EVERY member book (the old name is kept as an alias). ``aliases`` REPLACES the alias
+    list (comma-separated). Only the arguments you pass are changed.
+
+    Args:
+        name_or_alias: The series to edit, by any current name or alias.
+        new_name: Rename the series across all its books (optional).
+        aliases: Comma-separated alias list that REPLACES the current aliases (optional).
+        author: New author for the series (optional).
+        total_volumes: New total known volume count; leave at -1 to keep it.
+        notes: New notes text (optional).
+    """
+    from app.services import series_service
+
+    async def run(conn: Any) -> dict[str, Any]:
+        summary = await series_service.get_series(conn, SINGLE_USER_ID, name_or_alias)
+        if summary is None:
+            return {"error": f"no series matching {name_or_alias!r}"}
+        key = summary.series_key
+        if new_name.strip() and new_name.strip() != summary.name:
+            renamed = await series_service.rename_series(
+                conn, SINGLE_USER_ID, key, new_name.strip()
+            )
+            key = renamed.series_key if renamed else key
+        alias_list = (
+            [a.strip() for a in aliases.split(",") if a.strip()] if aliases.strip() else None
+        )
+        updated = await series_service.update_series(
+            conn,
+            SINGLE_USER_ID,
+            key,
+            aliases=alias_list,
+            author=author.strip() or None,
+            total_volumes=total_volumes
+            if total_volumes is not None and total_volumes >= 0
+            else None,
+            notes=notes if notes.strip() else None,
+        )
+        return _series_brief(updated) if updated else {"error": "series not found after update"}
+
+    return _run(_with_conn(run))
+
+
+@tool
+def add_book_to_series(
+    book: str = "",
+    series: str = "",
+    volume: str = "",
+    book_id: int = 0,
+) -> dict[str, Any]:
+    """Add a library book to a series (e.g. "dodaj X do serii Y jako tom 3").
+
+    Sets the book's ``series`` to the series' name and its ``volume``. Resolve the book
+    with a title or an explicit ``book_id``. Works for an existing series or a brand new
+    series name.
+
+    Args:
+        book: Book title / search phrase to identify it (or use book_id).
+        series: The series name (existing or new) to add the book to.
+        volume: The volume label within the series (e.g. "3").
+        book_id: The exact book id (overrides ``book``).
+    """
+    from app.services import series_service
+
+    if not series.strip():
+        return {"error": "a series name is required"}
+    resolved, err = _resolve_book_id(book, book_id)
+    if err is not None:
+        return err
+    assert resolved is not None  # nosec B101 - narrowed by the err guard above
+
+    async def run(conn: Any) -> dict[str, Any]:
+        summary = await series_service.add_book_to_series(
+            conn, SINGLE_USER_ID, series.strip(), int(resolved), volume=volume.strip() or None
+        )
+        return _series_brief(summary) if summary else {"error": "book not found"}
+
+    return _run(_with_conn(run))
+
+
+@tool
+def remove_book_from_series(book: str = "", series: str = "", book_id: int = 0) -> dict[str, Any]:
+    """Remove a book from a series (clears its series and volume).
+
+    Args:
+        book: Book title / search phrase to identify it (or use book_id).
+        series: The series the book is currently in.
+        book_id: The exact book id (overrides ``book``).
+    """
+    from app.services import series_service
+
+    if not series.strip():
+        return {"error": "a series name is required"}
+    resolved, err = _resolve_book_id(book, book_id)
+    if err is not None:
+        return err
+    assert resolved is not None  # nosec B101 - narrowed by the err guard above
+
+    async def run(conn: Any) -> dict[str, Any]:
+        summary = await series_service.remove_book_from_series(
+            conn, SINGLE_USER_ID, series.strip(), int(resolved)
+        )
+        return _series_brief(summary) if summary else {"error": "series or book not found"}
+
+    return _run(_with_conn(run))
+
+
+@tool
+def set_book_volume(
+    book: str = "", series: str = "", volume: str = "", book_id: int = 0
+) -> dict[str, Any]:
+    """Change a book's volume number within its series.
+
+    Args:
+        book: Book title / search phrase to identify it (or use book_id).
+        series: The series the book belongs to.
+        volume: The new volume label (empty clears it).
+        book_id: The exact book id (overrides ``book``).
+    """
+    from app.services import series_service
+
+    if not series.strip():
+        return {"error": "a series name is required"}
+    resolved, err = _resolve_book_id(book, book_id)
+    if err is not None:
+        return err
+    assert resolved is not None  # nosec B101 - narrowed by the err guard above
+
+    async def run(conn: Any) -> dict[str, Any]:
+        summary = await series_service.set_book_volume(
+            conn, SINGLE_USER_ID, series.strip(), int(resolved), volume=volume.strip() or None
+        )
+        return _series_brief(summary) if summary else {"error": "series or book not found"}
+
+    return _run(_with_conn(run))
+
+
+@tool
+def merge_series(a: str, b: str) -> dict[str, Any]:
+    """Merge two series into one (e.g. "połącz serie A i B").
+
+    Every book of series ``b`` is moved to series ``a``; ``b``'s names become aliases of
+    ``a``. Both are resolved by any of their names/aliases.
+
+    Args:
+        a: The series to keep (the merge target).
+        b: The series to merge into ``a``.
+    """
+    from app.services import series_service
+
+    async def run(conn: Any) -> dict[str, Any]:
+        summary = await series_service.merge_series(conn, SINGLE_USER_ID, a, b)
+        return _series_brief(summary) if summary else {"error": "one of the series was not found"}
+
+    return _run(_with_conn(run))

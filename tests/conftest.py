@@ -10,10 +10,50 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.deps import db_connection, google_books_client
+from app.config import get_settings
 from app.db import get_connection, init_db
 from app.integrations.google_books import GoogleBooksClient
 from app.main import app
 from app.schemas.books import VolumeSearchResult
+
+
+@pytest.fixture(autouse=True)
+def _no_bedrock_enrichment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
+    """Disable the Bedrock insights enrichment for every test, neutralise the Google
+    Books per-process budget, and isolate every on-disk cache.
+
+    Adding a book normally schedules ``enrich_book`` (a real Bedrock structured-output
+    call) and the sync ``/enrich`` endpoint runs it inline — both would make network/model
+    calls in the suite and blow the time budget. ``get_settings`` is lru-cached, so we flip
+    ``enrichment_enabled`` on the single cached instance for the duration of each test.
+
+    The worktree's ``.env`` may set ``GOOGLE_BOOKS_MAX_CALLS=0`` (so a locally-started
+    backend never calls the API); that must not make the MockTransport-based Google Books /
+    OpenLibrary tests fail on the budget guard, so we also raise the cap and reset the
+    per-process counter. Finally we point the Google Books and web caches at a fresh temp
+    dir so a stale cache file never short-circuits a MockTransport test (real network is
+    never reached — those tests inject a mock transport).
+    """
+    from app.integrations import google_books
+
+    settings = get_settings()
+    cache_root = tmp_path_factory.mktemp("caches")
+    original = {
+        "enrichment_enabled": settings.enrichment_enabled,
+        "google_books_max_calls": settings.google_books_max_calls,
+        "google_books_cache_dir": settings.google_books_cache_dir,
+        "web_cache_dir": settings.web_cache_dir,
+    }
+    settings.enrichment_enabled = False
+    if settings.google_books_max_calls < 50:
+        settings.google_books_max_calls = 50
+    settings.google_books_cache_dir = str(cache_root / "google_books")
+    settings.web_cache_dir = str(cache_root / "web")
+    google_books._reset_call_count()
+    yield
+    for key, value in original.items():
+        setattr(settings, key, value)
+    google_books._reset_call_count()
 
 
 class FakeGoogleBooksClient(GoogleBooksClient):

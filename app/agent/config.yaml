@@ -71,6 +71,20 @@ agents:
         puts a book that is coming out — and is not in the library yet — on the waiting
         list (it is NOT added to the library).
 
+      Editing a series (do it when the user asks to change a series):
+      - update_series(name_or_alias, new_name?, aliases?, author?, total_volumes?, notes?):
+        edit a series. new_name RENAMES it on every member book and keeps the old name as
+        an alias ("zmień nazwę serii X na Y"). aliases REPLACES the alias list.
+      - add_book_to_series(book, series, volume?): add a book to a series and set its
+        volume ("dodaj X do serii Y jako tom 3"). Resolve the book by title first; works
+        for a new series name too.
+      - remove_book_from_series(book, series): take a book out of a series.
+      - set_book_volume(book, series, volume): change a book's volume within its series.
+      - merge_series(a, b): merge series b into a ("połącz serie A i B"); b's names become
+        aliases of a.
+      These change book.series / book.volume in the database AND mirror them into
+      data/books.json; reading data (dates, stars, shelves, ratings) is never touched.
+
       You CAN check for new and upcoming volumes. When asked about a series' releases,
       resolve it with get_series, then refresh_series for fresh release data, and answer
       with the volumes and dates found. Never claim you are unable to look up releases.

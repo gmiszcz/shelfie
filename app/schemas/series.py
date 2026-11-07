@@ -28,6 +28,7 @@ class NextExpected(BaseModel):
     date: str | None = None
     source_url: str | None = None
     confidence: str | None = None  # "high" | "medium" | "low"
+    status: str | None = None  # "announced" | "released" | "unknown"
 
 
 class OwnedVolume(BaseModel):
@@ -64,6 +65,9 @@ class SeriesInfo(BaseModel):
     total_known: int | None = None
     watch: bool = False
     next_expected: NextExpected | None = None
+    next_expected_pl: NextExpected | None = None
+    next_expected_en: NextExpected | None = None
+    checking: bool = False
     notes: str | None = None
     last_checked: str | None = None
 
@@ -92,7 +96,28 @@ class SeriesSummary(BaseModel):
 
     watch: bool = False
     next_expected: NextExpected | None = None
+    next_expected_pl: NextExpected | None = None
+    next_expected_en: NextExpected | None = None
+    checking: bool = False
     last_checked: str | None = None
+    notes: str | None = None
+
+
+class SeriesPatch(BaseModel):
+    """PATCH body for editing a series.
+
+    Every field is optional: only the ones present in the request are applied, so the
+    same endpoint keeps serving the watch toggle (``watch`` alone) and the full edit
+    (display name, aliases, author, total volumes, notes). ``display_name`` renames the
+    cached row's name only; to rename the series on every member book use the dedicated
+    ``/rename`` endpoint.
+    """
+
+    watch: bool | None = None
+    display_name: str | None = Field(default=None, max_length=500)
+    aliases: list[str] | None = None
+    author: str | None = Field(default=None, max_length=500)
+    total_volumes: int | None = Field(default=None, ge=0, le=10_000)
     notes: str | None = None
 
 
@@ -100,6 +125,31 @@ class WatchPatch(BaseModel):
     """PATCH body for the watch toggle."""
 
     watch: bool
+
+
+class SeriesBookAdd(BaseModel):
+    """POST body to add a library book to a series."""
+
+    book_id: int
+    volume: str | None = None
+
+
+class SeriesBookVolume(BaseModel):
+    """PATCH body to change a member book's volume number."""
+
+    volume: str | None = None
+
+
+class SeriesRename(BaseModel):
+    """POST body to rename a series on every member book (old name kept as an alias)."""
+
+    name: str = Field(min_length=1, max_length=500)
+
+
+class SeriesMerge(BaseModel):
+    """POST body to merge another series into this one."""
+
+    other_key: str = Field(min_length=1)
 
 
 class ExpectedBook(BaseModel):

@@ -77,6 +77,9 @@ async def enrich_book(
     settings = settings or get_settings()
     conn = await connect(settings.database_file)
     try:
+        if not settings.enrichment_enabled:
+            logger.info("enrichment disabled (ENRICHMENT_ENABLED=false); skipping book %s", book_id)
+            return await repo.get_book(conn, user_id, book_id)
         book = await repo.get_book(conn, user_id, book_id)
         if book is None:
             return None
@@ -92,6 +95,8 @@ async def enrich_book(
 
 def schedule_enrichment(background_tasks: object, user_id: int, book_id: int) -> None:
     """Queue ``enrich_book`` on a FastAPI ``BackgroundTasks`` (duck-typed for testability)."""
+    if not get_settings().enrichment_enabled:
+        return
     add_task = getattr(background_tasks, "add_task", None)
     if callable(add_task):
         add_task(enrich_book, user_id, book_id)
