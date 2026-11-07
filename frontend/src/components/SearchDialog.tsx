@@ -38,7 +38,7 @@ export function SearchDialog({
   initialQuery,
 }: Props) {
   const [query, setQuery] = useState('');
-  const [lang, setLang] = useState('');
+  const [lang, setLang] = useState('pl');
   const [results, setResults] = useState<VolumeSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
 
