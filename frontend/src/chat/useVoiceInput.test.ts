@@ -104,6 +104,8 @@ beforeEach(() => {
     vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
   );
   window.matchMedia = globalThis.matchMedia;
+  // The microphone is only reachable on a secure origin; jsdom reports false.
+  Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true });
 });
 
 afterEach(() => {
@@ -194,5 +196,18 @@ describe('useVoiceInput cleanup', () => {
 
     expect(hook.result.current.state.status).toBe('error');
     expect(hook.result.current.state.error).toContain('permission denied');
+  });
+});
+
+describe('useVoiceInput on an insecure origin', () => {
+  it('explains that the microphone needs HTTPS instead of failing silently', async () => {
+    Object.defineProperty(window, 'isSecureContext', { value: false, configurable: true });
+    const hook = renderHook(() => useVoiceInput(vi.fn()));
+    await act(async () => {
+      await hook.result.current.start('pl-PL');
+    });
+    expect(hook.result.current.state.status).toBe('error');
+    expect(hook.result.current.state.error).toMatch(/HTTPS/);
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
   });
 });

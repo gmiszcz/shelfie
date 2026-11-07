@@ -192,6 +192,18 @@ export function useVoiceInput(
       }
       setState({ status: 'requesting', partial: '', level: 0, error: null });
 
+      // Browsers expose the microphone only on a secure origin (https or localhost);
+      // on plain http (e.g. a Tailscale IP) navigator.mediaDevices is undefined.
+      if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+        setState({
+          status: 'error',
+          partial: '',
+          level: 0,
+          error: 'The microphone needs HTTPS. Open the https:// address of this app (e.g. the Tailscale https link).',
+        });
+        return;
+      }
+
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });

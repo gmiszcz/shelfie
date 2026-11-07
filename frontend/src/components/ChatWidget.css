@@ -34,10 +34,23 @@
   .chat-panel {
     inset: 0;
     width: 100vw;
+    /* dvh = the visible viewport: on iOS Safari 100vh also counts the area under the
+       browser toolbar, which hid the input row. Fallback first for older browsers. */
     height: 100vh;
-    max-height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
     border-radius: 0;
     border: none;
+  }
+
+  /* Keep the input above the home indicator / toolbar on notched phones. */
+  .chat-panel .chat-input {
+    padding-bottom: calc(var(--default-padding) + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* 16px stops iOS Safari from zooming the page when the textarea gets focus. */
+  .chat-panel .chat-textarea {
+    font-size: 16px;
   }
 }
 
@@ -72,10 +85,28 @@
 .chat-scroll {
   flex: 1;
   overflow-y: auto;
+  /* Scrolling the messages never chains to the page behind the panel. */
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   padding: var(--big-padding);
   display: flex;
   flex-direction: column;
   gap: var(--default-gap);
+}
+
+/* Dragging on the panel's fixed parts (header, mode switch, input row) must not move
+   the page underneath either; the page itself stays scrollable outside the panel. */
+.chat-panel {
+  overscroll-behavior: contain;
+}
+
+.chat-panel > :not(.chat-scroll) {
+  touch-action: none;
+}
+
+.chat-panel .chat-textarea {
+  touch-action: manipulation;
 }
 
 .chat-row {
