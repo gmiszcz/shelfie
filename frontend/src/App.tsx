@@ -2,6 +2,7 @@ import { Button } from 'primereact/button';
 import { useCallback, useEffect, useState } from 'react';
 
 import { useAgentAnchor, setStaticTabs, setActiveTab } from './agent-ui';
+import { useAuth, UserMenu, UsersPage } from './auth';
 import { ChatProvider, useChat } from './chat/ChatProvider';
 import { ChatWidget, chatMicRegistry } from './components/ChatWidget';
 import { GlobalMic, globalMicRegistry } from './components/GlobalMic';
@@ -19,19 +20,7 @@ import {
 } from './settings/settingsTypes';
 import type { UiTab } from './settings/uiBus';
 import { Stats } from './pages/Stats';
-// Vite: theme CSS as local URLs (no CDN), swapped at runtime via one <link>.
-import darkThemeUrl from 'primereact/resources/themes/lara-dark-indigo/theme.css?url';
-import lightThemeUrl from 'primereact/resources/themes/lara-light-indigo/theme.css?url';
-
-type Theme = 'dark' | 'light';
-
-const THEME_HREF: Record<Theme, string> = {
-  dark: darkThemeUrl,
-  light: lightThemeUrl,
-};
-
-const THEME_LINK_ID = 'primereact-theme';
-const THEME_KEY = 'shelfie.theme';
+import { applyTheme, initialTheme, THEME_KEY, type Theme } from './theme';
 
 const PAGES: { id: UiTab; label: string; icon: string }[] = [
   { id: 'library', label: 'Library', icon: 'pi pi-book' },
@@ -41,29 +30,12 @@ const PAGES: { id: UiTab; label: string; icon: string }[] = [
   { id: 'ranking', label: 'Ranking', icon: 'pi pi-sort-amount-down' },
 ];
 
-function applyTheme(theme: Theme) {
-  document.documentElement.setAttribute('data-theme', theme);
-  let link = document.getElementById(THEME_LINK_ID) as HTMLLinkElement | null;
-  if (!link) {
-    link = document.createElement('link');
-    link.id = THEME_LINK_ID;
-    link.rel = 'stylesheet';
-    document.head.appendChild(link);
-  }
-  link.href = THEME_HREF[theme];
-}
-
-function initialTheme(): Theme {
-  try {
-    const stored = localStorage.getItem(THEME_KEY);
-    if (stored === 'light' || stored === 'dark') {
-      return stored;
-    }
-  } catch {
-    // ignore
-  }
-  return 'light';
-}
+/**
+ * The pages the shell can show. `users` is the admin-only account page; it is NOT
+ * an agent tab (not in PAGES, not a static tab, no anchor) so the assistant can
+ * never navigate to it or manage accounts.
+ */
+type AppPage = UiTab | 'users';
 
 /**
  * Register one display-setting toggle as an agent anchor. A tiny component so
@@ -153,9 +125,10 @@ function SettingsAnchors() {
  */
 function AppShell() {
   const [theme, setTheme] = useState<Theme>(initialTheme);
-  const [page, setPage] = useState<UiTab>('library');
+  const [page, setPage] = useState<AppPage>('library');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { open: chatOpen, setOpen: setChatOpen, switchMode } = useChat();
+  const { user } = useAuth();
 
   useEffect(() => {
     applyTheme(theme);
@@ -203,9 +176,10 @@ function AppShell() {
     setStaticTabs(PAGES.map((p) => ({ id: p.id, label: p.label })));
   }, []);
 
-  // Keep the registry's active tab current.
+  // Keep the registry's active tab current. The admin `users` page is not an agent
+  // tab, so report `library` while it is open rather than an unknown tab id.
   useEffect(() => {
-    setActiveTab(page);
+    setActiveTab(page === 'users' ? 'library' : page);
   }, [page]);
 
   // --- app-global anchors -------------------------------------------------------------
@@ -215,7 +189,9 @@ function AppShell() {
     label: 'Navigation tab',
     description: 'The active top-level tab. Invoke with action "navigate" and args { tab }.',
     actions: ['navigate'],
-    getState: () => page,
+    // Never surface the admin-only `users` page to the agent: report a real agent
+    // tab instead so account management stays outside the assistant's reach.
+    getState: () => (page === 'users' ? 'library' : page),
     invoke: (_action, args) => {
       const tab = args?.tab;
       if (tab === 'library' || tab === 'stats' || tab === 'ranking') {
@@ -272,6 +248,11 @@ function AppShell() {
               <span>{p.label}</span>
             </button>
           ))}
+          {/* Account lives in the bottom tab bar on phones only; the top-bar
+              avatar covers it on wider screens. */}
+          <span className="app-nav-account">
+            <UserMenu variant="tab" active={page === 'users'} onOpenUsers={() => setPage('users')} />
+          </span>
         </nav>
 
         <div className="app-bar-actions">
@@ -289,6 +270,10 @@ function AppShell() {
             aria-label="Settings"
             onClick={() => setSettingsOpen(true)}
           />
+          {/* Desktop top-bar account control (hidden on phones). */}
+          <span className="app-bar-account">
+            <UserMenu variant="bar" onOpenUsers={() => setPage('users')} />
+          </span>
         </div>
       </header>
 
@@ -298,6 +283,7 @@ function AppShell() {
         {page === 'favourites' && <Favourites />}
         {page === 'stats' && <Stats />}
         {page === 'ranking' && <Ranking />}
+        {page === 'users' && user?.is_admin && <UsersPage />}
       </main>
 
       <SettingsSidebar visible={settingsOpen} onHide={() => setSettingsOpen(false)} />

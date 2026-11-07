@@ -81,6 +81,42 @@ A small client wrapper subscribes to the backend's SSE/WebSocket agent stream an
 AG-UI/A2UI events into Redux, so agent-driven UI changes flow through the same state as user-driven
 ones. Reconnect/backoff handled in a `useServerStatus`-style hook.
 
+## Accounts & login (`frontend/src/auth/`)
+
+Login, setup and account management are implemented against the contract in
+[features/auth.md](features/auth.md). Key points:
+
+- **`services/api.ts`** sends `credentials: 'same-origin'` and header `X-Shelfie-Client: web`
+  on **every** request (the raw-`fetch` paths — cover upload and the chat SSE stream — do too),
+  so the session cookie rides along and the backend's CSRF check passes. A central 401 handler
+  (`onUnauthorized`) notifies the auth layer; the one exception is the `GET /api/auth/me` probe,
+  which opts out (`silent401`) so "not logged in" is a normal startup answer, not a redirect.
+  WebSocket/voice URLs are unchanged — the cookie is sent automatically on the same origin.
+- **`AuthProvider` + `useAuth`** (`me`, `login`, `logout`, `changePassword`, `setUser`) load the
+  current user once at startup; **`AuthGate`** shows a neutral splash while loading, the
+  `LoginPage` when logged out, the `SetupPasswordPage` on `/setup?token=…` (public), and the app
+  once authenticated. A 401 drops back to login and the SPA keeps its in-app route, so the person
+  returns to where they were after signing in. There is no router dependency — the gate reads
+  `window.location` for the one `/setup` path and the app keeps tab state internally.
+- **Theme bootstrap** moved to `src/theme.ts` and runs in `main.tsx` **before first paint**, so the
+  login and setup screens already carry the light dashboard look and the PrimeReact theme CSS
+  (previously the theme was only applied inside the authenticated shell).
+- **User menu** (`UserMenu`): display name, Change password, Users (admin only), Log out — a
+  top-bar avatar on desktop, a bottom-tab-bar entry on phones.
+- **Users page** (`UsersPage`, admin only): a DataTable on desktop/landscape and a card list at
+  tablet-portrait and phone widths (no clipped action column); "Add person" returns a one-time
+  setup link shown with a Copy button and expiry (`SetupLinkBox`); per-row "New link" and
+  "Disable/Enable" (the latter behind a confirm; the last active admin's Disable is locked).
+- **UI-agent exclusion.** The auth screens register **no** agent anchors, the admin `users` page is
+  **not** an agent tab (absent from the static tab list and the `nav.tab` anchor state), so the
+  assistant can never log anyone in/out or manage accounts. The existing UI agent and the global
+  mic keep working after login (verified by the anchor-coverage guard in `App.test.tsx`).
+- Shared auth primitives live in `frontend/src/ui/` (`AuthCard`, `AuthField`, `AuthMessage`) and
+  are reused by login, setup and the change-password dialog; spacing is `:root` tokens throughout.
+
+A **dev-only** `vite.dev-mock.config.ts` mounts an in-memory mock of the auth API for local
+preview/screenshots — it is never used by `vite build` and ships nothing.
+
 ## Build & gate
 
 `just check-frontend` runs `tsc` typecheck → vitest → `vite build`. The build output

@@ -40,7 +40,12 @@ vi.mock('./components/MicButton', async () => {
 
 vi.mock('./services/api', () => ({
   ApiError: class ApiError extends Error {},
+  onUnauthorized: () => () => {},
   api: {
+    me: vi.fn(async () => ({ id: 1, email: 'admin@shelfie.app', display_name: 'Admin', is_admin: true })),
+    logout: vi.fn(async () => undefined),
+    changePassword: vi.fn(async () => undefined),
+    listUsers: vi.fn(async () => []),
     listBooks: vi.fn(async () => BOOKS),
     updateBook: vi.fn(async () => BOOKS[0]),
     deleteBook: vi.fn(async () => undefined),
@@ -63,6 +68,17 @@ vi.mock('./services/api', () => ({
 
 // eslint-disable-next-line import/first
 import App from './App';
+// eslint-disable-next-line import/first
+import { AuthProvider } from './auth';
+
+/** Render the app wrapped in the auth provider (authenticated via the api mock). */
+function renderApp() {
+  return render(
+    <AuthProvider>
+      <App />
+    </AuthProvider>,
+  );
+}
 
 function ctrlM() {
   fireEvent.keyDown(window, { key: 'm', ctrlKey: true });
@@ -80,7 +96,7 @@ afterEach(() => cleanup());
 
 describe('Ctrl+M routing', () => {
   it('toggles the GLOBAL mic when the chat panel is closed', async () => {
-    render(<App />);
+    renderApp();
     await waitFor(() => expect(screen.getByTestId('mic-global')).toBeTruthy());
     // Panel is closed on first render, so the chat mic is not even mounted.
     expect(screen.queryByTestId('mic-chat')).toBeNull();
@@ -92,7 +108,7 @@ describe('Ctrl+M routing', () => {
   });
 
   it('toggles the CHAT mic when the chat panel is open', async () => {
-    render(<App />);
+    renderApp();
     await waitFor(() => expect(screen.getByTestId('mic-global')).toBeTruthy());
 
     // Open the chat via its FAB.
@@ -107,3 +123,4 @@ describe('Ctrl+M routing', () => {
     expect(toggles.global).not.toHaveBeenCalled();
   });
 });
+

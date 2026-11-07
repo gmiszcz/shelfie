@@ -22,3 +22,12 @@ export { Sparkline } from './Sparkline';
 export type { SparklineProps } from './Sparkline';
 export { Pill } from './Pill';
 export type { PillProps, PillTone } from './Pill';
+
+// Auth screen primitives (login, setup, change-password). Shared so the auth
+// screens never re-implement the card, field, or inline message.
+export { AuthCard } from './AuthCard';
+export type { AuthCardProps } from './AuthCard';
+export { AuthField } from './AuthField';
+export type { AuthFieldProps } from './AuthField';
+export { AuthMessage } from './AuthMessage';
+export type { AuthMessageProps } from './AuthMessage';

@@ -1,0 +1,60 @@
+.auth-splash {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--big-gap);
+}
+
+.auth-splash-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--app-text);
+}
+
+.auth-splash-brand i {
+  color: var(--app-accent);
+  font-size: 1.7rem;
+}
+
+/* A thin track with a traveling highlight — calmer than a spinner. */
+.auth-splash-bar {
+  position: relative;
+  width: 7rem;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--app-border);
+  overflow: hidden;
+}
+
+.auth-splash-bar span {
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  border-radius: var(--radius-pill);
+  background: var(--app-accent);
+  animation: auth-splash-travel 1.1s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+@keyframes auth-splash-travel {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-splash-bar span {
+    animation: none;
+    width: 100%;
+    opacity: 0.6;
+  }
+}
