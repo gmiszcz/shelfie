@@ -24,7 +24,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from app.config import get_settings
+from app.userdata import current_dataset_file
 from scripts import _dataio
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ _SYNCABLE = ("series", "volume")
 
 
 def _dataset_file() -> Path:
-    return get_settings().dataset_file
+    return current_dataset_file()
 
 
 def _norm(text: str | None) -> str:

@@ -33,6 +33,7 @@ from app.repositories.books import row_to_book
 from app.schemas.books import Book, BookCreate, BookInsights, BookUpdate
 from app.services import books as books_service
 from app.services import stats as stats_service
+from app.userdata import current_database_file
 
 MAX_LIMIT = 50
 
@@ -41,7 +42,7 @@ BULK_CONFIRM_THRESHOLD = 3
 
 
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(get_settings().database_file)
+    conn = sqlite3.connect(current_database_file())
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -139,7 +140,7 @@ def _run(coro: Any) -> Any:
 
 
 async def _with_conn(func: Any) -> Any:
-    conn = await connect(get_settings().database_file)
+    conn = await connect(current_database_file())
     try:
         return await func(conn)
     finally:

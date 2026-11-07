@@ -160,3 +160,61 @@ def match_db_id(record: dict[str, Any], index: dict[str, Any]) -> int | None:
         return index["by_ext"][ext]
     key = f"{_norm(record.get('title'))}\u0000{_authors_key(record.get('authors'))}"
     return index["by_title_authors"].get(key)
+
+
+# --- per-user path resolution (wave 5 accounts) -----------------------------------------
+
+from dataclasses import dataclass  # noqa: E402
+
+
+@dataclass(frozen=True)
+class UserPaths:
+    """The per-user data layout used by the maintenance scripts (``--user``)."""
+
+    user_id: int
+    data_dir: Path
+    db_file: Path
+    dataset_file: Path
+    covers_dir: Path
+
+
+def _resolve_user_id(data_dir: Path, user: str) -> int:
+    """Map a ``--user`` (numeric id or e-mail) to a user id using ``data/auth.sqlite``.
+
+    A bare integer is taken as the id directly (so the scripts work before/without the auth
+    DB). An e-mail is looked up in the auth DB; a missing DB or e-mail raises ``SystemExit``.
+    """
+    text = (user or "").strip()
+    if text.isdigit():
+        return int(text)
+    auth_db = data_dir / "auth.sqlite"
+    if not auth_db.is_file():
+        raise SystemExit(f"--user {user!r} is an e-mail but {auth_db} does not exist")
+    conn = sqlite3.connect(auth_db)
+    try:
+        row = conn.execute("SELECT id FROM users WHERE email = ?", (text.lower(),)).fetchone()
+    except sqlite3.Error as exc:
+        raise SystemExit(f"could not read {auth_db}: {exc}") from exc
+    finally:
+        conn.close()
+    if row is None:
+        raise SystemExit(f"no user with e-mail {user!r} in {auth_db}")
+    return int(row[0])
+
+
+def resolve_user_paths(root: Path, user: str = "1") -> UserPaths:
+    """Resolve the ``data/users/<id>/`` paths for ``--user`` under a checkout ``root``.
+
+    ``user`` is a numeric id or an e-mail (resolved via ``data/auth.sqlite``). Defaults to
+    the first admin (id 1), matching the single-admin bootstrap.
+    """
+    data_dir = root / "data"
+    user_id = _resolve_user_id(data_dir, user)
+    user_root = data_dir / "users" / str(user_id)
+    return UserPaths(
+        user_id=user_id,
+        data_dir=data_dir,
+        db_file=user_root / "shelfie.sqlite",
+        dataset_file=user_root / "books.json",
+        covers_dir=user_root / "covers",
+    )

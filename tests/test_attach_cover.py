@@ -16,9 +16,15 @@ TINY = b"\x89PNG\r\n\x1a\n" + b"\x00" * 10
 
 
 def _seed_live(tmp_path: Path) -> Path:
-    """Create root/data with a books.json and a schema-correct sqlite DB (one book needs a cover)."""
+    """Create root/data/users/1 with a books.json and a schema-correct sqlite DB.
+
+    Since wave 5 the scripts resolve per-user paths (``--user``, default id 1); the library
+    lives under ``data/users/<id>/``. The auth DB is absent, so a numeric ``--user`` resolves
+    directly without a lookup.
+    """
     data = tmp_path / "data"
-    data.mkdir()
+    user_dir = data / "users" / "1"
+    user_dir.mkdir(parents=True)
     books = [
         {
             "external_id": "21357301",
@@ -38,10 +44,10 @@ def _seed_live(tmp_path: Path) -> Path:
             "cover_url": "https://example/x.jpg",
         },
     ]
-    (data / "books.json").write_text(
+    (user_dir / "books.json").write_text(
         json.dumps({"version": 1, "books": books}, ensure_ascii=False), encoding="utf-8"
     )
-    db = data / "shelfie.sqlite"
+    db = user_dir / "shelfie.sqlite"
     conn = sqlite3.connect(db)
     conn.execute(
         "CREATE TABLE books (id INTEGER PRIMARY KEY, user_id INTEGER, google_volume_id TEXT, "
@@ -76,13 +82,13 @@ def test_attach_writes_both_stores(tmp_path: Path) -> None:
         )
     assert rc == 0
 
-    payload = json.loads((root / "data" / "books.json").read_text(encoding="utf-8"))
+    payload = json.loads((root / "data" / "users" / "1" / "books.json").read_text(encoding="utf-8"))
     book = next(b for b in payload["books"] if b["external_id"] == "21357301")
     assert book["cover_url"].startswith("/api/covers/")
     name = book["cover_url"].rsplit("/", 1)[1]
-    assert (root / "data" / "covers" / name).read_bytes() == PNG
+    assert (root / "data" / "users" / "1" / "covers" / name).read_bytes() == PNG
 
-    conn = sqlite3.connect(root / "data" / "shelfie.sqlite")
+    conn = sqlite3.connect(root / "data" / "users" / "1" / "shelfie.sqlite")
     row = conn.execute("SELECT cover_url FROM books WHERE id = 3").fetchone()
     assert row[0] == book["cover_url"]
     # Comparison log untouched.
@@ -92,7 +98,7 @@ def test_attach_writes_both_stores(tmp_path: Path) -> None:
 
 def test_attach_rejects_non_image(tmp_path: Path) -> None:
     root = _seed_live(tmp_path)
-    before = (root / "data" / "books.json").read_text(encoding="utf-8")
+    before = (root / "data" / "users" / "1" / "books.json").read_text(encoding="utf-8")
 
     def handler(req: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -105,7 +111,7 @@ def test_attach_rejects_non_image(tmp_path: Path) -> None:
         )
     assert rc == 3
     # Nothing written, no backup created.
-    assert (root / "data" / "books.json").read_text(encoding="utf-8") == before
+    assert (root / "data" / "users" / "1" / "books.json").read_text(encoding="utf-8") == before
     assert not list((root / "data").glob("backup-wave4-*"))
 
 
@@ -124,7 +130,7 @@ def test_attach_rejects_tiny_placeholder(tmp_path: Path) -> None:
 
 def test_attach_dry_run_writes_nothing(tmp_path: Path) -> None:
     root = _seed_live(tmp_path)
-    before = (root / "data" / "books.json").read_text(encoding="utf-8")
+    before = (root / "data" / "users" / "1" / "books.json").read_text(encoding="utf-8")
 
     def handler(req: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=PNG, headers={"Content-Type": "image/png"})
@@ -134,7 +140,7 @@ def test_attach_dry_run_writes_nothing(tmp_path: Path) -> None:
             root, "21357301", "https://shop.example/cover.jpg", dry_run=True, client=c
         )
     assert rc == 0
-    assert (root / "data" / "books.json").read_text(encoding="utf-8") == before
+    assert (root / "data" / "users" / "1" / "books.json").read_text(encoding="utf-8") == before
     assert not list((root / "data").glob("backup-wave4-*"))
 
 
@@ -159,6 +165,6 @@ def test_attach_skips_book_with_existing_cover(tmp_path: Path) -> None:
         rc = attach_cover.attach(root, "999", "https://x/y.jpg", dry_run=False, client=c)
     assert rc == 0
     # The existing cover is unchanged.
-    payload = json.loads((root / "data" / "books.json").read_text(encoding="utf-8"))
+    payload = json.loads((root / "data" / "users" / "1" / "books.json").read_text(encoding="utf-8"))
     book = next(b for b in payload["books"] if b["external_id"] == "999")
     assert book["cover_url"] == "https://example/x.jpg"

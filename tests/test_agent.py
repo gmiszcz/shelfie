@@ -14,7 +14,6 @@ from strands_compose.types import StreamEvent
 from app.agent import tools
 from app.agent.engine import ChatEngine, ChatSession
 from app.api.deps import chat_engine
-from app.config import Settings
 from app.main import app
 
 
@@ -91,7 +90,7 @@ def _engine(fail: bool = False) -> tuple[ChatEngine, list[FakeEntry]]:
 
 async def test_stream_maps_events_in_order() -> None:
     engine, _ = _engine()
-    events = [e async for e in engine.stream("What did I read?", "abc")]
+    events = [e async for e in engine.stream(1, "What did I read?", "abc")]
     # tool_start now expands to a TOOL_CALL_START + TOOL_CALL_ARGS pair (AG-UI).
     assert [e["type"] for e in events] == [
         "session_start",
@@ -128,17 +127,17 @@ async def test_stream_maps_events_in_order() -> None:
 
 async def test_session_is_reused_and_reset() -> None:
     engine, created = _engine()
-    [e async for e in engine.stream("one", "s1")]
-    [e async for e in engine.stream("two", "s1")]
+    [e async for e in engine.stream(1, "one", "s1")]
+    [e async for e in engine.stream(1, "two", "s1")]
     assert len(created) == 1 and created[0].prompts == ["one", "two"]
-    assert engine.reset("s1") is True
-    [e async for e in engine.stream("three", "s1")]
+    assert engine.reset(1, "s1") is True
+    [e async for e in engine.stream(1, "three", "s1")]
     assert len(created) == 2
 
 
 async def test_agent_failure_becomes_error_then_finish() -> None:
     engine, _ = _engine(fail=True)
-    events = [e async for e in engine.stream("hi", "s")]
+    events = [e async for e in engine.stream(1, "hi", "s")]
     assert events[-2]["type"] == "error" and "bedrock down" in events[-2]["message"]
     assert events[-1]["type"] == "session_finish" and events[-1]["ok"] is False
 
@@ -163,7 +162,7 @@ def test_chat_rejects_bad_session_id(client: TestClient) -> None:
 
 
 @pytest.fixture
-def library_db(client: TestClient, db_file: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def library_db(client: TestClient, test_user_data: Any, db_file: Path) -> Path:
     for i, (title, author, finished) in enumerate(
         [
             ("Droga Szamana", "Wasilij Machanienko", "2020-09-25"),
@@ -180,7 +179,9 @@ def library_db(client: TestClient, db_file: Path, monkeypatch: pytest.MonkeyPatc
             "google_volume_id": f"v{i}",
         }
         assert client.post("/api/books", json=body).status_code == 201
-    monkeypatch.setattr(tools, "get_settings", lambda: Settings(db_path=str(db_file)))
+    from app.userdata import set_current_user_data
+
+    set_current_user_data(test_user_data)
     return db_file
 
 

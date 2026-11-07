@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config import get_settings
+from app.userdata import UserData
 
 
 def _add(client: TestClient, **fields: object) -> int:
@@ -24,19 +24,15 @@ def _add(client: TestClient, **fields: object) -> int:
 
 
 @pytest.fixture
-def dataset(tmp_path: Path):
-    """A temp books.json wired into the live settings, so the mirror writes there.
+def dataset(test_user_data: UserData):
+    """The current user's books.json, so the mirror writes there.
 
-    ``get_settings`` is lru-cached and ``books_json`` reads ``get_settings().dataset_file``,
-    so mutating the cached instance's ``dataset_path`` is enough to redirect the mirror.
+    The books.json mirror resolves ``current_dataset_file()`` from the per-user data
+    context, which the logged-in ``client`` fixture sets to ``test_user_data.dataset_file``.
     """
-    path = tmp_path / "books.json"
+    path = test_user_data.dataset_file
     path.write_text(json.dumps({"version": 1, "books": []}, ensure_ascii=False), encoding="utf-8")
-    settings = get_settings()
-    original = settings.dataset_path
-    settings.dataset_path = str(path)
-    yield path, settings
-    settings.dataset_path = original
+    yield path, None
 
 
 def _json_record(path: Path, title: str) -> dict:

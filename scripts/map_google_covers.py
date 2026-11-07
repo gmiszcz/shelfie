@@ -20,14 +20,24 @@ from pathlib import Path
 import httpx
 
 ROOT = Path(__file__).resolve().parents[1]
-KEY = next(
-    (
-        line.split("=", 1)[1].strip()
-        for line in (ROOT / ".env").read_text(encoding="utf-8").splitlines()
-        if line.startswith("GOOGLE_BOOKS_API_KEY=")
-    ),
-    "",
-)
+
+
+def _read_api_key(root: Path) -> str:
+    """Read GOOGLE_BOOKS_API_KEY from the checkout's .env, tolerating a missing file."""
+    env = root / ".env"
+    if not env.is_file():
+        return ""
+    return next(
+        (
+            line.split("=", 1)[1].strip()
+            for line in env.read_text(encoding="utf-8").splitlines()
+            if line.startswith("GOOGLE_BOOKS_API_KEY=")
+        ),
+        "",
+    )
+
+
+KEY = _read_api_key(ROOT)
 
 
 def norm(s: str | None) -> str:
@@ -124,10 +134,28 @@ def best_cover(book: dict) -> tuple[str, str] | None:
 
 
 def main() -> None:
-    apply = "--apply" in sys.argv
-    books = json.loads((ROOT / "data" / "books.json").read_text(encoding="utf-8"))["books"]
+    import argparse
+
+    from scripts import _dataio
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--apply", action="store_true", help="Attach the found covers")
+    parser.add_argument("--root", default=str(ROOT), help="Checkout root (default: this repo)")
+    parser.add_argument(
+        "--user",
+        default="1",
+        help="User id or e-mail whose library to map (default: 1, the first admin)",
+    )
+    args = parser.parse_args()
+
+    root = Path(args.root)
+    paths = _dataio.resolve_user_paths(root, args.user)
+    if not paths.dataset_file.is_file():
+        raise SystemExit(f"no dataset for user {paths.user_id} at {paths.dataset_file}")
+
+    books = json.loads(paths.dataset_file.read_text(encoding="utf-8"))["books"]
     missing = [b for b in books if not b.get("cover_url")]
-    print(f"missing: {len(missing)}")
+    print(f"user {paths.user_id}: missing {len(missing)}")
     found = 0
     for b in missing:
         hit = best_cover(b)
@@ -137,7 +165,7 @@ def main() -> None:
             continue
         found += 1
         print(f"OK   {label}  ->  {hit[1]}")
-        if apply:
+        if args.apply:
             res = subprocess.run(
                 [
                     sys.executable,
@@ -148,7 +176,9 @@ def main() -> None:
                     "--url",
                     hit[0],
                     "--root",
-                    str(ROOT),
+                    str(root),
+                    "--user",
+                    str(paths.user_id),
                 ],
                 cwd=ROOT,
                 capture_output=True,

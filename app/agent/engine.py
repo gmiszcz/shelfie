@@ -84,25 +84,35 @@ class ChatEngine:
         ]:
             del self._sessions[sid]
         while len(self._sessions) >= self._max_sessions:
-            oldest = min(self._sessions.values(), key=lambda s: s.last_used)
-            del self._sessions[oldest.session_id]
+            oldest_key = min(self._sessions, key=lambda k: self._sessions[k].last_used)
+            del self._sessions[oldest_key]
 
-    def session(self, session_id: str | None) -> ChatSession:
-        if session_id and session_id in self._sessions:
-            found = self._sessions[session_id]
+    def session(self, user_id: int, session_id: str | None) -> ChatSession:
+        key = self._key(user_id, session_id) if session_id else None
+        if key and key in self._sessions:
+            found = self._sessions[key]
             found.last_used = time.monotonic()
             return found
         self._evict()
         sid = session_id or uuid.uuid4().hex
         created = self._factory(sid)
-        self._sessions[sid] = created
+        self._sessions[self._key(user_id, sid)] = created
         return created
 
-    def reset(self, session_id: str) -> bool:
-        return self._sessions.pop(session_id, None) is not None
+    @staticmethod
+    def _key(user_id: int, session_id: str) -> str:
+        """Internal dict key: a chat session belongs to exactly one user.
+
+        The client-facing id stays ``session_id`` (``ChatSession.session_id``); the user id
+        is folded into the storage key so user A can never load user B's chat session.
+        """
+        return f"{user_id}:{session_id}"
+
+    def reset(self, user_id: int, session_id: str) -> bool:
+        return self._sessions.pop(self._key(user_id, session_id), None) is not None
 
     async def stream(
-        self, message: str, session_id: str | None, scope: str = "library"
+        self, user_id: int, message: str, session_id: str | None, scope: str = "library"
     ) -> AsyncIterator[dict[str, Any]]:
         """Run one chat turn and yield AG-UI-annotated wire events.
 
@@ -112,8 +122,11 @@ class ChatEngine:
         SSE route and is ignored: there is no longer a UI-control scope wired here.
         Every yielded event keeps its backward-compatible ``type`` and carries the
         canonical AG-UI name in ``agui`` (see :mod:`app.agent.agui`).
+
+        Sessions are keyed by ``(user_id, session_id)``: one user can never load
+        another user's chat session.
         """
-        chat = self.session(session_id)
+        chat = self.session(user_id, session_id)
         async with chat.lock:
             chat.queue.flush()
             chat.queue.emit_session_start(chat.manifest)

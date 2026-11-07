@@ -25,9 +25,13 @@ from collections.abc import AsyncIterator, Callable
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from app import authdb
 from app.config import get_settings
+from app.services import auth_service
 from app.services import transcribe as svc
+from app.services.auth_service import SESSION_COOKIE
 from app.services.transcribe import TranscribeStreamer
+from app.userdata import UserData, set_current_user_data
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +53,48 @@ def _build_streamer() -> TranscribeStreamer:
     return svc.AwsTranscribeStreamer(get_settings().aws_region)
 
 
+# Overridable seam for the handshake auth. Returns the authenticated user and sets the
+# per-user data context, or None to reject. Tests (the logged-in ``client`` fixture) install
+# a stub that returns the test user without a real session; production uses the cookie flow.
+_ws_authenticator: Callable[[WebSocket], object] | None = None
+
+
+def set_ws_authenticator(func: Callable[[WebSocket], object] | None) -> None:
+    global _ws_authenticator
+    _ws_authenticator = func
+
+
+async def _authenticate_ws(ws: WebSocket) -> object | None:
+    """Resolve the session cookie to a user and set the per-user data context.
+
+    Returns the user (truthy) on success, ``None`` when the cookie is missing/invalid.
+    """
+    if _ws_authenticator is not None:
+        return _ws_authenticator(ws)
+    settings = get_settings()
+    token = ws.cookies.get(SESSION_COOKIE)
+    auth_conn = await authdb.connect(settings.auth_database_file)
+    try:
+        user = await auth_service.resolve_session(auth_conn, settings, token)
+    finally:
+        await auth_conn.close()
+    if user is None:
+        return None
+    user_data = UserData.for_user(settings.data_path, user.id)
+    user_data.ensure_dirs()
+    set_current_user_data(user_data)
+    return user
+
+
 @router.websocket("/stream")
 async def transcribe_stream(ws: WebSocket) -> None:
+    # WebSocket handshake auth: the session cookie must resolve to an active user, or we
+    # close with 4401 before accepting (docs/features/auth.md). Sets the per-user context.
+    user = await _authenticate_ws(ws)
+    if not user:
+        await ws.close(code=4401)
+        return
+
     await ws.accept()
 
     audio: asyncio.Queue[bytes | None] = asyncio.Queue()

@@ -134,3 +134,35 @@ users) take `--user <email or id>` and resolve the per-user paths.
 - Google sign-in (table `auth_identities` is ready).
 - Sharing books between users.
 - E-mail delivery of setup links (the admin copies the link).
+
+## Implementation notes (backend)
+
+The API shape above is implemented exactly. A few details the contract left open were
+resolved as follows; none change the request/response shape:
+
+- **Modules.** The shared auth database lives in `app/authdb.py` (schema + data access) and
+  `app/services/auth_service.py` (login, sessions, setup links, provisioning, last-admin
+  protection). Password hashing and tokens are in `app/security.py` (argon2id via
+  `argon2-cffi`; only SHA-256 token hashes are stored). Per-user path resolution is
+  `app/userdata.py`: a `UserData` dataclass plus a `contextvars.ContextVar`. The request sets
+  the context in the `current_user` dependency (`app/api/deps.py`); background tasks and the
+  CLI capture a `UserData` and set the context explicitly; a missing context raises
+  `NoUserContext` (no silent global default). CSRF lives in `app/api/middleware.py`.
+- **E-mail validation.** Bodies use a dependency-free regex validator rather than Pydantic's
+  `EmailStr`, to avoid adding the `email-validator` runtime dependency for one check. E-mails
+  are still stored lower-cased and trimmed.
+- **Status codes not pinned by the contract.** Wrong current password on
+  `POST /api/auth/password` → `400`; a weak new password → `422`; admin creating a duplicate
+  e-mail → `409`; last-admin protection → `409`.
+- **Disabled users.** A disabled account fails login with the same generic
+  `401` message (no account-existence leak) and its live sessions are revoked when it is
+  disabled.
+- **Covers** are served through `GET /api/covers/{name}`, which now requires a session and
+  reads only the current user's `covers/` folder (name-validated, path-contained).
+- **Chat sessions** are keyed `(user_id, session_id)` in the engine; the client-facing
+  `session_id` is unchanged.
+- **Bootstrap** (`app.cli users bootstrap`) backs up `data/` to `data/backup-auth-<ts>/`,
+  creates admin id 1, moves the legacy library into `data/users/1/`, asserts the row counts of
+  `books` / `comparisons` / `series_info` / `expected_books` are unchanged, prints a setup link
+  (origin default `http://127.0.0.1:5174`), and refuses to run twice. See
+  [cli.md](cli.md).

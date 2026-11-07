@@ -18,6 +18,7 @@ from app.schemas.series import (
     SeriesSummary,
 )
 from app.services import series_service as service
+from app.userdata import get_current_user_data
 
 router = APIRouter(prefix="/series", tags=["series"])
 
@@ -59,7 +60,9 @@ async def check_series(
     user_id: CurrentUser, conn: DbConn, settings: AppSettings
 ) -> SeriesCheckResult:
     """Re-check every watched series now (manual trigger of the periodic checker)."""
-    return await service.check_watched_series(settings=settings)
+    return await service.check_watched_series(
+        settings=settings, user_id=user_id, user_data=get_current_user_data()
+    )
 
 
 @router.get("/{series_key}", response_model=SeriesSummary)
@@ -104,7 +107,11 @@ async def patch_series(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Series not found")
     if data.watch is True:
         background.add_task(
-            service.research_series_releases, user_id, summary.series_key, settings=settings
+            service.research_series_releases,
+            user_id,
+            summary.series_key,
+            settings=settings,
+            user_data=get_current_user_data(),
         )
     return summary
 
@@ -197,6 +204,10 @@ async def refresh_series(
     if summary is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Series not found")
     background.add_task(
-        service.research_series_releases, user_id, summary.series_key, settings=settings
+        service.research_series_releases,
+        user_id,
+        summary.series_key,
+        settings=settings,
+        user_data=get_current_user_data(),
     )
     return summary

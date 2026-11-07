@@ -10,7 +10,7 @@ from fastapi import APIRouter, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.api.deps import Chat, CurrentUser
+from app.api.deps import Chat, CurrentAuthUser
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -23,10 +23,10 @@ class ChatIn(BaseModel):
 
 
 @router.post("/chat")
-async def chat(data: ChatIn, engine: Chat, _user: CurrentUser) -> StreamingResponse:
+async def chat(data: ChatIn, engine: Chat, user: CurrentAuthUser) -> StreamingResponse:
     async def events() -> AsyncIterator[str]:
         try:
-            async for event in engine.stream(data.message, data.session_id, data.scope):
+            async for event in engine.stream(user.id, data.message, data.session_id, data.scope):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as exc:  # noqa: BLE001 - e.g. missing AWS credentials at session load
             yield (
@@ -46,5 +46,5 @@ async def chat(data: ChatIn, engine: Chat, _user: CurrentUser) -> StreamingRespo
 
 
 @router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def reset_session(session_id: str, engine: Chat, _user: CurrentUser) -> None:
-    engine.reset(session_id)
+async def reset_session(session_id: str, engine: Chat, user: CurrentAuthUser) -> None:
+    engine.reset(user.id, session_id)

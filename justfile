@@ -72,6 +72,29 @@ fix-series *args:
 check-series:
     uv run --no-sync python -m scripts.check_series
 
+# --- Accounts (wave 5). See docs/features/cli.md. ---
+
+# One-time migration to the per-user layout: backup data/, create admin id 1, move the
+# legacy library into data/users/1/, verify counts, print a setup link. Refuses to run twice.
+users-bootstrap email name origin="http://127.0.0.1:5174":
+    uv run --no-sync python -m app.cli users bootstrap --email "{{email}}" --name "{{name}}" --origin "{{origin}}"
+
+# Create a user with an empty library and print a setup link.
+users-add email name origin="http://127.0.0.1:5174":
+    uv run --no-sync python -m app.cli users add --email "{{email}}" --name "{{name}}" --origin "{{origin}}"
+
+# Print a new setup/reset link for a user (invalidates older unused links).
+users-setup-link email origin="http://127.0.0.1:5174":
+    uv run --no-sync python -m app.cli users setup-link --email "{{email}}" --origin "{{origin}}"
+
+# List accounts.
+users-list:
+    uv run --no-sync python -m app.cli users list
+
+# Run the watched-series check for every active user (the daily cron calls this).
+series-check-all-users:
+    uv run --no-sync python -m app.cli series check --all-users
+
 # Build the production frontend bundle
 build:
     npm --prefix frontend run build
