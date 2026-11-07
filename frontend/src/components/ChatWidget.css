@@ -284,15 +284,24 @@
   max-height: 8rem;
 }
 
-/* --- wave 2: UI-control scope toggle, action cards, voice input ---------- */
+/* --- wave 3: Library vs UI agent mode switch, action cards, voice input --- */
 
-.chat-scope-toggle {
+.chat-mode-switch {
+  display: flex;
+  gap: 0.35rem;
+  padding: var(--small-padding) var(--big-padding);
+  background: var(--app-surface-2);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.chat-mode-btn {
+  flex: 1 1 0;
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.2rem 0.55rem;
-  margin-right: 0.25rem;
-  font-size: 0.72rem;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.78rem;
   font-weight: 600;
   line-height: 1;
   border-radius: 999px;
@@ -300,15 +309,19 @@
   background: transparent;
   color: var(--app-text-muted, inherit);
   cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
-.chat-scope-toggle.ui {
+.chat-mode-btn.active {
   border-color: var(--app-accent);
   background: color-mix(in srgb, var(--app-accent) 18%, transparent);
   color: var(--app-accent);
 }
 
-.chat-scope-toggle:focus-visible {
+.chat-mode-btn:focus-visible {
   outline: 2px solid var(--app-accent);
   outline-offset: 1px;
 }
@@ -333,6 +346,15 @@
 
 .chat-ui-action .pi {
   color: var(--app-accent);
+}
+
+.chat-ui-action.error {
+  border-color: var(--red-400, #f87171);
+  background: color-mix(in srgb, #e5484d 10%, transparent);
+}
+
+.chat-ui-action.error .pi {
+  color: var(--red-400, #f87171);
 }
 
 .chat-voice-banner {

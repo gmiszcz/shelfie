@@ -27,6 +27,10 @@ export default defineConfig(({ mode }) => {
     test: {
       environment: 'jsdom',
       globals: true,
+      // jsdom suites are CPU-heavy; too many parallel workers starve the main
+      // process and vitest's worker RPC times out ("Timeout calling snapshotSaved").
+      maxWorkers: 4,
+      minWorkers: 1,
     },
   };
 });

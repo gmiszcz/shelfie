@@ -60,7 +60,7 @@ export interface ShelfieUiState {
 
 declare global {
   interface Window {
-    __shelfieUiState?: ShelfieUiState;
+    __shelfieUiState?: Partial<ShelfieUiState>;
   }
 }
 

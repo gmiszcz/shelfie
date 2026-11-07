@@ -11,14 +11,27 @@ function feed(state: ChatState, events: ChatEvent[]): ChatState {
   return events.reduce((s, event) => chatReducer(s, { type: 'event', event }), state);
 }
 
-describe('chatReducer', () => {
+describe('chatReducer — common', () => {
   it('send adds a user message and an empty streaming assistant message', () => {
     const state = send(initialChatState, 'Ile mam książek?');
     expect(state.messages).toHaveLength(2);
-    expect(state.messages[0]).toMatchObject({ role: 'user', text: 'Ile mam książek?', status: 'done' });
+    expect(state.messages[0]).toMatchObject({
+      role: 'user',
+      text: 'Ile mam książek?',
+      status: 'done',
+    });
     expect(state.messages[1]).toMatchObject({ role: 'assistant', text: '', status: 'streaming' });
   });
 
+  it('reset clears messages and session id', () => {
+    let state = send(initialChatState, 'hi');
+    state = feed(state, [{ type: 'session_start', session_id: 's' }]);
+    state = chatReducer(state, { type: 'reset' });
+    expect(state).toEqual(initialChatState);
+  });
+});
+
+describe('chatReducer — library agent (backend wire events)', () => {
   it('processes a full successful turn', () => {
     let state = send(initialChatState, 'hi');
     state = feed(state, [
@@ -72,65 +85,77 @@ describe('chatReducer', () => {
     expect(assistant.error).toBe('RuntimeError: boom');
   });
 
-  it('session_finish with ok=false marks the message as error even without an error event', () => {
+  it('session_finish ok=false marks error even without an error event', () => {
     let state = send(initialChatState, 'hi');
     state = feed(state, [{ type: 'session_finish', text: '', ok: false }]);
     expect(state.messages[1].status).toBe('error');
   });
+});
 
-  it('reset clears messages and session id', () => {
-    let state = send(initialChatState, 'hi');
-    state = feed(state, [{ type: 'session_start', session_id: 's' }]);
-    state = chatReducer(state, { type: 'reset' });
-    expect(state).toEqual(initialChatState);
-  });
-
-  it('records a UI tool call as a UI action, not a tool chip', () => {
+describe('chatReducer — UI agent (browser-side actions)', () => {
+  it('streams text deltas into the assistant message', () => {
     let state = send(initialChatState, 'pokaż serię');
-    state = feed(state, [
-      { type: 'tool_start', id: 'u1', name: 'filter_library', input: {}, ui_action: true },
-      { type: 'tool_args', id: 'u1', name: 'filter_library', input: { series: 'Droga Szamana' }, ui_action: true },
-      {
-        type: 'tool_end',
-        id: 'u1',
-        name: 'filter_library',
-        status: 'success',
-        input: { series: 'Droga Szamana' },
-        ui_action: true,
-      },
-    ]);
-    const assistant = state.messages[1];
-    expect(assistant.tools).toEqual([]);
-    expect(assistant.uiActions).toEqual([
-      {
-        id: 'u1',
-        detail: { action: 'filter_library', series: 'Droga Szamana' },
-        label: 'filtered library by series Droga Szamana',
-      },
-    ]);
+    state = chatReducer(state, { type: 'text_delta', text: 'Pokazuję ' });
+    state = chatReducer(state, { type: 'text_delta', text: '5 książek.' });
+    state = chatReducer(state, { type: 'finish', ok: true });
+    expect(state.messages[1].text).toBe('Pokazuję 5 książek.');
+    expect(state.messages[1].status).toBe('done');
   });
 
-  it('keeps a data tool chip alongside a UI action in the same turn', () => {
-    let state = send(initialChatState, 'pokaż książki z serii droga szamana');
-    state = feed(state, [
-      { type: 'tool_start', id: 't1', name: 'search_library', input: {} },
-      { type: 'tool_end', id: 't1', name: 'search_library', status: 'success' },
-      { type: 'tool_start', id: 'u1', name: 'filter_library', input: {}, ui_action: true },
+  it('records a running action then marks it successful', () => {
+    let state = send(initialChatState, 'pokaż serię');
+    state = chatReducer(state, {
+      type: 'action_start',
+      id: 'u1',
+      name: 'filter_library',
+      label: 'Filter library: series Droga Szamana',
+      args: { series: 'Droga Szamana' },
+    });
+    expect(state.messages[1].actions).toEqual([
       {
-        type: 'tool_end',
         id: 'u1',
         name: 'filter_library',
-        status: 'success',
-        input: { series: 'Droga Szamana' },
-        ui_action: true,
+        label: 'Filter library: series Droga Szamana',
+        args: { series: 'Droga Szamana' },
+        status: 'running',
       },
     ]);
-    const assistant = state.messages[1];
-    expect(assistant.tools).toEqual([{ id: 't1', name: 'search_library', status: 'success' }]);
-    expect(assistant.uiActions).toHaveLength(1);
-    expect(assistant.uiActions[0].detail).toEqual({
-      action: 'filter_library',
-      series: 'Droga Szamana',
+    state = chatReducer(state, { type: 'action_result', id: 'u1', ok: true });
+    expect(state.messages[1].actions[0].status).toBe('success');
+  });
+
+  it('marks an action as error when the tool failed', () => {
+    let state = send(initialChatState, 'otwórz książkę');
+    state = chatReducer(state, {
+      type: 'action_start',
+      id: 'u2',
+      name: 'open_book',
+      label: 'Open book #999',
+      args: { book_id: 999 },
     });
+    state = chatReducer(state, { type: 'action_result', id: 'u2', ok: false });
+    expect(state.messages[1].actions[0].status).toBe('error');
+  });
+
+  it('keeps data-tool chips empty for a UI-agent turn', () => {
+    let state = send(initialChatState, 'przejdź do rankingu');
+    state = chatReducer(state, {
+      type: 'action_start',
+      id: 'n1',
+      name: 'navigate',
+      label: 'Go to Ranking',
+      args: { tab: 'ranking' },
+    });
+    state = chatReducer(state, { type: 'action_result', id: 'n1', ok: true });
+    state = chatReducer(state, { type: 'finish', ok: true });
+    expect(state.messages[1].tools).toEqual([]);
+    expect(state.messages[1].actions).toHaveLength(1);
+  });
+
+  it('finish with ok=false records the error', () => {
+    let state = send(initialChatState, 'hi');
+    state = chatReducer(state, { type: 'finish', ok: false, error: 'did not finish' });
+    expect(state.messages[1].status).toBe('error');
+    expect(state.messages[1].error).toBe('did not finish');
   });
 });
