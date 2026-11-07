@@ -52,6 +52,30 @@ async def next_pair(
     return Pair(left=pair[0], right=pair[1])
 
 
+@router.get("/pairs", response_model=list[Pair])
+async def next_pairs(
+    user_id: CurrentUser,
+    conn: DbConn,
+    focus: int | None = None,
+    group: str | None = None,
+    count: int = 3,
+    skip: str = "",
+) -> list[Pair]:
+    """Up to ``count`` (max 5) distinct pairs for the client's prefetch queue.
+
+    ``skip`` is a comma-separated list of ``leftId-rightId`` pairs the client already holds.
+    """
+    skipped: set[tuple[int, int]] = set()
+    for token in skip.split(","):
+        left, _, right = token.partition("-")
+        if left.isdigit() and right.isdigit():
+            skipped.add((int(left), int(right)))
+    pairs = await ratings.suggest_pairs(
+        conn, user_id, focus, group, max(1, min(count, 5)), skipped
+    )
+    return [Pair(left=a, right=b) for a, b in pairs]
+
+
 @router.post("/compare", response_model=Pair)
 async def compare(data: ComparisonIn, user_id: CurrentUser, conn: DbConn) -> Pair:
     try:

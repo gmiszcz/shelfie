@@ -76,6 +76,48 @@ async def suggest_pair(
     return books[pair[0]], books[pair[1]]
 
 
+async def suggest_pairs(
+    conn: aiosqlite.Connection,
+    user_id: int,
+    focus: int | None,
+    group: str | None,
+    count: int,
+    skip: set[tuple[int, int]] | None = None,
+) -> list[tuple[Book, Book]]:
+    """Up to ``count`` distinct pairs from one model fit (for the ranking page's prefetch queue).
+
+    ``skip`` holds pairs the client already has queued, so a refill never repeats them.
+    Pairs already compared are avoided first, like :func:`suggest_pair`.
+    """
+    all_books = {b.id: b for b in await repo.list_books(conn, user_id) if b.stars is not None}
+    groups = {i: group_of(b) for i, b in all_books.items()}
+    books = (
+        {i: b for i, b in all_books.items() if groups[i] == group} if group is not None else all_books
+    )
+    star_map = {i: b.stars for i, b in books.items() if b.stars is not None}
+    comparisons = await repo.list_comparisons(conn, user_id)
+    scores = rating.fit(star_map, comparisons)
+    if focus is not None and focus not in scores:
+        focus = None
+    group_map = {i: groups[i] for i in scores}
+    queued = {tuple(sorted(p)) for p in (skip or set())}
+    asked = {tuple(sorted((left, right))) for left, right, _ in comparisons}
+
+    result: list[tuple[Book, Book]] = []
+    for avoid in (asked | queued, queued):
+        while len(result) < count:
+            taken = {tuple(sorted((a.id, b.id))) for a, b in result}
+            pair = rating.next_pair(
+                scores, star_map, focus=focus, exclude=avoid | taken, groups=group_map
+            )
+            if pair is None:
+                break
+            result.append((books[pair[0]], books[pair[1]]))
+        if len(result) >= count:
+            break
+    return result
+
+
 async def compare(
     conn: aiosqlite.Connection,
     user_id: int,

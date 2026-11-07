@@ -302,3 +302,22 @@ def test_score_filter_bounds(client: TestClient) -> None:
     # No bounds -> all three rated books returned.
     got = client.get("/api/books").json()
     assert {b["id"] for b in got} == {five, four_five, three}
+
+
+def test_pairs_returns_distinct_pairs_for_the_prefetch_queue(client: TestClient) -> None:
+    ids = [_add(client, f"F{i}", 5, f"pf{i}", shelves=["Fantasy"]) for i in range(4)]
+    pairs = client.get("/api/ratings/pairs?group=Fantasy&count=3").json()
+    assert len(pairs) == 3
+    keys = {tuple(sorted((p["left"]["id"], p["right"]["id"]))) for p in pairs}
+    assert len(keys) == 3
+    assert all(set(k) <= set(ids) for k in keys)
+
+
+def test_pairs_skips_pairs_the_client_already_holds(client: TestClient) -> None:
+    a = _add(client, "A", 5, "sa", shelves=["Fantasy"])
+    b = _add(client, "B", 5, "sb", shelves=["Fantasy"])
+    c = _add(client, "C", 5, "sc", shelves=["Fantasy"])
+    skip = f"{a}-{b},{b}-{c}"
+    pairs = client.get(f"/api/ratings/pairs?group=Fantasy&count=3&skip={skip}").json()
+    keys = {tuple(sorted((p["left"]["id"], p["right"]["id"]))) for p in pairs}
+    assert keys == {tuple(sorted((a, c)))}

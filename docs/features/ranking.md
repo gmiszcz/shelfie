@@ -68,3 +68,8 @@ through refs.
   `SearchInput` (and no longer the old `.rank-search` span), and the UI-bus
   `ranking` action fills/clears the box and acks correctly.
 - `frontend/src/ui/SearchInput.test.tsx` — the shared component itself.
+
+## Prefetch queue (no wait between comparisons)
+
+The ranking page keeps three pairs ready (`frontend/src/hooks/usePairQueue.ts`). A choice shows the next queued pair at once; the comparison is saved with `POST /api/ratings/compare` in the background, then the queue is refilled with `GET /api/ratings/pairs?count=N&skip=a-b,c-d` (one model fit, distinct pairs, skipping pairs still queued and, when possible, pairs already compared). The covers of queued pairs are preloaded. The ranking table refreshes once, 1.5 s after the last choice. Changing category or focus drops the queue and loads a fresh one.
+

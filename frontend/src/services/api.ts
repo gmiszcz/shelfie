@@ -126,6 +126,24 @@ export const api = {
     return pair ?? null;
   },
 
+  /** Up to `count` distinct pairs for the ranking prefetch queue; `skip` = pairs already queued. */
+  nextPairs: (
+    count: number,
+    opts: { focus?: number | null; group?: string | null; skip?: [number, number][] } = {},
+  ): Promise<RatingPair[]> => {
+    const params = new URLSearchParams({ count: String(count) });
+    if (opts.focus != null) {
+      params.set('focus', String(opts.focus));
+    }
+    if (opts.group != null) {
+      params.set('group', opts.group);
+    }
+    if (opts.skip?.length) {
+      params.set('skip', opts.skip.map(([a, b]) => `${a}-${b}`).join(','));
+    }
+    return request<RatingPair[]>(`/ratings/pairs?${params.toString()}`);
+  },
+
   compare: (leftId: number, rightId: number, winner: Winner, sessionId = 'manual') =>
     request<RatingPair>('/ratings/compare', {
       method: 'POST',

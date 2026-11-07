@@ -24,8 +24,9 @@ import {
   rankBooks,
   shelvesOf,
 } from '../ranking';
+import { usePairQueue } from '../hooks/usePairQueue';
 import { api } from '../services/api';
-import type { Book, RatingPair, Winner } from '../types';
+import type { Book, Winner } from '../types';
 import { BookCover, SearchInput } from '../ui';
 
 const ALL_SHELVES = '__all__';
@@ -43,9 +44,6 @@ export function Ranking() {
   const [error, setError] = useState<string | null>(null);
 
   // Compare state.
-  const [pair, setPair] = useState<RatingPair | null>(null);
-  const [pairLoading, setPairLoading] = useState(true);
-  const [sending, setSending] = useState(false);
   const [focus, setFocus] = useState<number | null>(null);
   const [comparedThisVisit, setComparedThisVisit] = useState(0);
   const [recomputing, setRecomputing] = useState(false);
@@ -71,21 +69,41 @@ export function Ranking() {
     return data;
   }, []);
 
-  const loadPair = useCallback(async (focusId: number | null, group: string | null | undefined) => {
-    setPairLoading(true);
-    try {
-      const next = await api.nextPair(focusId ?? undefined, group ?? undefined);
-      setPair(next);
-    } catch (err) {
-      toast.current?.show({
-        severity: 'error',
-        summary: 'Error',
-        detail: err instanceof Error ? err.message : 'Could not load the next pair',
-      });
-    } finally {
-      setPairLoading(false);
+  // Refresh the table's scores after comparisons, debounced so quick choices batch into one load.
+  const reloadTimer = useRef<number | null>(null);
+  const scheduleReload = useCallback(() => {
+    if (reloadTimer.current !== null) {
+      window.clearTimeout(reloadTimer.current);
     }
-  }, []);
+    reloadTimer.current = window.setTimeout(() => {
+      reloadTimer.current = null;
+      void loadBooks();
+    }, 1500);
+  }, [loadBooks]);
+  useEffect(
+    () => () => {
+      if (reloadTimer.current !== null) {
+        window.clearTimeout(reloadTimer.current);
+      }
+    },
+    [],
+  );
+
+  // Three pairs are kept ready: a choice shows the next one instantly while the comparison is
+  // saved and the queue is refilled in the background.
+  const pairs = usePairQueue({
+    size: 3,
+    sessionId: sessionId.current,
+    onCompared: scheduleReload,
+    onError: (message) => toast.current?.show({ severity: 'error', summary: 'Error', detail: message }),
+  });
+  const { reset: resetPairs } = pairs;
+  const pair = pairs.current;
+  const pairLoading = pairs.loading;
+  const loadPair = useCallback(
+    (focusId: number | null, group: string | null | undefined) => resetPairs(focusId, group ?? null),
+    [resetPairs],
+  );
 
   useEffect(() => {
     let active = true;
@@ -117,24 +135,12 @@ export function Ranking() {
 
   const ratedBooks = useMemo(() => books.filter((b) => b.stars != null), [books]);
 
-  const handleChoose = async (winner: Winner) => {
-    if (!pair || sending) {
+  const handleChoose = (winner: Winner) => {
+    if (!pair) {
       return;
     }
-    setSending(true);
-    try {
-      await api.compare(pair.left.id, pair.right.id, winner, sessionId.current);
-      setComparedThisVisit((n) => n + 1);
-      await Promise.all([loadBooks(), loadPair(focus, category)]);
-    } catch (err) {
-      toast.current?.show({
-        severity: 'error',
-        summary: 'Error',
-        detail: err instanceof Error ? err.message : 'Could not record the comparison',
-      });
-    } finally {
-      setSending(false);
-    }
+    setComparedThisVisit((n) => n + 1);
+    pairs.choose(winner);
   };
 
   const handleFocusChange = async (value: number | null) => {
@@ -384,7 +390,13 @@ export function Ranking() {
               <p>Rate at least two books with stars to start comparing them.</p>
             </div>
           ) : pair ? (
-            <ComparePair left={pair.left} right={pair.right} sending={sending} onChoose={(w) => void handleChoose(w)} />
+            <ComparePair
+            key={`${pair.left.id}-${pair.right.id}`}
+            left={pair.left}
+            right={pair.right}
+            sending={false}
+            onChoose={handleChoose}
+          />
           ) : (
             <div className="empty-state">
               <p>
