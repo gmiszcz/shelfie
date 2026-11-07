@@ -122,3 +122,8 @@ such books are the three `Dar anomalii` volumes, all handled above.
 just fix-series --root E:\WebDev\shelfie             # apply
 just fix-series --root E:\WebDev\shelfie --dry-run --scan
 ```
+
+## Mapping covers by title and author (any edition)
+
+Some Polish editions have no cover on their own Google volume, while another edition of the same work does. `just map-google-covers` searches Google Books by title (plus the first part of the subtitle) and author, accepts a hit when every significant title word matches and the author surname is a close spelling (e.g. Machanienko / Mahanenko), and with `--apply` attaches the cover through `scripts/attach_cover.py` (image verified, stored in `data/covers/`, JSON + DB updated, comparisons untouched). It stops on HTTP 429, the Google Books daily quota.
+

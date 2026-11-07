@@ -57,6 +57,11 @@ enrich *args:
 fill-covers *args:
     uv run python -m scripts.fill_covers {{args}}
 
+# Map covers for books still without one: Google Books search by title + author, any edition
+# of the same work (dry run; add --apply to attach). Stops cleanly on the daily quota (429).
+map-google-covers *args:
+    uv run python scripts/map_google_covers.py {{args}}
+
 # Repair series/volume/subtitle/description on cycle books (The Way of the Shaman, Dar anomalii).
 # Pass flags via args, e.g. `just fix-series --dry-run --scan` or `just fix-series --root E:\WebDev\shelfie`.
 fix-series *args:
