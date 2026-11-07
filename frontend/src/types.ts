@@ -62,6 +62,7 @@ export interface BookInput {
   quotes?: string | null;
   insights?: BookInsights | null;
   signed?: boolean;
+  favourite?: boolean;
   condition?: string | null;
   copies?: number;
   purchase_date?: string | null;
@@ -203,7 +204,7 @@ export type UiBusDetail =
       min_stars?: number;
       book_ids?: number[];
     }
-  | { action: 'navigate'; tab: 'library' | 'stats' | 'ranking' }
+  | { action: 'navigate'; tab: 'library' | 'series' | 'favourites' | 'stats' | 'ranking' }
   | { action: 'open_book'; book_id: number }
   | { action: 'clear_filter' };
 
@@ -225,3 +226,100 @@ export const STATUS_SEVERITY: Record<ReadingStatus, 'info' | 'warning' | 'succes
   finished: 'success',
   abandoned: 'danger',
 };
+
+// --- series tracking (wave 5) ------------------------------------------------------------
+
+export interface KnownVolume {
+  number: number | null;
+  title: string | null;
+  published_date: string | null;
+  source: string | null;
+}
+
+export interface NextExpected {
+  title: string | null;
+  date: string | null;
+  source_url: string | null;
+  confidence: string | null;
+}
+
+export interface OwnedVolume {
+  book_id: number;
+  volume: number | null;
+  volume_label: string | null;
+  title: string;
+  cover_url: string | null;
+  status: ReadingStatus;
+  read: boolean;
+  favourite: boolean;
+  finished_on: string | null;
+}
+
+export interface MissingVolume {
+  number: number | null;
+  title: string | null;
+  published_date: string | null;
+  source: string | null;
+}
+
+/** A series as the Series tab shows it (computed reading data + cached lookup). */
+export interface SeriesSummary {
+  series_key: string;
+  name: string;
+  author: string;
+  aliases: string[];
+  owned_volumes: OwnedVolume[];
+  missing_volumes: MissingVolume[];
+  owned_count: number;
+  read_count: number;
+  unread_owned_count: number;
+  total_known: number | null;
+  section: 'in_progress' | 'complete' | 'owned';
+  started: boolean;
+  finished: boolean;
+  watch: boolean;
+  next_expected: NextExpected | null;
+  last_checked: string | null;
+  notes: string | null;
+}
+
+export interface SeriesAlert {
+  kind: 'in_progress' | 'new_volume';
+  series_key: string;
+  series_name: string;
+  message: string;
+  detail: string | null;
+  source_url: string | null;
+}
+
+export interface SeriesAlertsResponse {
+  count: number;
+  in_progress: SeriesAlert[];
+  new_volume: SeriesAlert[];
+}
+
+export interface ExpectedBook {
+  id: number;
+  title: string;
+  author: string;
+  series_key: string | null;
+  series_name: string | null;
+  volume: string | null;
+  expected_date: string | null;
+  source_url: string | null;
+  source: string | null;
+  confidence: string | null;
+  notes: string | null;
+}
+
+export interface ExpectedBookInput {
+  title: string;
+  author?: string;
+  series_name?: string | null;
+  volume?: string | null;
+  expected_date?: string | null;
+  source_url?: string | null;
+  source?: string | null;
+  confidence?: string | null;
+  notes?: string | null;
+}

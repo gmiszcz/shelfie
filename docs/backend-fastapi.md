@@ -90,6 +90,27 @@ endpoint with the `zoom`/`fife` resolution trick. All fields are treated as opti
 and ISBNs are read from the `industryIdentifiers[]` array. Full reference:
 [research-google-books-api.md](research-google-books-api.md).
 
+### Google Books quota safety
+
+Google Books has a hard daily quota, so the client (`app/integrations/google_books.py`)
+protects it on every call:
+
+- **Persistent on-disk cache.** Each successful GET is cached as JSON under
+  `GOOGLE_BOOKS_CACHE_DIR` (default `data/cache/google_books/`) keyed by the normalised
+  query params **without the API key**, with a `GOOGLE_BOOKS_CACHE_TTL_DAYS` TTL (default
+  30; `0` disables cache reads). A cache hit makes no network call and does not count
+  against the quota, so the series checker and scripts read the cache first automatically.
+- **Per-process call budget.** At most `GOOGLE_BOOKS_MAX_CALLS` (default 50) live calls per
+  process; past that the client raises `GoogleBooksBudgetExceeded` instead of calling the
+  API. Set it to `0` to forbid live calls entirely (rely on cache + OpenLibrary).
+- **Stop on 429.** The first `429` ('Queries per day') is surfaced with no retries; callers
+  (search, series lookup) fall back to OpenLibrary, which is keyless and not quota-gated.
+
+The cache directory lives under `data/` (gitignored). Config fields:
+`GOOGLE_BOOKS_API_KEY`, `GOOGLE_BOOKS_MAX_CALLS`, `GOOGLE_BOOKS_CACHE_DIR`,
+`GOOGLE_BOOKS_CACHE_TTL_DAYS`. The series checker that depends on this is documented in
+[features/series-tracking.md](features/series-tracking.md).
+
 ## Auth: single-user → multi-tenant + SSO/JWT
 
 - **Now:** `auth.py` exposes a `current_user` dependency that returns the single seed user. No login.

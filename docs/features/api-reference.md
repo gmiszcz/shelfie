@@ -136,3 +136,45 @@ Stream one agent turn as Server-Sent Events.
 
 ### `DELETE /api/agent/sessions/{session_id}`
 Drop one in-memory chat session's state. **Response:** `204`.
+
+## Series & waiting list
+
+See [series-tracking.md](series-tracking.md) for the model and the check flow.
+
+### `GET /api/series`
+All series derived from the library, with computed progress. **Response:** `SeriesSummary[]`
+(`series_key`, `name`, `author`, `aliases`, `owned_volumes[]`, `missing_volumes[]`,
+`owned_count`, `read_count`, `unread_owned_count`, `total_known`, `section`, `watch`,
+`next_expected`, `last_checked`, `notes`).
+
+### `GET /api/series/{key}`
+One series by canonical key **or any alias** (e.g. `Kroniki Mroku` → King's Dark Tidings).
+**Response:** `SeriesSummary`, or `404`.
+
+### `PATCH /api/series/{key}`
+Toggle the watch flag. **Body:** `{ watch: bool }`. **Response:** `SeriesSummary`.
+
+### `POST /api/series/{key}/refresh`
+Run the external lookup for one series now (Google Books PL+EN cache/budget-guarded +
+OpenLibrary). **Response:** `SeriesSummary`.
+
+### `POST /api/series/check`
+Re-check every watched series. **Response:** `{ checked, updated, series[], notes }`.
+
+### `GET /api/series/alerts`
+Notifications. **Response:** `{ count, in_progress: SeriesAlert[], new_volume: SeriesAlert[] }`.
+
+### `GET /api/series/expected`
+Waiting-list entries. **Response:** `ExpectedBook[]`.
+
+### `POST /api/series/expected`
+Add a not-yet-owned upcoming book. **Body:** `{ title, author?, series_name?, volume?,
+expected_date?, source_url?, ... }`. **Response:** `201 ExpectedBook`.
+
+### `DELETE /api/series/expected/{id}`
+Remove a waiting-list entry. **Response:** `204`.
+
+## Books (favourite)
+
+The favourite flag uses the existing book update: `PATCH /api/books/{id}` with
+`{ "favourite": true | false }`. See [favourites.md](favourites.md).

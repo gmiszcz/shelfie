@@ -2,7 +2,7 @@ import type { BookInput } from '../types';
 import type { LibraryFilter } from './libraryFilter';
 
 /** The tab ids the app bar can switch to (agent `navigate` action). */
-export type UiTab = 'library' | 'stats' | 'ranking';
+export type UiTab = 'library' | 'series' | 'favourites' | 'stats' | 'ranking';
 
 /** Whole-star value for the star filter (null = "Any"). */
 export type StarValue = 1 | 2 | 3 | 4 | 5 | null;
@@ -82,7 +82,8 @@ export function parseUiBusEvent(detail: unknown): UiBusEvent | null {
       return detail as UiBusEvent;
     case 'navigate': {
       const tab = d.tab;
-      return tab === 'library' || tab === 'stats' || tab === 'ranking'
+      const valid = ['library', 'series', 'favourites', 'stats', 'ranking'];
+      return typeof tab === 'string' && valid.includes(tab)
         ? ({ action: 'navigate', tab } as UiBusEvent)
         : null;
     }

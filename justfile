@@ -62,6 +62,11 @@ fill-covers *args:
 fix-series *args:
     uv run python -m scripts.fix_series_titles {{args}}
 
+# Re-check watched series for new/upcoming volumes (Google Books PL+EN + OpenLibrary).
+# Schedule this daily via Kiro Crew cron; it only touches series with watch=1.
+check-series:
+    uv run --no-sync python -m scripts.check_series
+
 # Build the production frontend bundle
 build:
     npm --prefix frontend run build

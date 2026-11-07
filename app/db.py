@@ -48,6 +48,7 @@ BOOK_COLUMNS: dict[str, str] = {
     "quotes": "TEXT",
     "insights": "TEXT",
     "signed": "INTEGER NOT NULL DEFAULT 0",
+    "favourite": "INTEGER NOT NULL DEFAULT 0",
     "condition": "TEXT",
     "copies": "INTEGER NOT NULL DEFAULT 1",
     "purchase_date": "TEXT",
@@ -97,6 +98,52 @@ CREATE TABLE IF NOT EXISTS comparisons (
     winner        TEXT NOT NULL CHECK (winner IN ('left', 'right', 'tie')),
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Cached, per-series lookup data for the Series tab (wave 5). One row per
+-- (user, normalised series key). ``known_volumes`` / ``next_expected`` /
+-- ``aliases`` hold JSON. Reading data stays on ``books``; this table only
+-- caches what the external lookups found and the user's watch flag.
+CREATE TABLE IF NOT EXISTS series_info (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL REFERENCES users(id),
+    series_key    TEXT NOT NULL,
+    display_name  TEXT NOT NULL DEFAULT '',
+    author        TEXT NOT NULL DEFAULT '',
+    aliases       TEXT NOT NULL DEFAULT '[]',
+    known_volumes TEXT NOT NULL DEFAULT '[]',
+    total_known   INTEGER,
+    watch         INTEGER NOT NULL DEFAULT 0,
+    next_expected TEXT,
+    notes         TEXT,
+    last_checked  TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (user_id, series_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_series_user ON series_info(user_id);
+
+-- Upcoming / not-yet-owned books the user is waiting for (watched-series next
+-- volumes and manual ``add_expected_book`` entries). Separate from ``books``
+-- because these are not in the library yet.
+CREATE TABLE IF NOT EXISTS expected_books (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL REFERENCES users(id),
+    title         TEXT NOT NULL DEFAULT '',
+    author        TEXT NOT NULL DEFAULT '',
+    series_key    TEXT,
+    series_name   TEXT,
+    volume        TEXT,
+    expected_date TEXT,
+    source_url    TEXT,
+    source        TEXT,
+    confidence    TEXT,
+    notes         TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_expected_user ON expected_books(user_id);
 """
 
 

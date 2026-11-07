@@ -106,6 +106,7 @@ class BookFields(BaseModel):
     quotes: str | None = None
     insights: BookInsights | None = None
     signed: bool = False
+    favourite: bool = False
     condition: str | None = None
     copies: int = Field(default=1, ge=0)
     purchase_date: date | None = None
@@ -168,6 +169,7 @@ class BookUpdate(BaseModel):
     quotes: str | None = None
     insights: BookInsights | None = None
     signed: bool | None = None
+    favourite: bool | None = None
     condition: str | None = None
     copies: int | None = Field(default=None, ge=0)
     purchase_date: date | None = None

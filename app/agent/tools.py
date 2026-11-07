@@ -647,3 +647,223 @@ def _describe_changes(changes: dict[str, Any]) -> dict[str, Any]:
     for key, value in changes.items():
         out[key] = value.isoformat() if isinstance(value, date) else value
     return out
+
+
+# --- series / favourites / waiting-list tools (wave 5) -----------------------------------
+#
+# These let the library assistant answer questions about series (owned/read/missing
+# volumes, next expected release), toggle the watch flag, run a lookup now, manage
+# favourites and put an upcoming book on the waiting list. They go through
+# app.services.series_service (same code the HTTP API uses), driven from the sync tool
+# thread with asyncio.run over a fresh connection — exactly like the write tools above.
+
+
+def _series_brief(summary: Any) -> dict[str, Any]:
+    """A compact JSON view of a SeriesSummary for the agent."""
+    return {
+        "series_key": summary.series_key,
+        "name": summary.name,
+        "author": summary.author,
+        "aliases": summary.aliases,
+        "section": summary.section,
+        "owned": summary.owned_count,
+        "read": summary.read_count,
+        "unread_owned": summary.unread_owned_count,
+        "total_known": summary.total_known,
+        "missing_volumes": [
+            {"number": m.number, "title": m.title, "published_date": m.published_date}
+            for m in summary.missing_volumes
+        ],
+        "owned_volumes": [
+            {
+                "book_id": o.book_id,
+                "volume": o.volume,
+                "title": o.title,
+                "read": o.read,
+                "status": o.status,
+            }
+            for o in summary.owned_volumes
+        ],
+        "watch": summary.watch,
+        "next_expected": summary.next_expected.model_dump() if summary.next_expected else None,
+        "last_checked": summary.last_checked,
+    }
+
+
+@tool
+def list_series() -> dict[str, Any]:
+    """List every series in the user's library with reading progress.
+
+    For each series: owned volume count, read count, unread-owned count, total known
+    volumes, which section it is in (in_progress / complete / owned), whether it is
+    watched, and the missing volumes. Use this for "what series am I in the middle of",
+    "which series are complete" or "what am I missing".
+    """
+    from app.services import series_service
+
+    summaries = _run(_with_conn(lambda c: series_service.list_series(c, SINGLE_USER_ID)))
+    return {"count": len(summaries), "series": [_series_brief(s) for s in summaries]}
+
+
+@tool
+def get_series(name: str) -> dict[str, Any]:
+    """Return one series by name (owned, read and missing volumes, next expected release).
+
+    Matches the name against every series' canonical name AND its stored aliases, so a
+    series known under several names/editions (e.g. "King's Dark Tidings" / "Kroniki
+    Mroku") is found by any of them. Use this whenever the user asks about a specific
+    series: whether they read it, what they own, what is missing, or when the next
+    volume is due.
+
+    Args:
+        name: The series name (any language/edition alias), e.g. "Kroniki Mroku".
+    """
+    from app.services import series_service
+
+    summary = _run(_with_conn(lambda c: series_service.get_series(c, SINGLE_USER_ID, name)))
+    if summary is None:
+        return {"error": f"no series matching {name!r} in the library"}
+    return _series_brief(summary)
+
+
+@tool
+def set_series_watch(name: str, on: bool = True) -> dict[str, Any]:
+    """Turn the 'watch for new volumes' flag on or off for a series.
+
+    Only watched series are re-checked for new releases by the periodic checker, so the
+    agent never scans the whole library. Resolve the series by name/alias first.
+
+    Args:
+        name: The series name (any alias).
+        on: True to watch, False to stop watching.
+    """
+    from app.services import series_service
+
+    summary = _run(
+        _with_conn(lambda c: series_service.set_watch(c, SINGLE_USER_ID, name, watch=bool(on)))
+    )
+    if summary is None:
+        return {"error": f"no series matching {name!r}"}
+    return {"ok": True, "series": summary.name, "watch": summary.watch}
+
+
+@tool
+def refresh_series(name: str) -> dict[str, Any]:
+    """Run the external lookup for one series NOW (Google Books PL+EN, OpenLibrary).
+
+    Refreshes the cached known volumes, total and next-expected release. Use when the
+    user asks to check a specific series for new or missing volumes right away, or asks
+    whether all volumes of a series are out (and when the last one).
+
+    Args:
+        name: The series name (any alias).
+    """
+    from app.services import series_service
+
+    summary = _run(_with_conn(lambda c: series_service.refresh_series(c, SINGLE_USER_ID, name)))
+    if summary is None:
+        return {"error": f"no series matching {name!r}"}
+    return _series_brief(summary)
+
+
+@tool
+def list_favourites(limit: int = 50) -> dict[str, Any]:
+    """List the user's favourite books (the ones flagged with the heart).
+
+    Args:
+        limit: Maximum number of books to return (1-50).
+    """
+    favourites = [b for b in _all_books() if getattr(b, "favourite", False)]
+    favourites.sort(key=lambda b: b.title.lower())
+    return {"count": len(favourites), "books": [_brief(b) for b in favourites[: _limit(limit)]]}
+
+
+@tool
+def set_favourite(book: str = "", book_id: int = 0, on: bool = True) -> dict[str, Any]:
+    """Mark a book as a favourite, or remove the favourite flag.
+
+    Pass either ``book_id`` (preferred — resolve it with search_library first) or a
+    ``book`` title/search phrase, which is matched against the library.
+
+    Args:
+        book: A title or search phrase to find the book (used when no book_id is given).
+        book_id: The exact book id (overrides ``book``).
+        on: True to favourite, False to un-favourite.
+    """
+    target_id = int(book_id) if book_id else 0
+    if not target_id and book.strip():
+        needle = book.strip().lower()
+        terms = [t for t in needle.split() if t]
+        hits = [b for b in _all_books() if all(t in _haystack(b) for t in terms)]
+        if not hits:
+            return {"error": f"no book matching {book!r}"}
+        if len(hits) > 1:
+            return {
+                "error": "several books match; call with a specific book_id",
+                "candidates": [_brief(b) for b in hits[:5]],
+            }
+        target_id = hits[0].id
+    if not target_id:
+        return {"error": "pass book_id or a book title"}
+
+    update = BookUpdate(favourite=bool(on))
+    updated = _run(
+        _with_conn(lambda c: books_service.change_book(c, SINGLE_USER_ID, target_id, update))
+    )
+    if updated is None:
+        return {"error": f"no book with id {target_id}"}
+    return {"ok": True, "book_id": updated.id, "title": updated.title, "favourite": bool(on)}
+
+
+@tool
+def list_waiting_list() -> dict[str, Any]:
+    """List the waiting list: not-yet-owned upcoming books (watched series + manual adds)."""
+    from app.services import series_service
+
+    items = _run(_with_conn(lambda c: series_service.list_expected(c, SINGLE_USER_ID)))
+    return {
+        "count": len(items),
+        "expected": [i.model_dump() for i in items],
+    }
+
+
+@tool
+def add_expected_book(
+    title: str,
+    author: str = "",
+    series: str = "",
+    volume: str = "",
+    expected_date: str = "",
+    source_url: str = "",
+) -> dict[str, Any]:
+    """Put a not-yet-owned upcoming book on the waiting list.
+
+    Use when the user wants to be reminded of a book that is coming out and is not in
+    the library yet (an announced next volume, a pre-order). It is NOT added to the
+    library — it lives on the Series tab's waiting list until the user owns it.
+
+    Args:
+        title: The upcoming book's title (required).
+        author: The author.
+        series: Series name, if it belongs to one.
+        volume: Volume label within the series.
+        expected_date: Expected release date (free text or ISO).
+        source_url: A link to the announcement/source.
+    """
+    from app.schemas.series import ExpectedBookCreate
+    from app.services import series_service
+
+    if not title.strip():
+        return {"error": "a title is required"}
+    data = ExpectedBookCreate(
+        title=title.strip(),
+        author=author.strip(),
+        series_name=series.strip() or None,
+        volume=volume.strip() or None,
+        expected_date=expected_date.strip() or None,
+        source_url=source_url.strip() or None,
+        source="agent",
+        confidence="user",
+    )
+    created = _run(_with_conn(lambda c: series_service.add_expected(c, SINGLE_USER_ID, data)))
+    return {"ok": True, "added": created.model_dump()}

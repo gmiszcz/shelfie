@@ -11,6 +11,8 @@ real code (not the earlier planning docs). Start here.
 | [library-and-search.md](library-and-search.md) | Library view, book search, Google Books → OpenLibrary fallback, language filter, API-key / 429 behaviour |
 | [manual-add-and-covers.md](manual-add-and-covers.md) | Manual add form, cover search / upload / URL, cover storage, shared validation |
 | [statistics.md](statistics.md) | `/api/stats`, grouping, date range, summary cards, charts, table |
+| [series-tracking.md](series-tracking.md) | "Series" tab: owned/read/missing volumes, name aliases, watch + daily checker (Google Books PL+EN + OpenLibrary, quota-safe), notifications, waiting list, agent tools |
+| [favourites.md](favourites.md) | "Favourites" tab: `books.favourite` flag, heart toggle on card + detail, shared grid/search/filter |
 | [chatbot.md](chatbot.md) | The current read-only library assistant: tools, SSE wire protocol, chat widget |
 | [api-reference.md](api-reference.md) | Every endpoint with parameters and response shape |
 

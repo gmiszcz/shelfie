@@ -191,6 +191,11 @@ body {
   border-color: var(--app-accent);
 }
 
+/* Cover wrapper: anchors the overlay favourite heart to the cover's top-right. */
+.book-card-cover {
+  position: relative;
+}
+
 .book-card .body {
   padding: var(--big-padding);
   display: flex;

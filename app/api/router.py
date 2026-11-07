@@ -4,7 +4,18 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.routes import agent, agui, books, covers, health, ratings, search, stats, transcribe
+from app.api.routes import (
+    agent,
+    agui,
+    books,
+    covers,
+    health,
+    ratings,
+    search,
+    series,
+    stats,
+    transcribe,
+)
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(health.router)
@@ -13,6 +24,7 @@ api_router.include_router(covers.router)
 api_router.include_router(search.router)
 api_router.include_router(stats.router)
 api_router.include_router(ratings.router)
+api_router.include_router(series.router)
 api_router.include_router(agent.router)
 api_router.include_router(agui.router)
 api_router.include_router(transcribe.router)

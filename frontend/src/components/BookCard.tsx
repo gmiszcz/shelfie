@@ -4,15 +4,16 @@ import { Tag } from 'primereact/tag';
 import { formatAuthors, formatYear } from '../format';
 import { useSettings } from '../settings/SettingsContext';
 import type { Book } from '../types';
-import { STATUS_LABELS } from '../types';
-import { BookCover, StatusTag } from '../ui';
+import { BookCover, FavouriteToggle, StatusTag } from '../ui';
 
 interface Props {
   book: Book;
   onOpen: (book: Book) => void;
+  /** When provided, a heart toggle is shown over the cover (top-right). */
+  onToggleFavourite?: (book: Book, next: boolean) => void;
 }
 
-export function BookCard({ book, onOpen }: Props) {
+export function BookCard({ book, onOpen, onToggleFavourite }: Props) {
   const { settings } = useSettings();
   const f = settings.cardFields;
 
@@ -31,7 +32,16 @@ export function BookCard({ book, onOpen }: Props) {
         if (e.key === 'Enter') onOpen(book);
       }}
     >
-      <BookCover src={book.cover_url} title={book.title} size="fill" />
+      <div className="book-card-cover">
+        <BookCover src={book.cover_url} title={book.title} size="fill" />
+        {onToggleFavourite && (
+          <FavouriteToggle
+            variant="overlay"
+            value={book.favourite}
+            onChange={(next) => onToggleFavourite(book, next)}
+          />
+        )}
+      </div>
       <div className="body">
         {/* Primary block: title + (for series volumes) the volume's own title as subtitle. */}
         <div className="card-heading">

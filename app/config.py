@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     # External APIs
     google_books_api_key: str | None = None
     google_books_base_url: str = "https://www.googleapis.com/books/v1"
+    # Per-process ceiling on live Google Books calls; the client refuses past it.
+    google_books_max_calls: int = Field(default=50, ge=0)
+    # On-disk response cache for Google Books (JSON per normalised query); TTL in days.
+    google_books_cache_dir: str = "data/cache/google_books"
+    google_books_cache_ttl_days: int = Field(default=30, ge=0)
 
     # Library assistant (AWS Bedrock via strands-compose). Credentials come from the AWS chain.
     bedrock_model_id: str = "eu.anthropic.claude-haiku-5-5"
@@ -79,6 +84,10 @@ class Settings(BaseSettings):
     @property
     def covers_path(self) -> Path:
         return resolve_path(self.covers_dir)
+
+    @property
+    def google_books_cache_path(self) -> Path:
+        return resolve_path(self.google_books_cache_dir)
 
     @property
     def static_path(self) -> Path:

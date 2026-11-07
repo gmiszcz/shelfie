@@ -2,10 +2,14 @@ import type {
   Book,
   BookInput,
   BookPatch,
+  ExpectedBook,
+  ExpectedBookInput,
   GroupBy,
   RatingPair,
   RecomputeResult,
   SearchResponse,
+  SeriesAlertsResponse,
+  SeriesSummary,
   StatsResponse,
   VolumeSearchResult,
   Winner,
@@ -148,4 +152,37 @@ export const api = {
 
   resetChat: (sessionId: string) =>
     request<void>(`/agent/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
+
+  // --- series tracking (wave 5) ---
+
+  listSeries: () => request<SeriesSummary[]>('/series'),
+
+  getSeries: (key: string) => request<SeriesSummary>(`/series/${encodeURIComponent(key)}`),
+
+  setSeriesWatch: (key: string, watch: boolean) =>
+    request<SeriesSummary>(`/series/${encodeURIComponent(key)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ watch }),
+    }),
+
+  refreshSeries: (key: string) =>
+    request<SeriesSummary>(`/series/${encodeURIComponent(key)}/refresh`, { method: 'POST' }),
+
+  checkSeries: () => request<{ checked: number; updated: number; series: string[] }>(
+    '/series/check',
+    { method: 'POST' },
+  ),
+
+  seriesAlerts: () => request<SeriesAlertsResponse>('/series/alerts'),
+
+  listExpected: () => request<ExpectedBook[]>('/series/expected'),
+
+  addExpected: (input: ExpectedBookInput) =>
+    request<ExpectedBook>('/series/expected', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  deleteExpected: (id: number) =>
+    request<void>(`/series/expected/${id}`, { method: 'DELETE' }),
 };

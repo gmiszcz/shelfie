@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { ChatWidget } from './components/ChatWidget';
 import { Library } from './pages/Library';
+import { Series } from './pages/Series';
+import { Favourites } from './pages/Favourites';
 import { Ranking } from './pages/Ranking';
 import { SettingsProvider, useSettings } from './settings/SettingsContext';
 import { SettingsSidebar } from './settings/SettingsSidebar';
@@ -25,6 +27,8 @@ const THEME_KEY = 'shelfie.theme';
 
 const PAGES: { id: UiTab; label: string; icon: string }[] = [
   { id: 'library', label: 'Library', icon: 'pi pi-book' },
+  { id: 'series', label: 'Series', icon: 'pi pi-bookmark' },
+  { id: 'favourites', label: 'Favourites', icon: 'pi pi-heart' },
   { id: 'stats', label: 'Statistics', icon: 'pi pi-chart-bar' },
   { id: 'ranking', label: 'Ranking', icon: 'pi pi-sort-amount-down' },
 ];
@@ -189,6 +193,8 @@ function AppShell() {
 
       <main className="app-main">
         {page === 'library' && <Library />}
+        {page === 'series' && <Series />}
+        {page === 'favourites' && <Favourites />}
         {page === 'stats' && <Stats />}
         {page === 'ranking' && <Ranking />}
       </main>
