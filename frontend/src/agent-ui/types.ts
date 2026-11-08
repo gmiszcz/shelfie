@@ -106,6 +106,10 @@ export interface AnchorDescription {
   settable?: boolean;
   /** List items (bounded), for a `list` anchor. */
   items?: AnchorListItem[];
+  /** The full option count when `options` was capped (so the model knows more exist). */
+  optionsTotal?: number;
+  /** A short hint added when a field was truncated (e.g. "use find_books for others"). */
+  note?: string;
 }
 
 /** One tab in the UI schema: its id/label and the anchors it owns. */

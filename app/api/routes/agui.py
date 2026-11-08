@@ -11,7 +11,7 @@ event stream (SSE). See :mod:`app.agent.ui_agent` and
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import Iterator
 from typing import Any
 
 from fastapi import APIRouter
@@ -65,7 +65,12 @@ async def run(data: RunIn, settings: AppSettings, _user: CurrentUser) -> Streami
     messages = [m.model_dump() for m in data.messages]
     tools = [t.model_dump() for t in data.tools]
 
-    async def events() -> AsyncIterator[str]:
+    # ``ui_agent.run_stream`` is a SYNC generator driving the blocking boto3
+    # ``converse_stream`` iterator. Returning a *sync* generator to StreamingResponse
+    # makes Starlette iterate it in its threadpool, so the blocking Bedrock reads
+    # never stall the asyncio event loop (which previously froze every other request
+    # — and the SSE heartbeats — for the whole model turn).
+    def events() -> Iterator[str]:
         try:
             for event in ui_agent.run_stream(
                 thread_id=data.threadId,

@@ -39,6 +39,8 @@ export interface AgUiMessage {
 export interface RunCallbacks {
   onRunStart?: (runId: string) => void;
   onTextDelta?: (delta: string) => void;
+  /** Fired at TOOL_CALL_START, before args finish streaming, so the UI shows the pill early. */
+  onToolCallStart?: (call: { id: string; name: string }) => void;
   onToolCall?: (call: AgUiToolCall) => void;
   onToolResult?: (callId: string, result: unknown, ok: boolean) => void;
   onError?: (message: string) => void;
@@ -66,11 +68,19 @@ export interface RunAgentResult {
   error?: string;
 }
 
-/** One model turn: stream events, returning the text and an optional tool call. */
+/** One raw tool call collected from a turn (args still a JSON string). */
+interface RawToolCall {
+  id: string;
+  name: string;
+  argsRaw: string;
+}
+
+/** One model turn: stream events, returning the text and EVERY tool call it made. */
 interface TurnOutcome {
   runId: string;
   text: string;
-  toolCall: { id: string; name: string; argsRaw: string } | null;
+  /** All tool calls the model emitted this turn, in order (may be more than one). */
+  toolCalls: RawToolCall[];
   error?: string;
 }
 
@@ -121,8 +131,8 @@ async function runTurn(
     signal,
   });
 
-  const outcome: TurnOutcome = { runId, text: '', toolCall: null };
-  let currentTool: { id: string; name: string; argsRaw: string } | null = null;
+  const outcome: TurnOutcome = { runId, text: '', toolCalls: [] };
+  let currentTool: RawToolCall | null = null;
 
   const onEvent = (event: AgUiEvent) => {
     switch (event.type) {
@@ -135,6 +145,9 @@ async function runTurn(
         break;
       case 'TOOL_CALL_START':
         currentTool = { id: event.toolCallId, name: event.toolCallName, argsRaw: '' };
+        // Surface the action pill the moment the call begins (item 9), not after the
+        // stream closes — the UI shows "doing X" while the args still stream in.
+        callbacks?.onToolCallStart?.({ id: event.toolCallId, name: event.toolCallName });
         break;
       case 'TOOL_CALL_ARGS':
         if (currentTool && currentTool.id === event.toolCallId) {
@@ -142,12 +155,14 @@ async function runTurn(
         }
         break;
       case 'TOOL_CALL_END':
-        outcome.toolCall = {
+        // Collect EVERY tool call of the turn. The model may emit more than one
+        // (e.g. navigate + set); appending them all means none is silently dropped.
+        outcome.toolCalls.push({
           id: event.toolCallId,
           name: event.toolCallName,
           // Prefer the full args carried on END; fall back to accumulated deltas.
           argsRaw: event.args || currentTool?.argsRaw || '',
-        };
+        });
         currentTool = null;
         break;
       case 'RUN_ERROR':
@@ -190,7 +205,7 @@ export async function runAgent(options: RunAgentOptions): Promise<RunAgentResult
       return { messages, finalText, toolCalls: executed, error: outcome.error };
     }
 
-    if (!outcome.toolCall) {
+    if (outcome.toolCalls.length === 0) {
       // The model answered with text and asked for no tool: the run is done.
       finalText = outcome.text;
       if (outcome.text) {
@@ -200,44 +215,64 @@ export async function runAgent(options: RunAgentOptions): Promise<RunAgentResult
       return { messages, finalText, toolCalls: executed };
     }
 
-    // The model wants a tool. Record the assistant turn (text + the call).
-    const call: AgUiToolCall = {
-      id: outcome.toolCall.id,
-      name: outcome.toolCall.name,
-      args: parseArgs(outcome.toolCall.argsRaw),
-    };
+    // The model wants one OR MORE tools. Record ONE assistant turn carrying the
+    // text and ALL of this turn's tool calls, so the toolUse/toolResult pairing the
+    // backend (Bedrock) requires stays intact — a missing result for any emitted
+    // call makes the next request a ValidationException.
+    const calls: AgUiToolCall[] = outcome.toolCalls.map((tc) => ({
+      id: tc.id,
+      name: tc.name,
+      args: parseArgs(tc.argsRaw),
+    }));
     messages.push({
       role: 'assistant',
       content: outcome.text,
-      toolCalls: [call],
+      toolCalls: calls,
     });
-    executed.push(call);
-    callbacks?.onToolCall?.(call);
 
-    // Execute the tool in the browser and append its result.
-    let result: unknown;
-    let ok = true;
-    const tool = toolByName.get(call.name);
-    if (!tool) {
-      result = { ok: false, error: `unknown tool ${call.name}` };
-      ok = false;
-    } else {
-      try {
-        result = await tool.execute(call.args);
-        ok =
-          !(result && typeof result === 'object' && 'ok' in result) ||
-          Boolean((result as { ok?: unknown }).ok);
-      } catch (err) {
-        result = { ok: false, error: err instanceof Error ? err.message : String(err) };
+    // Execute every call in order and append a tool result for each, in the same
+    // order, so each toolUse has its matching toolResult.
+    let allOk = true;
+    for (const call of calls) {
+      executed.push(call);
+      callbacks?.onToolCall?.(call);
+      let result: unknown;
+      let ok = true;
+      const tool = toolByName.get(call.name);
+      if (!tool) {
+        result = { ok: false, error: `unknown tool ${call.name}` };
         ok = false;
+      } else {
+        try {
+          result = await tool.execute(call.args);
+          ok =
+            !(result && typeof result === 'object' && 'ok' in result) ||
+            Boolean((result as { ok?: unknown }).ok);
+        } catch (err) {
+          result = { ok: false, error: err instanceof Error ? err.message : String(err) };
+          ok = false;
+        }
       }
+      if (!ok) {
+        allOk = false;
+      }
+      callbacks?.onToolResult?.(call.id, result, ok);
+      messages.push({
+        role: 'tool',
+        toolCallId: call.id,
+        content: JSON.stringify(result),
+      });
     }
-    callbacks?.onToolResult?.(call.id, result, ok);
-    messages.push({
-      role: 'tool',
-      toolCallId: call.id,
-      content: JSON.stringify(result),
-    });
+
+    // Item 7: the model may write its confirmation sentence in the SAME turn as its
+    // last action. If every tool succeeded AND the model produced text, the request
+    // is complete — no extra round-trip just for the sentence. On any tool error we
+    // loop so the model can read the error and correct itself.
+    if (allOk && outcome.text.trim()) {
+      finalText = outcome.text;
+      callbacks?.onRunFinish?.();
+      return { messages, finalText, toolCalls: executed };
+    }
   }
 
   // Hit the safety cap with the model still calling tools.

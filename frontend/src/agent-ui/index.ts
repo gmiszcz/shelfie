@@ -24,6 +24,7 @@ export {
   anchorIds,
   NAV_TAB_ID,
   LIST_ITEM_CAP,
+  OPTION_CAP,
   _resetRegistry,
 } from './registry';
 export type { ActResult, StaticTab } from './registry';

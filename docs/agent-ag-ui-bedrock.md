@@ -240,3 +240,94 @@ stream).
 - `frontend/src/chat/useVoiceInput.ts` (+`.test.ts`) — mic capture, VAD driving, teardown.
 - `frontend/src/components/MicButton.tsx` (+`.css`) — the mic button, glow ring and shortcuts.
 - `frontend/src/components/ChatWidget.tsx` — mounts `<MicButton>` and wires `onFinal`.
+
+## 2026-11-08 — UI-agent bug fixes and turn-latency work
+
+Three reported bugs were fixed and the UI agent's per-turn latency was cut. All work is on
+`feat/ui-agent-fixes`.
+
+### Bug 1 — "pokaż ulubione książki" switched tab but showed nothing
+
+Root cause: the `nav.tab` anchor's `invoke` in `App.tsx` only handled a hand-picked subset of tabs
+(`library` / `stats` / `ranking`). `navigate('favourites')` (and `series`) passed the registry's
+tab validation and returned `ok: true`, but `setPage` was never called — the tab never switched and
+the Favourites anchors never mounted, so the agent "opened" a tab that stayed on Library. Fix:
+`nav.tab.invoke` now accepts **every** tab present in `PAGES` (the admin-only `users` page stays
+deliberately absent). Regression tests in `App.test.tsx` assert navigation to every nav tab and that
+Favourites then exposes `favourites.books`.
+
+### Bug 3 — mic toast "Tap to open in chat" opened an EMPTY conversation
+
+Root cause: `GlobalMic.openInChat` called `switchMode('ui')`, and `switchMode` starts a clean
+conversation (`newChat()` → reducer `reset` + clears `uiMessagesRef`). Since the head-less mic run
+left the panel in `library` mode, the switch to `ui` reset the shared thread, so the spoken exchange
+was lost. Fix: a new `revealUiChat()` on the chat context sets mode to `ui` and opens the panel
+**without** resetting; `GlobalMic` taps that instead of `switchMode`. `GlobalMic.test.tsx` asserts
+the thread's message count is unchanged after tapping.
+
+### Bug 2 — partial answers, long "thinking", then an error
+
+Several causes compounded as the shared thread grew:
+
+- **toolUse/toolResult pairing (the error).** When the model made several tool calls in one turn,
+  the client kept only the LAST call (it overwrote `outcome.toolCall` on each `TOOL_CALL_END`), and
+  the backend emitted one `user` message per tool result. Bedrock requires every `toolUse` of an
+  assistant turn to be answered by a `toolResult` in the SINGLE following `user` message, so the
+  next request failed with `ValidationException: Expected toolResult blocks …`. Fixes: the client
+  now collects and executes ALL tool calls of a turn and appends a result for each
+  (`frontend/src/agui/client.ts`); the backend merges consecutive tool-result messages into one
+  `user` message with multiple `toolResult` blocks (`_to_bedrock_messages` in
+  `app/agent/ui_agent.py`).
+- **Extra turns.** The system prompt forced `describe_ui` first even though the client already sends
+  the live UI schema as `state` every turn; and the confirmation sentence was written in a separate
+  turn. Fixes: the prompt tells the model it already holds the schema (call `describe_ui` only after
+  `navigate`), and the client ends the loop when a turn produced text AND every tool succeeded
+  (continuing on a tool error so the model can correct itself).
+- **Oversized per-turn payload.** `list` anchors sent their full item list twice (as `value` AND
+  `items`); facet selects (authors/series/tags/shelves) sent hundreds of options every turn; and the
+  thread re-sent every old tool result including whole `describe_ui` dumps. Fixes: the registry drops
+  `value` for lists, caps options at `OPTION_CAP = 20` with a note pointing to `find_books`, and
+  `ChatProvider` trims older tool results to `[omitted]` keeping the last 6 exchanges.
+- **`library.filter` name resolution.** It now accepts a plain human name for series/author/shelf/tag
+  and resolves it to the real value itself (case/diacritics/inflection tolerant, via `resolveFacet`
+  in `settings/libraryFilter.ts`), so a normal filter no longer needs a `find_books` round-trip.
+
+### Backend latency and observability
+
+- **One boto3 client per region**, cached at module level (was rebuilt every turn).
+- **Non-blocking SSE**: the route returns a SYNC generator so Starlette iterates the blocking
+  `converse_stream` in its threadpool, instead of an `async def` that froze the event loop for the
+  whole turn.
+- **Prompt caching**: a Bedrock `cachePoint` follows the static system prompt and the tool
+  definitions; the date and UI-state snapshot go in a SEPARATE trailing system block so changing
+  state never invalidates the cached prefix. If the model/region rejects cache points the runner
+  disables them for the process, logs once, and retries without.
+- **Per-turn metrics**: one INFO line per model turn — `ttft_ms`, `total_ms`, Bedrock `latencyMs`,
+  `inputTokens` / `outputTokens`, `cacheRead/Write` tokens, tool-call count.
+
+### Measured turns-per-command and latency (live Haiku, copied data, shared thread)
+
+| Command | Before | After |
+| --- | --- | --- |
+| pokaż ulubione książki | 4 turns / 7.5 s | 2 turns / 4.7 s |
+| pokaż książki fantasy z 2025 | 8 turns / 22 s → **error** (`did not finish within 8 turns`) | 3 turns / 8.0 s |
+| przejdź do statystyk i pokaż ostatnie 12 miesięcy | 4 turns / 7.5 s | 3 turns / 4.8 s |
+
+The fantasy command previously looped to the turn cap and failed; it now completes in 3 turns with no
+error. Individual turns run ~1.4–3.2 s (the first turn of a command carries the cold path).
+
+### Files
+
+- `frontend/src/App.tsx` — `nav.tab.invoke` accepts every tab (bug 1).
+- `frontend/src/chat/ChatProvider.tsx` — `revealUiChat` (bug 3); `trimUiHistory` (item 3); early
+  action pill wiring.
+- `frontend/src/components/GlobalMic.tsx` — toast tap uses `revealUiChat`.
+- `frontend/src/chat/chatState.ts` — `action_label` action (early pill + later label refine).
+- `frontend/src/agui/client.ts` — collect/execute ALL tool calls per turn; end on text+all-ok;
+  `onToolCallStart` callback.
+- `frontend/src/agent-ui/registry.ts` + `types.ts` — drop `value` for lists, cap options
+  (`OPTION_CAP`), `optionsTotal`/`note`.
+- `frontend/src/pages/Library.tsx` + `settings/libraryFilter.ts` — tolerant facet name resolution.
+- `app/agent/ui_agent.py` — cached client, split/cacheable system blocks, metrics log, multi-tool
+  result merge, shorter prompt without the "describe_ui first" rule.
+- `app/api/routes/agui.py` — sync generator (threadpool) for non-blocking SSE.

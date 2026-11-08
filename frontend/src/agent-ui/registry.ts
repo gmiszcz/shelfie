@@ -28,6 +28,15 @@ export const NAV_TAB_ID = 'nav.tab';
 /** Max list items any `list` anchor exposes in the schema (bounded output). */
 export const LIST_ITEM_CAP = 50;
 
+/**
+ * Max options any `select` / `multi-select` exposes in the schema. Facet filters
+ * (authors, series, tags, shelves) can list hundreds of values; sending them all
+ * on EVERY turn bloats the prompt. We cap the list and tell the model to resolve
+ * an uncapped value with find_books (or by applying the structured filter, which
+ * matches names itself).
+ */
+export const OPTION_CAP = 20;
+
 /** Value kinds the agent writes with `set`. */
 const VALUE_KINDS: ReadonlySet<AnchorKind> = new Set<AnchorKind>([
   'text-input',
@@ -135,7 +144,10 @@ function describeAnchor(config: AnchorConfig): AnchorDescription {
   if (config.tab) {
     out.tab = config.tab;
   }
-  if (config.getState) {
+  // A `list` anchor's content is its `items` (bounded); its `getState` returns the
+  // SAME books uncapped, so including `value` too would double the payload. Skip
+  // `value` for lists — items alone is enough for the model.
+  if (config.getState && config.kind !== 'list') {
     try {
       out.value = config.getState();
     } catch {
@@ -144,7 +156,16 @@ function describeAnchor(config: AnchorConfig): AnchorDescription {
   }
   if (config.options) {
     try {
-      out.options = config.options();
+      const all = config.options();
+      if (all.length > OPTION_CAP) {
+        out.options = all.slice(0, OPTION_CAP);
+        out.optionsTotal = all.length;
+        out.note =
+          `showing ${OPTION_CAP} of ${all.length} options; for a value not listed, resolve it ` +
+          `with find_books or apply the structured library filter (it matches names itself)`;
+      } else {
+        out.options = all;
+      }
     } catch {
       out.options = [];
     }

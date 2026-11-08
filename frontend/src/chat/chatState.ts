@@ -37,6 +37,7 @@ export type ChatAction =
   | { type: 'event'; event: ChatEvent }
   | { type: 'text_delta'; text: string }
   | { type: 'action_start'; id: string; name: string; label: string; args: Record<string, unknown> }
+  | { type: 'action_label'; id: string; label: string; args: Record<string, unknown> }
   | { type: 'action_result'; id: string; ok: boolean }
   | { type: 'finish'; ok: boolean; error?: string }
   | { type: 'error'; message: string }
@@ -104,6 +105,14 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           ...m.actions,
           { id: action.id, name: action.name, label: action.label, args: action.args, status: 'running' },
         ],
+      }));
+
+    case 'action_label':
+      return patchLastAssistant(state, (m) => ({
+        ...m,
+        actions: m.actions.map((a) =>
+          a.id === action.id ? { ...a, label: action.label, args: action.args } : a,
+        ),
       }));
 
     case 'action_result':

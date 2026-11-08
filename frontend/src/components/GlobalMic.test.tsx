@@ -77,10 +77,16 @@ import { GlobalMic } from './GlobalMic';
 // eslint-disable-next-line import/first
 import { SettingsProvider } from '../settings/SettingsContext';
 
-/** A probe that exposes the shared chat `open` flag to assertions. */
+/** A probe exposing the shared chat `open` flag, mode and message count to assertions. */
 function OpenProbe() {
-  const { open } = useChat();
-  return <span data-testid="chat-open">{open ? 'open' : 'closed'}</span>;
+  const { open, mode, state } = useChat();
+  return (
+    <>
+      <span data-testid="chat-open">{open ? 'open' : 'closed'}</span>
+      <span data-testid="chat-mode">{mode}</span>
+      <span data-testid="chat-msgcount">{state.messages.length}</span>
+    </>
+  );
 }
 
 function renderGlobalMic() {
@@ -150,12 +156,22 @@ describe('GlobalMic', () => {
       fireEvent.click(screen.getByText('speak'));
     });
     await waitFor(() => expect(screen.getByText(FAKE_REPLY)).toBeTruthy());
+    // The head-less run appended the user + assistant messages to the shared thread.
+    const countBeforeTap = Number(screen.getByTestId('chat-msgcount').textContent);
+    expect(countBeforeTap).toBeGreaterThan(0);
 
     await act(async () => {
       fireEvent.click(screen.getByText(FAKE_REPLY));
     });
 
+    // Regression (bug 3): tapping used to call switchMode('ui') which RESET the
+    // thread, so the chat opened empty and the spoken exchange was lost. It must now
+    // open on the UI agent WITH the exchange still present.
     await waitFor(() => expect(screen.getByTestId('chat-open').textContent).toBe('open'));
+    expect(screen.getByTestId('chat-mode').textContent).toBe('ui');
+    // The thread still holds the user + assistant messages — it was NOT reset (the
+    // old switchMode('ui') path cleared it, opening an empty chat).
+    expect(Number(screen.getByTestId('chat-msgcount').textContent)).toBe(countBeforeTap);
   });
 
   it('shows the HTTPS mic error in the toast (insecure origin)', async () => {

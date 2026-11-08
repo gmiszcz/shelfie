@@ -5,6 +5,7 @@ import {
   applyFilter,
   describeFilter,
   isEmptyFilter,
+  resolveFacet,
   type LibraryFilter,
 } from './libraryFilter';
 
@@ -149,5 +150,44 @@ describe('describeFilter', () => {
   });
   it('falls back to "all books"', () => {
     expect(describeFilter({})).toBe('all books');
+  });
+});
+
+// --- item 8: library.filter accepts human names, matched tolerantly ----------------
+
+describe('resolveFacet (tolerant name → canonical value)', () => {
+  const series = ['Droga Szamana', 'Middle-earth', 'Kroniki Mroku'];
+  const authors = ['J.R.R. Tolkien', 'Frank Herbert', 'Wasilij Mahanienko'];
+
+  it('resolves an exact case/diacritics-folded name', () => {
+    expect(resolveFacet('droga szamana', series)).toBe('Droga Szamana');
+  });
+
+  it('resolves a partial / surname-only author name', () => {
+    expect(resolveFacet('tolkien', authors)).toBe('J.R.R. Tolkien');
+  });
+
+  it('resolves an inflected Polish form by shared word stem', () => {
+    // "kronik mroku" (genitive) → "Kroniki Mroku".
+    expect(resolveFacet('kronik mroku', series)).toBe('Kroniki Mroku');
+  });
+
+  it('returns the original name when nothing matches closely', () => {
+    expect(resolveFacet('nonexistent saga', series)).toBe('nonexistent saga');
+  });
+});
+
+describe('applyFilter tolerant facet matching', () => {
+  const tolkienBooks: Book[] = [
+    makeBook({ id: 10, title: 'Hobbit', authors: ['J.R.R. Tolkien'], series: 'Śródziemie' }),
+    makeBook({ id: 11, title: 'Dune', authors: ['Frank Herbert'], series: 'Diuna' }),
+  ];
+
+  it('matches a series name ignoring diacritics', () => {
+    expect(applyFilter(tolkienBooks, { series: 'srodziemie' }).map((b) => b.id)).toEqual([10]);
+  });
+
+  it('matches an author by surname only', () => {
+    expect(applyFilter(tolkienBooks, { author: 'Tolkien' }).map((b) => b.id)).toEqual([10]);
   });
 });
