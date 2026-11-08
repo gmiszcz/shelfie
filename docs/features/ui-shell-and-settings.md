@@ -23,13 +23,30 @@ the toolbar rows wrap.
 
 `frontend/src/pages/Library.tsx` renders a toolbar row with:
 
-- `Add book` (opens Google Books search) and `Add manually` (opens the form),
 - a live book count (`N of M books` when a filter is active, else `M books`),
 - a **search box** that filters the loaded library client-side by title,
   subtitle, author or series (case-insensitive substring),
 - a **star filter** that narrows by whole-star rating band.
 
-Layout: `[Add book] [Add manually]  count  |  search box  |  star filter`.
+Layout: `count  |  search box  |  star filter`.
+
+## Add book button (everywhere)
+
+Adding a book is the main action, so it is not tied to the Library tab.
+`components/AddBookFlow.tsx` is mounted once in `App.tsx` and renders:
+
+- a round accent **+** button (`.add-book-fab`) fixed ABOVE the global mic (same right edge,
+  one 3.5 rem button + gap higher). With the mic off it takes the mic's spot; with the chat
+  bubble off it moves to the corner. On phones it lifts above the tab bar like the mic;
+- the Google Books `SearchDialog`. **Add manually** is always offered inside it (outlined
+  button before a search, text link under results, a button in the empty state);
+- the manual `BookFormDialog` in create mode.
+
+The open view lives in a small store (`addBookStore`: `openSearch(query?)`,
+`openManual(prefill?)`, `close()`). The agent anchor `library.addBook` is registered here
+with no tab, so the assistant can open it from any tab (actions `search` / `manual` / `close`).
+`library.dialogs` still reports `search` / `form` while it is open and its `close` closes it.
+Tests: `components/AddBookFlow.test.tsx`.
 The search box and the star filter are **independent controls**: they combine
 with AND, and selecting a star band never touches the search text (and vice
 versa).

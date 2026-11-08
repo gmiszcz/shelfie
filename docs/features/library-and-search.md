@@ -23,9 +23,10 @@ without a full refetch:
 
 `GET /api/books` returns every book for the single user, ordered
 `added_at DESC, id DESC` (newest first). The grid renders `BookGrid` → `BookCard`;
-clicking a card opens `BookDetailDialog` (status, stars, edit, delete). The
-toolbar has **Add book** (opens the search dialog) and **Add manually** (opens the
-empty form — see [manual-add-and-covers.md](manual-add-and-covers.md)).
+clicking a card opens `BookDetailDialog` (status, stars, edit, delete). Adding a
+book is NOT in the Library toolbar: the round **+** button (`components/AddBookFlow.tsx`,
+on every tab) opens the search dialog, and **Add manually** is inside that dialog (see
+[ui-shell-and-settings.md](ui-shell-and-settings.md#add-book-button-everywhere)).
 
 ## Adding a book by search
 

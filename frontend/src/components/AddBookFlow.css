@@ -1,0 +1,58 @@
+/* The round "+" Add-book button. It floats on every tab, ABOVE the global mic
+   (same right edge, one 3.5rem button + gap higher). With the mic hidden it takes
+   the mic's spot; with the chat bubble hidden it moves to the corner, like the mic.
+   Positions mirror GlobalMic.css so the buttons stay in one column. */
+
+.add-book-fab {
+  position: fixed;
+  right: calc(var(--content-padding) + 3.5rem + var(--default-gap));
+  bottom: calc(var(--content-padding) + 3.5rem + var(--default-gap));
+  /* Under the mic's toast (z-index 1000) so a reply is never hidden by the button. */
+  z-index: 999;
+  width: 3.5rem;
+  height: 3.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: none;
+  background: var(--app-accent);
+  color: #fff;
+  box-shadow: var(--shadow-pop);
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+.add-book-fab .pi {
+  font-size: 1.35rem;
+}
+.add-book-fab:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+.add-book-fab:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 3px;
+}
+
+.add-book-fab.no-mic {
+  bottom: var(--content-padding);
+}
+.add-book-fab.no-chat {
+  right: var(--content-padding);
+}
+
+/* Phones: lift clear of the bottom tab bar + home-indicator safe area, like the mic. */
+@media (max-width: 640px) {
+  .add-book-fab {
+    bottom: calc(4.5rem + 3.5rem + var(--default-gap) + env(safe-area-inset-bottom, 0px));
+  }
+  .add-book-fab.no-mic {
+    bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .add-book-fab {
+    transition: none;
+  }
+}

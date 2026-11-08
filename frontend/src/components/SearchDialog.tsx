@@ -226,14 +226,16 @@ export function SearchDialog({
         })}
       </div>
 
-      {/* Footer link only when the empty state (which has its own button) is not shown. */}
-      {onAddManually && (results.length > 0 || (searched && !!error)) && (
+      {/* Always offered (except next to the empty state, which has its own button):
+          "Add manually" lives here, inside the add-book view, not next to the + button. */}
+      {onAddManually && !(searched && results.length === 0 && !error && !loading) && (
         <div className="flex justify-content-center mt-3">
           <Button
-            label="Can't find it? Add manually"
+            label={results.length > 0 ? "Can't find it? Add manually" : 'Add manually'}
             icon="pi pi-pencil"
-            text
-            onClick={() => addManually({ title: query.trim() })}
+            outlined={results.length === 0}
+            text={results.length > 0}
+            onClick={() => addManually(query.trim() ? { title: query.trim() } : {})}
           />
         </div>
       )}

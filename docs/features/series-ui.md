@@ -84,3 +84,19 @@ mock `vite.series-mock.config.ts` (never imported by `vite build`) and
 `scripts/series_shots.py`. Verified at 390x844 and 1280x800: status + headline, segmented
 control next to Watch, the Details body with per-edition rows and source icons, the
 "Added to library" badge, and tidy waiting-list rows (no per-word wrapping).
+
+## Put a book in a series (2026-11-08)
+
+A book added from Google Books has no `series`, so it never shows on the Series tab and
+cannot be watched. `components/SeriesAddBook.tsx` (+ `.css`), rendered on the Series tab
+just above the Waiting list, fixes that:
+
+- lists the 5 newest library books **without a series** (a search box finds any other);
+- the user picks one, types the series name (existing names are suggested through a
+  `<datalist>`; a new name creates the series) and an optional volume;
+- **Watch for new volumes** is on by default: after `POST /api/series/{name}/books` it calls
+  `setWatch(key, true)`, which starts the web research (Bedrock) for that series;
+- then the series list and the book cache are reloaded.
+
+Backend: unchanged (`series_service.add_book_to_series` already accepts a new series name).
+Test: `components/SeriesAddBook.test.tsx`.

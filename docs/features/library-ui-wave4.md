@@ -11,8 +11,8 @@ siblings are spaced with flex/grid `gap`, never child margins.
 `frontend/src/pages/Library.tsx` renders the toolbar as a vertical flex stack
 (`.library-toolbar`) with three decoupled rows, each separated by `--default-gap`:
 
-1. `.library-toolbar-actions` — **Add book**, **Add manually**, and the book count
-   (the count is pushed to the right edge with `margin-left: auto`).
+1. `.library-toolbar-actions` — the book count only. Adding a book moved out of the
+   Library (2026-11-08): see the round **+** button in [ui-shell-and-settings.md](ui-shell-and-settings.md#add-book-button-everywhere).
 2. `.library-toolbar-search` — the search box on **its own full-width row**, using
    the shared `SearchInput` from `frontend/src/ui`. It is fully independent of the
    star filter.

@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 
 import { BookDetailDialog } from '../components/BookDetailDialog';
 import { SeriesCard } from '../components/SeriesCard';
+import { SeriesAddBook } from '../components/SeriesAddBook';
 import { SeriesEditDialog } from '../components/SeriesEditDialog';
 import { useLibrary } from '../hooks/useLibrary';
 import { useSeries } from '../hooks/useSeries';
@@ -121,7 +122,7 @@ export function Series() {
     setFilter,
     dismissAlerts,
   } = useSeries();
-  const { books } = useLibrary();
+  const { books, reload: reloadBooks } = useLibrary();
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Book | null>(null);
   const [editing, setEditing] = useState<SeriesSummary | null>(null);
@@ -667,6 +668,19 @@ export function Series() {
             </section>
           );
         })}
+
+      {/* A book with no series never shows above: put it in one (and watch it) here. */}
+      <SeriesAddBook
+        books={books}
+        series={series}
+        onWatch={(key) => setWatch(key, true)}
+        onDone={(message) => {
+          notifySuccess(message);
+          void reload();
+          void reloadBooks();
+        }}
+        onError={notifyError}
+      />
 
       {/* Waiting list: every not-yet-owned upcoming book. */}
       <section className="series-section">
