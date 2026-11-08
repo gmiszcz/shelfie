@@ -36,7 +36,8 @@ describe('FavouriteToggle', () => {
       fireEvent.click(btn);
     }
     expect(container.querySelectorAll('i.pi').length).toBe(1);
-    expect(container.querySelectorAll('.ui-fav-burst').length).toBeLessThanOrEqual(1);
+    // Subtle heartbeat only: no burst / sparkles.
+    expect(container.querySelectorAll('.ui-fav-burst').length).toBe(0);
   });
 
   it('does not bubble the click to a parent (so the card dialog never opens)', () => {

@@ -27,8 +27,8 @@ export function FavouriteToggle({
   className,
 }: FavouriteToggleProps) {
   const label = title ?? (value ? 'Remove from favourites' : 'Add to favourites');
-  // A short animation on each click: a "pop" + burst ring when added, a soft shrink
-  // when removed. The key restarts the CSS animation on every click.
+  // A subtle animation on each click: a soft heartbeat when added, one gentle squeeze
+  // when removed (see FavouriteToggle.css). The key restarts it on every click.
   const [anim, setAnim] = useState<{ kind: 'pop' | 'unpop'; key: number } | null>(null);
   const classes = [
     'ui-fav',
@@ -53,9 +53,7 @@ export function FavouriteToggle({
         onChange(!value);
       }}
       onAnimationEnd={(e) => {
-        // The burst is the longest part of "pop"; the icon is the only part of "unpop".
-        const el = e.target as HTMLElement;
-        if (el.classList.contains('ui-fav-burst') || (anim?.kind === 'unpop' && el.tagName === 'I')) {
+        if ((e.target as HTMLElement).tagName === 'I') {
           setAnim(null);
         }
       }}
@@ -67,11 +65,10 @@ export function FavouriteToggle({
       }}
     >
       {/* ONE keyed wrapper: a new key per click restarts the animation by remounting the
-          icon. Never give the icon and the burst the same key (siblings with duplicate
-          keys are not cleaned up, and hearts pile up in a row). */}
+          icon. Never key two siblings the same (duplicate keys are not cleaned up, and
+          hearts pile up in a row). */}
       <span className="ui-fav-icon" key={anim ? `a${anim.key}` : 'idle'}>
         <i className={value ? 'pi pi-heart-fill' : 'pi pi-heart'} aria-hidden="true" />
-        {anim?.kind === 'pop' && <span className="ui-fav-burst" aria-hidden="true" />}
       </span>
     </button>
   );
