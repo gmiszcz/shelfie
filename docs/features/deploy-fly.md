@@ -7,8 +7,7 @@ Live app: https://mybooks.fly.dev (Fly app `mybooks`, region `fra`).
 ```
 push to dev  -> backend + frontend checks (no image push, no deploy)
 merge to main -> checks -> docker job: build linux/amd64+arm64, push ghcr.io/gmiszcz/shelfie:<sha>
-              -> deploy job: copy that image to registry.fly.io/mybooks:<sha>
-                             -> flyctl deploy --image registry.fly.io/mybooks:<sha>
+              -> deploy job: flyctl deploy --image ghcr.io/gmiszcz/shelfie:<sha>  (Fly pulls from public GHCR)
 ```
 
 - Fly never builds the app and never polls GitHub. Only a merge to `main` deploys.

@@ -71,10 +71,10 @@ Multi-arch targets live in CI: default `linux/amd64`; PRs and `main` add `linux/
 
 The `deploy` job runs on a merge to `main`, in a `production` environment with a `fly-deploy`
 concurrency group so two deploys never overlap. It **reuses** the image the `docker` job just
-pushed to GHCR (nothing is rebuilt): `flyctl auth docker`, then `docker buildx imagetools create`
-copies `ghcr.io/gmiszcz/shelfie:<sha>` to `registry.fly.io/mybooks:<sha>`, and
-`flyctl deploy --app mybooks --image … --ha=false` rolls it out. Auth is `FLY_API_TOKEN`
-(a repo secret); the app name `mybooks` and `fly.toml` carry the runtime config. See
+pushed to GHCR (nothing is rebuilt): `flyctl deploy --app mybooks --image ghcr.io/gmiszcz/shelfie:<sha> --ha=false`
+pulls it straight from GHCR (the package is public). There is no copy to `registry.fly.io`: its
+login (`flyctl auth docker`) rejected the deploy token with 401. Auth is `FLY_API_TOKEN`
+(a deploy token for `mybooks`, in the `production` environment); the app name `mybooks` and `fly.toml` carry the runtime config. See
 [features/deploy-fly.md](features/deploy-fly.md).
 
 Hardening:

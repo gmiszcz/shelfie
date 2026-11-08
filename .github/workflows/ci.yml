@@ -134,8 +134,9 @@ jobs:
   deploy:
     name: Deploy to Fly.io
     # Only a push to main (a merge) deploys. It reuses the image the docker job just
-    # built and pushed to GHCR: copy it to the Fly registry, then roll it out. Nothing
-    # is rebuilt and the app never polls GitHub.
+    # built and pushed to GHCR (public package): Fly pulls it straight from ghcr.io.
+    # Nothing is rebuilt. No copy to registry.fly.io: its login rejected the deploy
+    # token with 401 (`flyctl auth docker`), and the copy is not needed.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     needs: [docker]
@@ -146,7 +147,6 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: read
-      packages: read
     env:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
       FLY_APP: mybooks
@@ -159,22 +159,5 @@ jobs:
       - name: Set up flyctl
         uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # v1.6
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-
-      - name: Log in to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Copy the built image to the Fly registry
-        run: |
-          flyctl auth docker
-          docker buildx imagetools create \
-            --tag "registry.fly.io/${FLY_APP}:${GITHUB_SHA}" \
-            "ghcr.io/gmiszcz/shelfie:${GITHUB_SHA}"
-
       - name: Deploy the image
-        run: flyctl deploy --app "${FLY_APP}" --image "registry.fly.io/${FLY_APP}:${GITHUB_SHA}" --ha=false --yes
+        run: flyctl deploy --app "${FLY_APP}" --image "ghcr.io/gmiszcz/shelfie:${GITHUB_SHA}" --ha=false --yes
