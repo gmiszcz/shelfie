@@ -1,0 +1,42 @@
+# Fly.io deployment for Shelfie. See docs/features/deploy-fly.md.
+# Secrets (never in this file): fly secrets set AWS_BEARER_TOKEN_BEDROCK=... \
+#   TRANSCRIBE_AWS_ACCESS_KEY_ID=... TRANSCRIBE_AWS_SECRET_ACCESS_KEY=... GOOGLE_BOOKS_API_KEY=...
+
+app = "mybooks"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  HOST = "0.0.0.0"
+  PORT = "8000"
+  LOG_LEVEL = "INFO"
+  AWS_REGION = "eu-central-1"
+  COOKIE_SECURE = "true"
+  REGISTRATION_ENABLED = "false"
+  GOOGLE_BOOKS_MAX_CALLS = "20"
+
+# Persistent data: auth.sqlite, users/<id>/ (library, books.json, covers), caches.
+[mounts]
+  source = "shelfie_data"
+  destination = "/app/data"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  # Pay-as-you-go: stop when idle, start on the next request (~2 s cold start).
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = "15s"
+    interval = "30s"
+    method = "GET"
+    path = "/api/health"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

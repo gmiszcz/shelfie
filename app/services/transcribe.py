@@ -82,6 +82,16 @@ def _resolve_credentials() -> CredentialResolver | None:
         import boto3  # type: ignore[import-untyped]
         from amazon_transcribe.auth import StaticCredentialResolver
 
+        from app.config import get_settings
+
+        # Preferred: the dedicated Transcribe-only IAM keys from .env (no SSO needed).
+        settings = get_settings()
+        if settings.transcribe_aws_access_key_id and settings.transcribe_aws_secret_access_key:
+            return StaticCredentialResolver(
+                access_key_id=settings.transcribe_aws_access_key_id,
+                secret_access_key=settings.transcribe_aws_secret_access_key.get_secret_value(),
+            )
+
         frozen = boto3.Session().get_credentials()
         if frozen is None:
             return None

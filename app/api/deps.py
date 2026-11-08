@@ -27,9 +27,20 @@ from app.userdata import UserData, set_current_user_data
 
 
 def client_ip(request: Request) -> str | None:
+    """The caller's IP for the login throttle, hard to spoof.
+
+    ``Fly-Client-IP`` is set by the Fly.io edge and overwrites any client value. Else the
+    LAST ``X-Forwarded-For`` hop (added by our own proxy); the first hop is whatever the
+    client sent, so trusting it would let anyone dodge the throttle.
+    """
+    fly = request.headers.get("fly-client-ip", "").strip()
+    if fly:
+        return fly
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
-        return forwarded.split(",")[0].strip()
+        hops = [h.strip() for h in forwarded.split(",") if h.strip()]
+        if hops:
+            return hops[-1]
     return request.client.host if request.client else None
 
 

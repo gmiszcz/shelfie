@@ -7,7 +7,7 @@ set here on login/setup and cleared on logout; its flags follow ``docs/features/
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response, status
 
 from app.api.deps import AppSettings, AuthConn, CurrentAuthUser, client_ip
 from app.config import Settings
@@ -146,7 +146,16 @@ async def logout(
 
 
 @router.get("/me", response_model=UserOut)
-async def me(user: CurrentAuthUser) -> UserOut:
+async def me(user: CurrentAuthUser, settings: AppSettings, background: BackgroundTasks) -> UserOut:
+    # The app calls /me once when it opens: a good moment to re-check watched series
+    # (only if the last check is older than 24 h). Runs after the response is sent.
+    from app.services import series_service
+
+    background.add_task(
+        series_service.auto_check_if_stale,
+        auth_service.user_data_for(settings, user.id),
+        settings=settings,
+    )
     return _user_out(user)
 
 

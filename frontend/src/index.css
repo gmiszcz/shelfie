@@ -773,6 +773,45 @@ body {
   font-weight: 600;
 }
 
+/* Phones: cover left (bigger), title + author right of it, buttons in their own row
+   underneath at full width. */
+@media (max-width: 640px) {
+  .search-hit {
+    display: grid;
+    grid-template-columns: 4.5rem minmax(0, 1fr);
+    grid-template-areas:
+      'cover meta'
+      'actions actions';
+    align-items: start;
+    gap: var(--default-gap);
+  }
+  .search-hit > .ui-cover {
+    grid-area: cover;
+    width: 4.5rem;
+  }
+  .search-hit .hit-meta {
+    grid-area: meta;
+    display: flex;
+    flex-direction: column;
+    gap: var(--small-padding);
+  }
+  .search-hit .hit-meta .t {
+    line-height: 1.3;
+  }
+  .search-hit .hit-actions {
+    grid-area: actions;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--small-gap);
+  }
+  .search-hit .hit-actions .p-button {
+    justify-content: center;
+    min-height: var(--touch-target);
+    padding: var(--small-padding) var(--default-padding);
+    font-size: 0.85rem;
+  }
+}
+
 .search-hit .hit-meta .a {
   color: var(--app-text-muted);
   font-size: 0.85rem;
@@ -792,9 +831,62 @@ body {
   margin-bottom: var(--default-gap);
 }
 
+/* Search field = text input + a small square language picker glued to its right. */
+.search-dialog-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  gap: var(--small-gap);
+}
+
 .search-dialog-input {
   flex: 1;
   min-width: 0;
+}
+
+.search-dialog-lang.p-dropdown {
+  flex: none;
+  width: var(--touch-target);
+  min-width: var(--touch-target);
+  justify-content: center;
+}
+.search-dialog-lang .p-dropdown-label {
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--app-accent);
+}
+.search-dialog-lang .p-dropdown-trigger {
+  display: none;
+}
+.search-lang-item {
+  display: inline-flex;
+  gap: var(--small-gap);
+}
+.search-lang-item strong {
+  min-width: 2.2rem;
+  font-family: var(--font-mono);
+}
+
+/* Phones: field on top, full-width Search button under it. 16px stops iOS focus zoom. */
+@media (max-width: 640px) {
+  .search-dialog-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--small-gap);
+  }
+  .search-dialog-bar .search-dialog-input input {
+    font-size: 16px;
+  }
+  .search-dialog-submit.p-button {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 .book-card .card-series,

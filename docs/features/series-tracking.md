@@ -341,3 +341,19 @@ Live result for King's Dark Tidings after the change: EN "Ritual of Ruin", relea
 the waiting list (`source = series_research:pl|en`).
 
 Tests: `frontend/src/agui/seriesReleases.test.ts`, `frontend/src/agui/tools.test.ts`.
+
+## Update 2026-11-08: check on app open (Fly.io)
+
+On Fly.io the machine sleeps, so there is no daily timer. Instead `GET /api/auth/me`
+(called once when the app opens) schedules `series_service.auto_check_if_stale` as a
+background task:
+
+| Rule | Value |
+|---|---|
+| runs when | at least one WATCHED series has `last_checked` empty or older than 24 h |
+| skipped when | nothing watched, all checked < 24 h ago, a series is `checking`, or a run is already going for this person |
+| what it runs | `check_watched_series` (web research PL + EN, Bedrock Haiku, never Google Books) |
+| extra wake-ups | none: the app is already open |
+
+Books added by hand to the waiting list are not re-checked; only watched series are.
+Tests: `tests/test_series_autocheck.py`.

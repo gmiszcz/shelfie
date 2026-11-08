@@ -21,14 +21,16 @@ interface Props {
   initialQuery?: string;
 }
 
+/** `code` is what the small picker shows; `label` names it in the open list. */
 const LANG_OPTIONS = [
-  { value: '', label: 'Any language' },
-  { value: 'pl', label: 'Polski' },
-  { value: 'en', label: 'English' },
-  { value: 'de', label: 'Deutsch' },
-  { value: 'fr', label: 'Français' },
-  { value: 'es', label: 'Español' },
+  { value: '', code: 'ALL', label: 'Any language' },
+  { value: 'pl', code: 'PL', label: 'Polski' },
+  { value: 'en', code: 'EN', label: 'English' },
+  { value: 'de', code: 'DE', label: 'Deutsch' },
+  { value: 'fr', code: 'FR', label: 'Français' },
+  { value: 'es', code: 'ES', label: 'Español' },
 ];
+type LangOption = (typeof LANG_OPTIONS)[number];
 
 export function SearchDialog({
   visible,
@@ -111,26 +113,47 @@ export function SearchDialog({
       dismissableMask
     >
       <div className="search-dialog-bar">
-        <div
-          className="search-dialog-input"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') void runSearch();
-          }}
-        >
-          <SearchInput
-            value={query}
-            onChange={setQuery}
-            placeholder="Title, author, or isbn:9780441013593"
-            ariaLabel="Search Google Books"
+        {/* One field: the text input plus a small square language picker on its right. */}
+        <div className="search-dialog-field">
+          <div
+            className="search-dialog-input"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void runSearch();
+            }}
+          >
+            <SearchInput
+              value={query}
+              onChange={setQuery}
+              placeholder="Title, author, or isbn:9780441013593"
+              ariaLabel="Search Google Books"
+            />
+          </div>
+          <Dropdown
+            value={lang}
+            options={LANG_OPTIONS}
+            optionValue="value"
+            optionLabel="code"
+            onChange={(e) => setLang(e.value)}
+            valueTemplate={(o: LangOption | null) => <span>{o?.code ?? 'PL'}</span>}
+            itemTemplate={(o: LangOption) => (
+              <span className="search-lang-item">
+                <strong>{o.code}</strong> {o.label}
+              </span>
+            )}
+            dropdownIcon={null as unknown as string}
+            className="search-dialog-lang"
+            panelClassName="search-dialog-lang-panel"
+            aria-label="Language filter"
+            title="Language"
           />
         </div>
-        <Dropdown
-          value={lang}
-          options={LANG_OPTIONS}
-          onChange={(e) => setLang(e.value)}
-          aria-label="Language filter"
+        <Button
+          label="Search"
+          icon="pi pi-search"
+          onClick={() => void runSearch()}
+          loading={loading}
+          className="search-dialog-submit"
         />
-        <Button label="Search" icon="pi pi-search" onClick={() => void runSearch()} loading={loading} />
       </div>
 
       {error && (
@@ -183,7 +206,8 @@ export function SearchDialog({
               <div className="hit-actions flex gap-2">
                 {onAddManually && (
                   <Button
-                    label="Edit before adding"
+                    label="Edit & add"
+                    title="Edit before adding"
                     icon="pi pi-pencil"
                     outlined
                     onClick={() => addManually(prefillFromHit(hit))}

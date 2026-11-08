@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     # Library assistant (AWS Bedrock via strands-compose). Credentials come from the AWS chain.
     bedrock_model_id: str = "eu.anthropic.claude-haiku-5-5"
     aws_region: str = "eu-central-1"
+    # Bedrock long-term API key (bearer token). When set, every Bedrock client (boto3 >= 1.39)
+    # uses it instead of SSO; it is exported to the process env at startup.
+    aws_bearer_token_bedrock: SecretStr | None = None
+    # Dedicated IAM keys for Amazon Transcribe only (the bearer token is Bedrock-only).
+    transcribe_aws_access_key_id: str | None = None
+    transcribe_aws_secret_access_key: SecretStr | None = None
     # Whether adding/enriching a book runs the Bedrock insights model. Default true in
     # production; the test suite sets it false so no test ever calls Bedrock or the network.
     enrichment_enabled: bool = True

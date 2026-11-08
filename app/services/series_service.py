@@ -859,3 +859,82 @@ async def suggest_series_fixes(
             }
         )
     return suggestions
+
+
+# --- automatic check on app open ---------------------------------------------------------
+#
+# There is no scheduler on Fly.io (the machine sleeps when idle, so a timer would have to
+# wake it). Instead, when a person opens the app (``GET /api/auth/me``) and their watched
+# series were last checked more than ``AUTO_CHECK_MAX_AGE_HOURS`` ago, the same
+# ``check_watched_series`` run starts in the background. The machine is awake at that
+# moment anyway, so this costs no extra wake-ups.
+
+AUTO_CHECK_MAX_AGE_HOURS = 24
+_auto_check_running: set[str] = set()
+
+
+def _parse_ts(value: str | None) -> Any:
+    from datetime import datetime, timezone
+
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+async def watched_series_stale(
+    db_file: Path, *, max_age_hours: float = AUTO_CHECK_MAX_AGE_HOURS
+) -> bool:
+    """True when at least one watched series was never checked or is older than the limit."""
+    from datetime import datetime, timedelta, timezone
+
+    if not db_file.is_file():
+        return False
+    conn = await connect(db_file)
+    try:
+        watched = await repo.list_watched(conn, user_id=SINGLE_USER_ID)
+    finally:
+        await conn.close()
+    if not watched:
+        return False
+    limit = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+    for info in watched:
+        if info.checking:
+            continue
+        checked = _parse_ts(info.last_checked)
+        if checked is None or checked < limit:
+            return True
+    return False
+
+
+async def auto_check_if_stale(
+    user_data: UserData,
+    *,
+    settings: Settings | None = None,
+    max_age_hours: float = AUTO_CHECK_MAX_AGE_HOURS,
+) -> bool:
+    """Run the watched-series check for one person if it is stale. Returns True if it ran.
+
+    One run per data folder at a time, so opening the app on two devices does not start two.
+    Never raises: a failed check only logs.
+    """
+    key = str(user_data.database_file)
+    if key in _auto_check_running:
+        return False
+    try:
+        if not await watched_series_stale(user_data.database_file, max_age_hours=max_age_hours):
+            return False
+        _auto_check_running.add(key)
+        result = await check_watched_series(
+            db_file=user_data.database_file, settings=settings, user_id=SINGLE_USER_ID
+        )
+        logger.info("auto series check: checked %s, updated %s", result.checked, result.updated)
+        return True
+    except Exception:  # noqa: BLE001 - best effort, never break app open
+        logger.warning("auto series check failed", exc_info=True)
+        return False
+    finally:
+        _auto_check_running.discard(key)
