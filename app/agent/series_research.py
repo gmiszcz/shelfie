@@ -109,7 +109,9 @@ _EDITOR_PROMPT = (
     "- next_volume: the volume number (a number), or null.\n"
     "- expected_date: free text ('2026', 'początek 2026') or an ISO date, or null. Never "
     "invent one.\n"
-    "- details: a few SHORT Polish bullets, each with the source_url it came from.\n"
+    "- details: a few SHORT Polish bullets of FACTS found on a page, each with the "
+    "source_url it came from. Never write bullets about what you did not find or did not "
+    "check (no 'Nie znaleziono…', 'Nie sprawdzono…').\n"
     "- editions: per requested language ('pl' and/or 'en') with status, title, date, "
     "source_url.\n"
     "If the brief found nothing concrete, use status 'no_news' or 'unknown', a factual "
@@ -271,6 +273,8 @@ def _clamp_summary(summary: ReleaseSummary, series: str, aliases: list[str]) -> 
     # No title => no standalone date for the next book (status may still describe the series).
     if summary.next_title is None and summary.status in ("unknown", "no_news"):
         summary.expected_date = None
+    # Details are facts with a source; drop source-less filler ("nothing found", "not checked").
+    summary.details = [d for d in summary.details if d.source_url and d.text.strip()]
     # Clean each edition's title the same way.
     for edition in summary.editions.values():
         if edition.status is not None and edition.status not in _STATUS_VALUES:
