@@ -52,6 +52,8 @@ vi.mock('../services/api', () => ({
 // eslint-disable-next-line import/first
 import { Library } from './Library';
 // eslint-disable-next-line import/first
+import { AddBookFlow, addBookStore } from '../components/AddBookFlow';
+// eslint-disable-next-line import/first
 import { SettingsProvider } from '../settings/SettingsContext';
 // eslint-disable-next-line import/first
 import { QueryWrapper } from '../queries/testUtils';
@@ -69,6 +71,7 @@ async function renderLibrary() {
     <QueryWrapper>
       <SettingsProvider>
         <Library />
+        <AddBookFlow />
       </SettingsProvider>
     </QueryWrapper>,
   );
@@ -84,6 +87,7 @@ function visibleIds(): number[] {
 
 afterEach(() => {
   cleanup();
+  addBookStore.close();
   _resetRegistry();
 });
 

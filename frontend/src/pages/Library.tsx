@@ -1,4 +1,3 @@
-import { Button } from 'primereact/button';
 import { Chip } from 'primereact/chip';
 import { Toast } from 'primereact/toast';
 import { useMemo, useRef, useState } from 'react';
@@ -7,7 +6,7 @@ import { useAgentAnchor } from '../agent-ui';
 import { BookDetailDialog } from '../components/BookDetailDialog';
 import { BookFormDialog } from '../components/BookFormDialog';
 import { BookGrid } from '../components/BookGrid';
-import { SearchDialog } from '../components/SearchDialog';
+import { addBookStore, useAddBookState } from '../components/AddBookFlow';
 import { StarFilter, boundsForStarBucket } from '../components/StarFilter';
 import type { ScoreBounds, StarBucket } from '../components/StarFilter';
 import { SearchInput } from '../ui';
@@ -26,7 +25,7 @@ import {
 } from '../settings/libraryFilter';
 import type { LibraryFilter } from '../settings/libraryFilter';
 import type { StarValue } from '../settings/uiBus';
-import type { Book, BookInput, ReadingStatus, VolumeSearchResult } from '../types';
+import type { Book, BookInput, ReadingStatus } from '../types';
 
 interface FormTarget {
   mode: 'create' | 'edit';
@@ -40,10 +39,9 @@ type FilterArgs = LibraryFilter;
 export function Library() {
   // Latest favourite handler for the agent anchor (the handler is defined further down).
   const handleFavouriteRef = useRef<(id: number, next: boolean) => Promise<void>>(async () => {});
-  const { books, loading, error, add, update, remove, upsert } = useLibrary();
+  const { books, loading, error, update, remove, upsert } = useLibrary();
+  const addBook = useAddBookState();
   const [selected, setSelected] = useState<Book | null>(null);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchInitialQuery, setSearchInitialQuery] = useState<string | undefined>(undefined);
   const [formTarget, setFormTarget] = useState<FormTarget | null>(null);
   // Free-text search box (client-side filtering).
   const [query, setQuery] = useState('');
@@ -53,11 +51,6 @@ export function Library() {
   const [starBucket, setStarBucket] = useState<StarBucket | null>(null);
   const [starBounds, setStarBounds] = useState<ScoreBounds | null>(null);
   const toast = useRef<Toast>(null);
-
-  const existingVolumeIds = useMemo(
-    () => new Set(books.map((b) => b.google_volume_id).filter((v): v is string => v != null)),
-    [books],
-  );
 
   const applyStarValue = (stars: StarValue) => {
     if (stars == null) {
@@ -332,26 +325,6 @@ export function Library() {
   });
 
   useAgentAnchor({
-    id: 'library.addBook',
-    kind: 'button',
-    label: 'Add a book',
-    description:
-      'Open the add-book flow. Invoke with action "search" (args { query } — opens the ' +
-      'Google-search dialog, types the query AND runs the search, so results show at once; ' +
-      'nothing else to click) or action "manual" (args { prefill? } — the manual form).',
-    tab: 'library',
-    actions: ['search', 'manual'],
-    invoke: (action, args) => {
-      if (action === 'manual') {
-        setFormTarget({ mode: 'create', initial: args?.prefill as Partial<BookInput> | undefined });
-      } else {
-        setSearchInitialQuery(typeof args?.query === 'string' ? args.query : '');
-        setSearchOpen(true);
-      }
-    },
-  });
-
-  useAgentAnchor({
     id: 'library.dialogs',
     kind: 'dialog',
     label: 'Library dialogs',
@@ -359,15 +332,15 @@ export function Library() {
     tab: 'library',
     actions: ['close'],
     getState: () => {
-      if (formTarget) return 'form';
-      if (searchOpen) return 'search';
+      if (formTarget || addBook.view === 'form') return 'form';
+      if (addBook.view === 'search') return 'search';
       if (selected) return 'detail';
       return 'none';
     },
     invoke: (action) => {
       if (action === 'close') {
         setSelected(null);
-        setSearchOpen(false);
+        addBookStore.close();
         setFormTarget(null);
       }
     },
@@ -375,15 +348,6 @@ export function Library() {
 
   const notifyError = (message: string) =>
     toast.current?.show({ severity: 'error', summary: 'Error', detail: message });
-
-  const handleAdd = async (volume: VolumeSearchResult) => {
-    try {
-      const book = await add(volume);
-      toast.current?.show({ severity: 'success', summary: 'Added', detail: book.title });
-    } catch (err) {
-      notifyError(err instanceof Error ? err.message : 'Could not add book');
-    }
-  };
 
   const handleStatus = async (id: number, status: ReadingStatus) => {
     try {
@@ -453,20 +417,6 @@ export function Library() {
 
       <div className="library-toolbar">
         <div className="library-toolbar-actions">
-          <Button
-            label="Add book"
-            icon="pi pi-plus"
-            onClick={() => {
-              setSearchInitialQuery(undefined);
-              setSearchOpen(true);
-            }}
-          />
-          <Button
-            label="Add manually"
-            icon="pi pi-pencil"
-            outlined
-            onClick={() => setFormTarget({ mode: 'create' })}
-          />
           <span className="library-count">{countLabel}</span>
         </div>
 
@@ -529,15 +479,6 @@ export function Library() {
         onDelete={handleDelete}
         onEdit={openEdit}
         onFavourite={handleFavourite}
-      />
-
-      <SearchDialog
-        visible={searchOpen}
-        onHide={() => setSearchOpen(false)}
-        onAdd={handleAdd}
-        existingVolumeIds={existingVolumeIds}
-        onAddManually={(prefill) => setFormTarget({ mode: 'create', initial: prefill })}
-        initialQuery={searchInitialQuery}
       />
 
       {formTarget && (
