@@ -328,10 +328,15 @@ def add_book(
 
     Two ways to use it:
 
-    - **From a search** (preferred): pass ``query`` (e.g. "Dune Frank Herbert"). The best
-      Google Books match is looked up through the existing integration and added, enriched
-      with that catalogue metadata (cover, publisher, ISBN, description). Any reading fields
-      you also pass (status, stars, dates, shelves, tags) are applied on top of the match.
+    - **From a search** (preferred): pass ``query`` (e.g. "Diuna Frank Herbert") AND the
+      expected ``title`` and ``authors``. ONE Google Books search runs; a hit is used only
+      when every significant word of ``title`` is in its title and the author surname
+      matches — never just the first hit. With no matching hit nothing is added and
+      ``candidates`` are returned. The match brings catalogue metadata (cover, publisher,
+      ISBN, description; a missing cover is tried on OpenLibrary by ISBN). Reading fields
+      you also pass (status, stars, dates, shelves, tags, series, volume) are applied on top.
+      For a series volume ("Bezsilna tom 2"), first look the series up (get_series) to get
+      the author and the volume's real title.
     - **Manually**: leave ``query`` empty and pass at least ``title``. Everything is taken
       from the fields you give.
 
@@ -375,11 +380,23 @@ def add_book(
 
     matched: dict[str, Any] | None = None
     if query.strip():
-        match = _run(_search_best_match(query.strip()))
+        if not title.strip() or not author_list:
+            return {
+                "error": "with query also pass the exact title and authors you expect, so the "
+                "right edition is picked (look the author up first, e.g. get_series)"
+            }
+        items = _run(_search_matches(query.strip()))
+        match = _pick_match(items, title.strip(), author_list)
         if match is None:
             return {
-                "error": f"no Google Books match for {query!r}; add manually with title/authors"
+                "error": f"no Google Books hit matches title {title!r} by {authors!r}; "
+                "nothing was added. Show the user the candidates, or add manually.",
+                "candidates": [
+                    {"title": i.title, "authors": list(i.authors or []), "year": i.published_date}
+                    for i in items[:5]
+                ],
             }
+        match = _run(_fill_cover(match))
         matched = match.model_dump()
         # Search metadata is the base; the reading fields above win.
         base = {
@@ -429,8 +446,8 @@ def add_book(
     return result
 
 
-async def _search_best_match(query: str) -> Any:
-    """Return the single best Google Books match for ``query`` (or None)."""
+async def _search_matches(query: str) -> list[Any]:
+    """ONE Google Books search for ``query`` (shared client: disk cache + call budget)."""
     from app.integrations.google_books import GoogleBooksClient
 
     settings = get_settings()
@@ -439,7 +456,36 @@ async def _search_best_match(query: str) -> Any:
         api_key=settings.google_books_api_key,
     )
     response = await books_service.search_external(client, query)
-    return response.items[0] if response.items else None
+    return list(response.items)
+
+
+def _pick_match(items: list[Any], title: str, authors: list[str]) -> Any:
+    """The first hit whose title words AND author surname match; None if none does.
+
+    Never "the first hit": a hit counts only when every significant word of ``title``
+    is in its title and (when an author is known) its author surname is a close
+    spelling. Without a title, the query itself must not be trusted blindly either,
+    so the caller always passes the expected title.
+    """
+    from app.services.series_service import _surname_close, _title_words_match
+
+    for item in items:
+        if title and not _title_words_match(title, item.title):
+            continue
+        if authors and not any(_surname_close(a, list(item.authors or [])) for a in authors):
+            continue
+        return item
+    return None
+
+
+async def _fill_cover(match: Any) -> Any:
+    """Google hit without a cover: try OpenLibrary by ISBN (free, not Google)."""
+    from app.integrations.openlibrary import cover_by_isbn
+
+    if match.cover_url:
+        return match
+    cover = await cover_by_isbn(match.isbn_13) or await cover_by_isbn(match.isbn_10)
+    return match.model_copy(update={"cover_url": cover}) if cover else match
 
 
 @tool

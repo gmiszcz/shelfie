@@ -39,6 +39,8 @@ import type { ReactNode } from 'react';
 import { runAgent, type AgUiMessage } from '../agui/client';
 import { describeAction } from '../agui/labels';
 import { createTools } from '../agui/tools';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys, useQueryUserId } from '../queries';
 import { api } from '../services/api';
 import type { Book, ChatEvent } from '../types';
 import { readChatStream } from './sse';
@@ -198,6 +200,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     void ensureBooks();
   }, [ensureBooks]);
 
+  const queryClient = useQueryClient();
+  const queryUserId = useQueryUserId();
+  const refreshUserData = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.user(queryUserId) });
+  }, [queryClient, queryUserId]);
+
   const handleLibraryEvent = useCallback((event: ChatEvent) => {
     dispatch({ type: 'event', event });
   }, []);
@@ -205,9 +213,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const sendLibrary = useCallback(
     async (text: string, controller: AbortController) => {
       const resp = await api.chat(text, sessionRef.current, 'library', controller.signal);
-      await readChatStream(resp, handleLibraryEvent, controller.signal);
+      try {
+        await readChatStream(resp, handleLibraryEvent, controller.signal);
+      } finally {
+        // The library agent may have written on the server (add_book, refresh_series
+        // auto-adds, updates). Refetch this user's data so Library/Series show it at once
+        // (cheap: unchanged lists answer 304 via ETag).
+        refreshUserData();
+      }
     },
-    [handleLibraryEvent],
+    [handleLibraryEvent, refreshUserData],
   );
 
   /**
@@ -216,18 +231,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
    * POSTs /api/agent/chat with scope "library_readonly", and reads the SSE stream to
    * the final `session_finish` text (reusing readChatStream + api.chat).
    */
-  const askLibrarian = useCallback(
-    async (question: string, signal?: AbortSignal): Promise<string> => {
+  const callLibrarian = useCallback(
+    async (
+      question: string,
+      scope: 'library_readonly' | 'library_add',
+      signal?: AbortSignal,
+    ): Promise<string> => {
       if (!librarianSessionRef.current) {
         const base = (sessionRef.current ?? newId('t')).replace(/[^A-Za-z0-9_-]/g, '');
         librarianSessionRef.current = `lib-${base}`.slice(0, 64);
       }
-      const resp = await api.chat(
-        question,
-        librarianSessionRef.current,
-        'library_readonly',
-        signal,
-      );
+      // The server keys sessions by (user, scope, id): the read-only and the add-only
+      // librarian keep separate histories under the same id.
+      const resp = await api.chat(question, librarianSessionRef.current, scope, signal);
       let answer = '';
       let errored: string | null = null;
       await readChatStream(
@@ -245,12 +261,22 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         },
         signal,
       );
+      refreshUserData();
       if (errored) {
         throw new Error(errored);
       }
       return answer.trim();
     },
-    [],
+    [refreshUserData],
+  );
+  const askLibrarian = useCallback(
+    (question: string, signal?: AbortSignal) => callLibrarian(question, 'library_readonly', signal),
+    [callLibrarian],
+  );
+  /** The UI agent's librarian_add tool: the librarian with read + add powers only. */
+  const addViaLibrarian = useCallback(
+    (request: string, signal?: AbortSignal) => callLibrarian(request, 'library_add', signal),
+    [callLibrarian],
   );
 
   /** Run the UI agent over the shared thread, dispatching into the shared reducer. */
@@ -260,6 +286,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       getBooks: () => booksRef.current,
       series: { list: api.listSeries, get: api.getSeries, refresh: api.refreshSeries },
       askLibrarian,
+      addViaLibrarian,
       signal: controller.signal,
     });
     // Trim stale tool-result dumps from earlier commands before adding this one.
@@ -304,7 +331,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
     dispatch({ type: 'finish', ok: true });
     return { reply: result.finalText, ok: true };
-  }, [ensureBooks, askLibrarian]);
+  }, [ensureBooks, askLibrarian, addViaLibrarian]);
 
   const runWithGuards = useCallback(
     async (text: string, runner: (t: string, c: AbortController) => Promise<unknown>) => {

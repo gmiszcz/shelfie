@@ -49,9 +49,21 @@ READONLY_TOOLS: frozenset[str] = frozenset(
     }
 )
 
+#: The "library_add" scope (the UI agent's librarian_add tool): read + ADD only. It can
+#: look things up, add a book (Google Books, title + author checked) and put a book in a
+#: series. It cannot update, delete, merge, rename or change anything else.
+ADD_TOOLS: frozenset[str] = READONLY_TOOLS | frozenset({"add_book", "add_book_to_series"})
+
 #: Valid chat scopes. "library" is the full read+write assistant; "library_readonly"
-#: is the answer-only scope the UI agent's ask_librarian tool uses.
-VALID_SCOPES: frozenset[str] = frozenset({"library", "library_readonly"})
+#: is the answer-only scope the UI agent's ask_librarian tool uses; "library_add" is
+#: read + add (the UI agent's librarian_add tool).
+VALID_SCOPES: frozenset[str] = frozenset({"library", "library_readonly", "library_add"})
+
+#: Tools each restricted scope keeps; every other tool is pruned. "library" keeps all.
+SCOPE_TOOLS: dict[str, frozenset[str]] = {
+    "library_readonly": READONLY_TOOLS,
+    "library_add": ADD_TOOLS,
+}
 
 
 def _apply_scope(entry: Any, scope: str) -> None:
@@ -61,13 +73,14 @@ def _apply_scope(entry: Any, scope: str) -> None:
     has no write tool in its registry at all — the model cannot call what it does not
     have. A ``library`` (default) scope is left untouched.
     """
-    if scope != "library_readonly":
+    allowed = SCOPE_TOOLS.get(scope)
+    if allowed is None:
         return
     registry = getattr(entry, "tool_registry", None)
     if registry is None:  # pragma: no cover - entry is always a strands Agent here
         return
     for name in list(registry.registry):
-        if name not in READONLY_TOOLS:
+        if name not in allowed:
             registry.remove(name)
 
 
@@ -80,6 +93,21 @@ def _readonly_prompt_note() -> str:
         "anything. If the user asks you to add, remove, edit, rename, merge, mark or "
         "otherwise modify data, refuse briefly and explain they must do it themselves in "
         "the app."
+    )
+
+
+def _add_prompt_note() -> str:
+    """The extra rule for the add-only scope (the UI agent's librarian_add tool)."""
+    return (
+        "\n\nADD MODE: the request comes from the in-app voice/UI assistant. You can look "
+        "things up and ADD books (add_book, add_book_to_series) - nothing else: no update, "
+        "delete, rename, merge or other change. To add a book, first find the exact title "
+        "and author: for a series volume look the series up (get_series / search_library), "
+        "e.g. 'Bezsilna tom 2' -> the series author and that volume's real title. Then call "
+        "add_book with query AND title AND authors (plus series and volume). If no Google "
+        "Books hit matches, nothing is added: name the candidates briefly and ask. Never add "
+        "a book whose title or author does not match. Reply in one or two short sentences: "
+        "what was added (title, author, series/volume) or why not."
     )
 
 
@@ -131,6 +159,8 @@ def compose_session_factory(settings: Settings) -> SessionFactory:
         base_prompt = getattr(resolved.entry, "system_prompt", None)
         if scope == "library_readonly" and isinstance(base_prompt, str):
             base_prompt = base_prompt + _readonly_prompt_note()
+        elif scope == "library_add" and isinstance(base_prompt, str):
+            base_prompt = base_prompt + _add_prompt_note()
         return ChatSession(
             session_id=session_id,
             entry=resolved.entry,

@@ -162,7 +162,8 @@ Playwright against the live backend):
 | „przejdź do statystyk i pokaż ostatnie 12 miesięcy” | `navigate(stats)` → `set(stats.period, "last12Months")` | Statistics tab, period changed |
 | „w rankingu wyszukaj Sanderson” | `navigate(ranking)` → `set(ranking.search, "Sanderson")` | ranking search filled |
 | „włącz w ustawieniach liczbę stron na kartach” | `set(settings.cardFields.pageCount, true)` | page-count card field on |
-| „chcę dodać książkę Diuna” | `invoke(library.addBook, search, {query:"Diuna"})` | add-search dialog opens with "Diuna" typed and the Google Books search already run (results shown) |
+| „chcę dodać książkę Diuna” | since 2026-11-08: `librarian_add("chcę dodać książkę Diuna")` (scope `library_add`) | the librarian finds the Google Books hit whose title AND author match and adds it; before, the UI agent only opened the search window |
+| „otwórz dodawanie książki z Diuną” | `invoke(library.addBook, search, {query:"Diuna"})` | add-search window opens, "Diuna" typed and searched |
 | „pokaż książki z tego roku” | `invoke(library.filter, apply, {finished_year: <current>})` | finished-this-year, chip shows it, count matches DB |
 | „pokaż przeczytane w 2025” | `invoke(library.filter, apply, {finished_year: 2025})` | finished-2025, count matches DB |
 | „pokaż fantasy z 2024” | `invoke(library.filter, apply, {shelf:"Fantasy", finished_year:2024})` | shelf + year, structured chip |
@@ -443,3 +444,33 @@ the UI-agent loop:
   `app/agent/config.yaml` (thinking removed), `app/api/routes/agent.py`.
 - `frontend/src/agui/tools.ts`, `frontend/src/agui/client.ts`, `frontend/src/agui/labels.ts`,
   `frontend/src/chat/ChatProvider.tsx`, `frontend/src/services/api.ts`.
+
+## 2026-11-08 — adding a book from the UI agent goes to the librarian (`librarian_add`)
+
+Problem: "dodaj książkę Bezsilna tom drugi" said to the UI agent (mic or chat) only opened the
+Google search window with "Bezsilna. Tom 2" typed. Nothing was added, and the typed query was a
+guess.
+
+Path of responsibility now:
+
+```
+user (mic / chat, UI agent) -> UI agent (Bedrock, browser loop)
+  -> librarian_add(request)            frontend/src/agui/tools.ts
+  -> ChatProvider.addViaLibrarian      POST /api/agent/chat, scope "library_add"
+  -> librarian (strands-compose)       tools pruned to READONLY_TOOLS + add_book + add_book_to_series
+       get_series / search_library     -> real author + the volume's title
+       add_book(query, title, authors, series, volume)
+          ONE Google Books search; the hit must match title words AND author surname
+          (series_service._title_words_match / _surname_close); no match -> nothing added,
+          "candidates" returned; missing cover -> OpenLibrary by ISBN
+  <- answer shown verbatim (final_answer, no extra UI-agent turn)
+  -> the app refetches the user's data (books/series), so the new book shows at once
+```
+
+- `app/agent/engine.py`: `ADD_TOOLS`, `SCOPE_TOOLS`, `_add_prompt_note()`; `_apply_scope` prunes
+  per scope. `library_add` cannot update, delete, rename, merge or watch.
+- `app/agent/ui_agent.py`: adding a book → `librarian_add` and nothing else; `library.addBook`
+  (the search window) only when the user asks to OPEN it.
+- Tests: `tests/test_agent.py::test_add_scope_keeps_only_read_and_add_tools`,
+  `tests/test_agent_write.py` (wrong author not added, title+author required, OpenLibrary cover),
+  `frontend/src/agui/tools.test.ts` (`librarian_add`).

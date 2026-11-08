@@ -76,6 +76,8 @@ import { ChatProvider, useChat } from '../chat/ChatProvider';
 import { GlobalMic } from './GlobalMic';
 // eslint-disable-next-line import/first
 import { SettingsProvider } from '../settings/SettingsContext';
+// eslint-disable-next-line import/first
+import { QueryWrapper } from '../queries/testUtils';
 
 /** A probe exposing the shared chat `open` flag, mode and message count to assertions. */
 function OpenProbe() {
@@ -91,12 +93,14 @@ function OpenProbe() {
 
 function renderGlobalMic() {
   return render(
-    <SettingsProvider>
-      <ChatProvider>
-        <OpenProbe />
-        <GlobalMic />
-      </ChatProvider>
-    </SettingsProvider>,
+    <QueryWrapper>
+      <SettingsProvider>
+        <ChatProvider>
+          <OpenProbe />
+          <GlobalMic />
+        </ChatProvider>
+      </SettingsProvider>
+    </QueryWrapper>,
   );
 }
 
