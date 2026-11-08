@@ -5,6 +5,7 @@ import type {
   ExpectedBook,
   SeriesAlertsResponse,
   SeriesFilterId,
+  SeriesSearchLang,
   SeriesSummary,
 } from '../types';
 
@@ -18,7 +19,10 @@ export interface UseSeries {
   error: string | null;
   reload: () => Promise<void>;
   setWatch: (key: string, watch: boolean) => Promise<void>;
-  refresh: (key: string) => Promise<void>;
+  /** Run the release lookup; `searchLang` overrides (and saves) the stored language. */
+  refresh: (key: string, searchLang?: SeriesSearchLang) => Promise<void>;
+  /** Persist a new per-series search language (PATCH search_lang). */
+  setLang: (key: string, lang: SeriesSearchLang) => Promise<void>;
   removeExpected: (id: number) => Promise<void>;
   /** Set the active filter and persist it to the per-user prefs table. */
   setFilter: (filter: SeriesFilterId) => void;
@@ -59,6 +63,9 @@ export function useSeries(): UseSeries {
     void reload();
   }, [reload]);
 
+  // The stored default search language, kept so a filter write never clobbers it.
+  const defaultSearchLang = useRef<SeriesSearchLang>('pl');
+
   // Restore the active filter from the per-user preferences table (any device).
   useEffect(() => {
     let cancelled = false;
@@ -67,6 +74,7 @@ export function useSeries(): UseSeries {
       .then((prefs) => {
         if (!cancelled) {
           setFilterState(prefs.filter);
+          defaultSearchLang.current = prefs.default_search_lang ?? 'pl';
         }
       })
       .catch(() => undefined)
@@ -90,7 +98,13 @@ export function useSeries(): UseSeries {
         clearTimeout(persistTimer.current);
       }
       persistTimer.current = setTimeout(() => {
-        void api.putSeriesPreferences({ filter: next, sort: null }).catch(() => undefined);
+        void api
+          .putSeriesPreferences({
+            filter: next,
+            sort: null,
+            default_search_lang: defaultSearchLang.current,
+          })
+          .catch(() => undefined);
       }, 250);
     },
     [],
@@ -125,8 +139,13 @@ export function useSeries(): UseSeries {
     void api.seriesAlerts().then(setAlerts).catch(() => undefined);
   }, []);
 
-  const refresh = useCallback(async (key: string) => {
-    const updated = await api.refreshSeries(key);
+  const refresh = useCallback(async (key: string, searchLang?: SeriesSearchLang) => {
+    const updated = await api.refreshSeries(key, searchLang);
+    setSeries((prev) => prev.map((s) => (s.series_key === key ? updated : s)));
+  }, []);
+
+  const setLang = useCallback(async (key: string, lang: SeriesSearchLang) => {
+    const updated = await api.updateSeries(key, { search_lang: lang });
     setSeries((prev) => prev.map((s) => (s.series_key === key ? updated : s)));
   }, []);
 
@@ -174,6 +193,7 @@ export function useSeries(): UseSeries {
     reload,
     setWatch,
     refresh,
+    setLang,
     removeExpected,
     setFilter,
     dismissAlerts,

@@ -131,12 +131,24 @@
   border-top: 1px solid var(--app-border);
 }
 
+.series-card-watch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--small-gap);
+  flex-wrap: wrap;
+}
+
 .series-card-watch {
   display: inline-flex;
   align-items: center;
   gap: var(--small-gap);
   cursor: pointer;
   font-size: 0.9rem;
+}
+
+.series-card-lang {
+  flex: 0 0 auto;
 }
 
 .series-card-next {

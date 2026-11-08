@@ -265,6 +265,50 @@ export interface MissingVolume {
   source: string | null;
 }
 
+/** Which language(s) the release research searches for a series (wave 6). */
+export type SeriesSearchLang = 'pl' | 'en' | 'both';
+
+/** The status of the next-volume research, drives the card status icon (wave 6). */
+export type ReleaseStatus =
+  | 'released'
+  | 'announced'
+  | 'in_translation'
+  | 'no_news'
+  | 'unknown';
+
+/** One factual bullet in a release summary, with an optional source link. */
+export interface ReleaseDetail {
+  text: string;
+  source_url: string | null;
+}
+
+/** Per-edition (PL / EN) release facts inside a release summary. */
+export interface ReleaseEdition {
+  status: ReleaseStatus | string;
+  title: string | null;
+  date: string | null;
+  source_url: string | null;
+}
+
+/**
+ * The editor-written, facts-only release summary for a watched series (wave 6).
+ * One factual `headline` plus structured detail revealed under "Details".
+ */
+export interface ReleaseSummary {
+  status: ReleaseStatus;
+  headline: string;
+  next_title: string | null;
+  next_volume: number | null;
+  expected_date: string | null;
+  details: ReleaseDetail[];
+  editions: {
+    pl?: ReleaseEdition | null;
+    en?: ReleaseEdition | null;
+  };
+  added_book_id: number | null;
+  checked_at: string | null;
+}
+
 /** A series as the Series tab shows it (computed reading data + cached lookup). */
 export interface SeriesSummary {
   series_key: string;
@@ -287,6 +331,10 @@ export interface SeriesSummary {
   checking: boolean;
   last_checked: string | null;
   notes: string | null;
+  /** Which language(s) the release research searches for this series (wave 6). */
+  search_lang: SeriesSearchLang;
+  /** The editor-written facts-only release summary, or null when never checked. */
+  release_summary: ReleaseSummary | null;
 }
 
 export interface SeriesAlert {
@@ -323,6 +371,8 @@ export type SeriesFilterId =
 export interface SeriesPreferences {
   filter: SeriesFilterId;
   sort: string | null;
+  /** Default release-research language for newly watched series (wave 6; default 'pl'). */
+  default_search_lang: SeriesSearchLang;
 }
 
 export interface ExpectedBook {

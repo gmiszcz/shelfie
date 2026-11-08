@@ -1046,6 +1046,12 @@ body {
   cursor: pointer;
 }
 
+/* Series search: a label on the left, the PL|EN|Both control on the right. */
+.settings-series-lang {
+  justify-content: space-between;
+  gap: var(--default-gap);
+}
+
 .settings-reset {
   align-self: flex-start;
 }

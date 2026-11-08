@@ -31,6 +31,8 @@ function makeSeries(overrides: Partial<SeriesSummary> = {}): SeriesSummary {
     checking: overrides.checking ?? false,
     last_checked: overrides.last_checked ?? null,
     notes: overrides.notes ?? null,
+    search_lang: overrides.search_lang ?? 'pl',
+    release_summary: overrides.release_summary ?? null,
   };
 }
 

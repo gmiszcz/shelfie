@@ -65,8 +65,8 @@ beforeEach(() => {
   listExpected.mockReset().mockResolvedValue([]);
   seriesAlerts.mockReset().mockResolvedValue(alertResponse());
   markAlertsSeen.mockReset().mockResolvedValue(alertResponse([KEY_NV, KEY_IP]));
-  getSeriesPreferences.mockReset().mockResolvedValue({ filter: 'all', sort: null });
-  putSeriesPreferences.mockReset().mockResolvedValue({ filter: 'all', sort: null });
+  getSeriesPreferences.mockReset().mockResolvedValue({ filter: 'all', sort: null, default_search_lang: 'pl' });
+  putSeriesPreferences.mockReset().mockResolvedValue({ filter: 'all', sort: null, default_search_lang: 'pl' });
   setSeriesWatch.mockReset();
 });
 
@@ -128,6 +128,10 @@ describe('useSeries preferences', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300);
     });
-    expect(putSeriesPreferences).toHaveBeenCalledWith({ filter: 'complete', sort: null });
+    expect(putSeriesPreferences).toHaveBeenCalledWith({
+      filter: 'complete',
+      sort: null,
+      default_search_lang: 'pl',
+    });
   });
 });
