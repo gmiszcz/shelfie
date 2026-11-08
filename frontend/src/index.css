@@ -780,46 +780,29 @@ body {
 }
 
 /* Rating is the main control here: bigger stars, easy to tap and correct. */
+/* Stars: a touch larger than on the cards (easy to tap), light outline for the empty ones. */
 .detail-stars .half-star-star,
 .detail-stars .half-star-star .pi {
-  font-size: 1.75rem;
+  font-size: 1.45rem;
 }
 .detail-stars .half-star-stars {
-  gap: var(--small-padding);
+  gap: 0.3rem;
+}
+.detail-stars .half-star-star .pi-star {
+  color: var(--app-border-strong);
 }
 
+/* The refined score: a small soft chip next to the stars. */
 .detail-score {
-  font-size: 1.1rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--small-gap);
+  border-radius: var(--radius-pill);
+  background: var(--accent-blue-soft);
+  font-size: 0.85rem;
   font-family: var(--font-mono);
   font-weight: 600;
   color: var(--app-accent);
-}
-
-/* The status dropdown looks like the status tag itself (click it to change). */
-.detail-status-pick.p-dropdown {
-  border: none;
-  background: transparent;
-  box-shadow: none;
-  min-height: 0;
-}
-.detail-status-pick.p-dropdown .p-dropdown-label {
-  padding: 0;
-}
-.detail-status-pick.p-dropdown .p-dropdown-trigger {
-  width: 1.5rem;
-  color: var(--app-text-faint);
-}
-.detail-status-pick.p-dropdown .p-dropdown-trigger .p-icon,
-.detail-status-pick.p-dropdown .p-dropdown-trigger .pi {
-  width: 0.7rem;
-  height: 0.7rem;
-  font-size: 0.7rem;
-}
-.detail-status-pick.p-dropdown:not(.p-disabled).p-focus {
-  box-shadow: none;
-  outline: 2px solid var(--app-accent);
-  outline-offset: 2px;
-  border-radius: var(--radius-pill);
 }
 
 /* Quiet one-line facts (dates, pages, added, copies): dot-separated. */
@@ -970,10 +953,24 @@ body {
   .search-dialog-bar .search-dialog-input input {
     font-size: 16px;
   }
-  .search-dialog-submit.p-button {
+  .search-dialog-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .search-dialog-buttons .p-button {
     width: 100%;
     justify-content: center;
+    min-height: var(--touch-target);
   }
+}
+
+/* Search + Manually: one row of two buttons. */
+.search-dialog-buttons {
+  display: flex;
+  gap: var(--small-gap);
+}
+.search-dialog-buttons .p-button {
+  white-space: nowrap;
 }
 
 .book-card .card-series,

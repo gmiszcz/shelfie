@@ -291,3 +291,13 @@ AI). PNGs rendered from it: `apple-touch-icon.png` (180, iOS home screen), `icon
 `icon-512.png` (`manifest.json`), `favicon-32.png`. Linked in `frontend/index.html`. The square is
 full-bleed; iOS and Android round the corners. To change it, edit the SVG and re-render the PNGs
 (Chromium screenshot of the SVG at each size).
+
+Update 2 (2026-11-08): the status dropdown is gone. `ui/StatusSegmented.tsx` shows the four
+statuses as one row of one-tap buttons with icons (Want · Reading · Finished · Dropped), the
+active one tinted in its status colour (a `radiogroup`; test `ui/StatusSegmented.test.tsx`), as
+book trackers commonly do. The rating row sits under it: stars 1.45 rem with light outlines for
+the empty ones, and the score as a small soft chip.
+
+The add-book dialog (`SearchDialog.tsx`) is titled "Add a book"; **Search** and **Manually** sit
+side by side in one row (two equal buttons on a phone), so there is no separate "Add manually"
+button under the field.

@@ -1,0 +1,73 @@
+/* Reading-status segmented control. Spacing/radius from :root tokens; colours from the
+   status accent tokens (same hues as StatusTag). */
+.ui-status-seg {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--small-padding);
+  padding: var(--small-padding);
+  background: var(--app-surface-2, var(--accent-grey-soft));
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-md);
+  max-width: 28rem;
+}
+
+.ui-status-seg-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: var(--touch-target);
+  padding: var(--small-padding);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--app-text-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+.ui-status-seg-item .pi {
+  font-size: 1rem;
+}
+.ui-status-seg-item:hover:not(.is-on) {
+  color: var(--app-text);
+  background: color-mix(in srgb, var(--app-surface) 70%, transparent);
+}
+.ui-status-seg-item:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 1px;
+}
+
+.ui-status-seg-item.is-on {
+  background: var(--app-surface);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
+  font-weight: 600;
+}
+.ui-status-seg-item--want.is-on {
+  color: var(--accent-blue-text);
+  border-color: color-mix(in srgb, var(--accent-blue) 45%, transparent);
+}
+.ui-status-seg-item--reading.is-on {
+  color: var(--accent-orange-text);
+  border-color: color-mix(in srgb, var(--accent-orange) 45%, transparent);
+}
+.ui-status-seg-item--finished.is-on {
+  color: var(--accent-green-text);
+  border-color: color-mix(in srgb, var(--accent-green) 45%, transparent);
+}
+.ui-status-seg-item--abandoned.is-on {
+  color: var(--accent-red-text);
+  border-color: color-mix(in srgb, var(--accent-red) 45%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-status-seg-item {
+    transition: none;
+  }
+}
