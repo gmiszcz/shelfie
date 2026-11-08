@@ -61,6 +61,8 @@ export function describeAction(name: string, args: Record<string, unknown>): str
         : `Series "${String(args.name ?? '')}"`;
     case 'find_books':
       return `Find books "${String(args.query ?? '')}"`;
+    case 'ask_librarian':
+      return 'Asking the librarian…';
     default:
       return name;
   }

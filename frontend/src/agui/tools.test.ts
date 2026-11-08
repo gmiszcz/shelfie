@@ -51,7 +51,7 @@ afterEach(() => {
 });
 
 describe('toolSchemas', () => {
-  it('exposes exactly the 7 generic browser tools with JSON-schema parameters', () => {
+  it('exposes exactly the 8 generic browser tools with JSON-schema parameters', () => {
     const schemas = toolSchemas(createTools({ getBooks: () => [] }));
     const names = schemas.map((s) => s.name);
     expect(names).toEqual([
@@ -62,10 +62,54 @@ describe('toolSchemas', () => {
       'navigate',
       'find_books',
       'series_releases',
+      'ask_librarian',
     ]);
     for (const s of schemas) {
       expect(s.parameters).toMatchObject({ type: 'object' });
     }
+  });
+});
+
+describe('ask_librarian', () => {
+  it('calls the injected librarian and carries its answer as the final answer', async () => {
+    const calls: string[] = [];
+    const t = createTools({
+      getBooks: () => BOOKS,
+      askLibrarian: async (q) => {
+        calls.push(q);
+        return 'Przeczytałeś 12 książek w 2026.';
+      },
+    }).find((x) => x.name === 'ask_librarian')!;
+
+    const result = (await t.execute({ question: 'ile w tym roku?' })) as {
+      ok: boolean;
+      final_answer: boolean;
+      answer: string;
+    };
+
+    expect(calls).toEqual(['ile w tym roku?']);
+    expect(result.ok).toBe(true);
+    expect(result.final_answer).toBe(true);
+    expect(result.answer).toBe('Przeczytałeś 12 książek w 2026.');
+  });
+
+  it('fails gracefully when no librarian is wired', async () => {
+    const t = tool('ask_librarian');
+    const result = (await t.execute({ question: 'ile?' })) as { ok: boolean; error: string };
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/not available/);
+  });
+
+  it('reports the error when the librarian call throws', async () => {
+    const t = createTools({
+      getBooks: () => BOOKS,
+      askLibrarian: async () => {
+        throw new Error('NoCredentialsError');
+      },
+    }).find((x) => x.name === 'ask_librarian')!;
+    const result = (await t.execute({ question: 'ile?' })) as { ok: boolean; error: string };
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('NoCredentialsError');
   });
 });
 

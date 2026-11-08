@@ -189,3 +189,46 @@ Google endpoint falls back to OpenLibrary, so the title/metadata come from which
 source answered). The model leaves `finished_on` empty for a year-only phrase rather
 than inventing a day, and asks for the exact date — consistent with the "never invent
 dates" rule.
+
+
+## 2026-11-08 — read-only scope, shared date injection, thinking off
+
+### Read-only scope (`library_readonly`)
+
+The UI agent's `ask_librarian` tool talks to the librarian through a new chat scope,
+`library_readonly`, whose guarantee is enforced **server-side**: `engine._apply_scope`
+removes every tool that is not read-only from the resolved agent's `tool_registry`, so the
+model physically has no add/update/delete/series-edit tool to call. The allowed set
+(`READONLY_TOOLS`) is search_library, get_book, get_book_details, list_books, reading_stats,
+library_overview, list_series, get_series, list_favourites, list_waiting_list, series_alerts.
+A read-only session also gets a prompt note (`_readonly_prompt_note`) telling it to refuse
+changes. Sessions are keyed by `(user_id, scope, session_id)`, so a read-only session and a
+full read+write session can share an id without aliasing each other's tools. The HTTP route
+accepts `scope` in {`library`, `library_readonly`, `ui`} (legacy `ui` → `library`).
+
+### Current date injected per reply
+
+The librarian no longer guesses the year. `ChatEngine._apply_date_prompt` appends the shared
+note from `app/agent/dates.py` (today's date, current year, "this year" = `finished_on` in
+the current year, never ask the user the year) to the librarian's static system prompt **in
+code, fresh every turn**. Rebuilt from the live clock each reply, so a long session stays
+correct across midnight. The same module backs the UI agent's date note.
+
+### Thinking off for speed
+
+`additional_request_fields.thinking` was removed from `app/agent/config.yaml` (`max_tokens`
+kept). Haiku 5.5 streamed adaptive reasoning before the answer; for library data questions
+that only added latency.
+
+Measured on a detached backend (temp DB copy, read-only librarian, one simple question
+"ile mam książek łącznie?", warm):
+
+| config        | time-to-first-token | total  | reasoning streamed |
+|---------------|---------------------|--------|--------------------|
+| thinking OFF  | ~3.5–4.0 s          | ~3.9–4.2 s | none           |
+| thinking ON   | ~3.0–3.7 s warm; 11.3 s on the cold first call | ~3.1–11.5 s | none observed for this question |
+
+For this trivial question Haiku 5.5 did not emit reasoning in either config, so warm times
+overlap within noise; the clear difference is the cold first call, which spiked to 11.3 s
+with thinking on and did not with it off. Removing thinking takes that tail off the table and
+keeps the answer-only path lean.

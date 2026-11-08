@@ -383,7 +383,7 @@ def test_isolation_chat_sessions_keyed_by_user() -> None:
 
     calls: list[str] = []
 
-    def factory(session_id: str):
+    def factory(session_id: str, scope: str = "library"):
         calls.append(session_id)
         from app.agent.engine import ChatSession
 

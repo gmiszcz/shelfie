@@ -53,10 +53,23 @@ export interface SeriesDeps {
   timeoutMs?: number;
 }
 
+/**
+ * Ask the backend librarian a data question and get its final text answer.
+ *
+ * Injected by the host so `tools.ts` stays decoupled from the SSE transport and the
+ * librarian session. The host keeps ONE read-only librarian session per UI-agent
+ * thread (so follow-ups have context) and reads the SSE stream to the final answer.
+ */
+export type AskLibrarian = (question: string, signal?: AbortSignal) => Promise<string>;
+
 /** What the tool layer needs from the host app: the loaded books (live). */
 export interface ToolContext {
   getBooks: () => Book[];
   series?: SeriesDeps;
+  /** Ask the backend (read-only) librarian; absent in contexts with no data agent. */
+  askLibrarian?: AskLibrarian;
+  /** AbortSignal propagated into ask_librarian's backend call (the run's signal). */
+  signal?: AbortSignal;
 }
 
 const objSchema = (
@@ -270,7 +283,38 @@ export function createTools(ctx: ToolContext): AgentTool[] {
     },
   };
 
-  return [describe, getState, set, invoke, navigate, findBooks, seriesReleases];
+  const askLibrarian: AgentTool = {
+    name: 'ask_librarian',
+    description:
+      'Answer ANY question about the library DATA — numbers, counts, dates, statistics, ' +
+      '"what did I read", "how many books in 2025", ratings, which series am I missing, a ' +
+      "book's details — by asking the backend librarian, which reads the database. Use this " +
+      'for every data/question request; use the UI tools (navigate / set / invoke) only to ' +
+      'DRIVE the screen (filter, open, switch tab). The librarian is READ-ONLY through this ' +
+      'tool: it can only answer, never change data. Its answer is shown to the user as your ' +
+      'reply verbatim, so do NOT rephrase or add to it — call this tool and stop.',
+    parameters: objSchema({ question: { type: 'string' } }, ['question']),
+    execute: async (args) => {
+      const ask = ctx.askLibrarian;
+      if (!ask) {
+        return { ok: false, error: 'the librarian is not available' };
+      }
+      const question = str(args.question);
+      if (!question) {
+        return { ok: false, error: 'question is required' };
+      }
+      try {
+        const answer = await ask(question, ctx.signal);
+        // final_answer tells the run loop to stop and show `answer` as the reply
+        // directly, with no extra model turn (see agui/client.ts).
+        return { ok: true, final_answer: true, answer };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  };
+
+  return [describe, getState, set, invoke, navigate, findBooks, seriesReleases, askLibrarian];
 }
 
 /** Compact series view for the model: names, progress and the per-edition next volume. */

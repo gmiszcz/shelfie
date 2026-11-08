@@ -364,6 +364,40 @@ describe('runAgent — tool loop', () => {
     expect(errors).toEqual(['NoCredentialsError']);
   });
 
+  it('ends the loop and shows the answer directly when a tool returns final_answer', async () => {
+    // One turn: the model calls ask_librarian. The tool returns the librarian's final
+    // answer, so the loop must stop and surface that answer WITHOUT another model turn.
+    const { impl, calls } = scriptedFetch([
+      [
+        { type: 'RUN_STARTED', threadId: 't', runId: 'r0' },
+        { type: 'TOOL_CALL_START', toolCallId: 'c1', toolCallName: 'ask_librarian' },
+        {
+          type: 'TOOL_CALL_END',
+          toolCallId: 'c1',
+          toolCallName: 'ask_librarian',
+          args: JSON.stringify({ question: 'ile w tym roku?' }),
+        },
+        { type: 'RUN_FINISHED', threadId: 't', runId: 'r0' },
+      ],
+    ]);
+
+    const deltas: string[] = [];
+    const askLibrarian = vi.fn(async () => 'Przeczytałeś 12 książek w 2026.');
+    const result = await runAgent({
+      threadId: 't',
+      messages: [{ role: 'user', content: 'ile książek przeczytałem w tym roku?' }],
+      tools: createTools({ getBooks: () => BOOKS, askLibrarian }),
+      fetchImpl: impl,
+      callbacks: { onTextDelta: (d) => deltas.push(d) },
+    });
+
+    // The librarian was asked, and only ONE backend turn happened (no follow-up model turn).
+    expect(askLibrarian).toHaveBeenCalledWith('ile w tym roku?', undefined);
+    expect(calls).toHaveLength(1);
+    expect(result.finalText).toBe('Przeczytałeś 12 książek w 2026.');
+    expect(deltas.join('')).toBe('Przeczytałeś 12 książek w 2026.');
+  });
+
   it('stops at maxTurns when the model keeps calling tools', async () => {
     // Every turn calls describe_ui (a pure read), never answers.
     const loopTurn = [

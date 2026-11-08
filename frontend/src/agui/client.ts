@@ -84,6 +84,23 @@ interface TurnOutcome {
   error?: string;
 }
 
+/**
+ * A tool result's final answer, or null. A tool (ask_librarian) may short-circuit
+ * the run by returning `{ final_answer: true, answer: string }`: the answer is shown
+ * to the user as the reply without another model turn.
+ */
+function finalAnswerOf(result: unknown): string | null {
+  if (
+    result &&
+    typeof result === 'object' &&
+    (result as { final_answer?: unknown }).final_answer === true
+  ) {
+    const answer = (result as { answer?: unknown }).answer;
+    return typeof answer === 'string' ? answer : '';
+  }
+  return null;
+}
+
 function parseArgs(raw: string): Record<string, unknown> {
   const trimmed = raw.trim();
   if (!trimmed) {
@@ -262,6 +279,19 @@ export async function runAgent(options: RunAgentOptions): Promise<RunAgentResult
         toolCallId: call.id,
         content: JSON.stringify(result),
       });
+
+      // A tool may carry its own final answer (ask_librarian): the librarian already
+      // produced the user-facing reply, so end the loop and show it directly, with NO
+      // extra model turn. The assistant/tool messages are already recorded above, so
+      // the thread stays consistent for the next command.
+      const final = finalAnswerOf(result);
+      if (ok && final !== null) {
+        callbacks?.onTextDelta?.(final);
+        messages.push({ role: 'assistant', content: final });
+        finalText = final;
+        callbacks?.onRunFinish?.();
+        return { messages, finalText, toolCalls: executed };
+      }
     }
 
     // Item 7: the model may write its confirmation sentence in the SAME turn as its

@@ -36,6 +36,8 @@ from collections.abc import Iterator
 from datetime import datetime
 from typing import Any, Protocol
 
+from app.agent.dates import date_system_block, now
+
 logger = logging.getLogger(__name__)
 
 # --- AG-UI event names (the subset the UI agent emits) -----------------------------------
@@ -66,6 +68,9 @@ Your tools are generic and work for ANY current or future tab and control:
 - series_releases(name, refresh?): a series' owned/missing volumes and its next volume per
   edition (Polish and original/English) with date, status and source. refresh=true runs a live
   web search for release news (up to ~60 s).
+- ask_librarian(question): ask the backend librarian a question about the library DATA and
+  return its answer. The librarian reads the database (counts, dates, statistics, ratings,
+  series progress, a book's details). It is READ-ONLY through this tool — it can only answer.
 
 How to work:
 - You are ALREADY GIVEN the current UI schema in the "Current UI state" system block below, so
@@ -79,6 +84,17 @@ How to work:
 - Write your short confirmation sentence IN THE SAME TURN as your last action, so a simple request
   finishes without an extra turn. The loop ends when every tool in a turn succeeded and you also
   wrote text. On a tool error, the error lists the valid ids/values — correct your call and continue.
+
+Choosing a tool — DATA questions vs SCREEN actions:
+- Any question about the library's DATA — numbers, counts, dates, how many books, "what did I
+  read", "ile przeczytałem w tym roku", statistics, ratings, which series am I missing, a book's
+  details — you answer by calling ask_librarian(question) and NOTHING ELSE. The librarian reads
+  the database; its answer is shown to the user as your reply verbatim, so do NOT paraphrase,
+  summarise or add to it, and do NOT make another turn after it — call ask_librarian and stop.
+  Never try to compute a count yourself from the UI schema or find_books.
+- SCREEN actions — show, filter, open, switch tab, add/change a control, apply a facet — use the
+  UI tools (navigate / set / invoke / describe_ui / get_state), as before.
+- Release questions ("kiedy wyjdzie tom…") use series_releases.
 
 Rules:
 - Answer in the SAME LANGUAGE the user writes in (Polish stays Polish).
@@ -269,29 +285,26 @@ def _to_bedrock_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]
 
 def _now() -> datetime:
     """The current local date/time. A seam so the date block is testable."""
-    return datetime.now().astimezone()
+    return now()
 
 
-def _date_system_block(now: datetime | None = None) -> str:
-    """A system note giving the model the current date, so "this year" etc. resolve.
+def _date_system_block(moment: datetime | None = None) -> str:
+    """The current-date system note for the UI agent.
 
-    The UI agent has no clock of its own; without this it guesses the year (and in
-    practice asks the user). We state today's date, the current year, and that a
-    bare "this year" means books FINISHED in the current calendar year by default.
+    Built from the SHARED :func:`app.agent.dates.date_system_block` (same date rule
+    both agents use), with a UI-specific tail: resolve a year/period through the
+    structured library filters, never by typing a year into a free-text search box,
+    and say which interpretation was used. Rebuilt every turn, so it stays correct
+    across midnight in a long session.
     """
-    stamp = now or _now()
-    tz = stamp.tzname() or "local"
+    stamp = moment or _now()
     return (
-        f"\n\nToday is {stamp.strftime('%Y-%m-%d')} ({stamp.strftime('%A')}), "
-        f"timezone {tz}. The current year is {stamp.year}. "
-        f'When the user says "this year" / "w tym roku" it means books FINISHED in '
-        f"{stamp.year} (finished_on in {stamp.year}) unless they say otherwise; "
-        f'"last year" means {stamp.year - 1}. Resolve any relative period (this/last '
-        f"year, recent months) against this date and NEVER ask the user what year it is. "
-        f"Use the structured library filters (finished year, date range, status, shelf, "
-        f"tag, series, author, stars) for a year or period — never type a year into a "
-        f"free-text search box. Say in one short line which interpretation you used "
-        f'(e.g. "przeczytane w {stamp.year}").'
+        "\n\n"
+        + date_system_block(stamp)
+        + " Use the structured library filters (finished year, date range, status, "
+        "shelf, tag, series, author, stars) for a year or period — never type a year "
+        "into a free-text search box. Say in one short line which interpretation you "
+        f'used (e.g. "przeczytane w {stamp.year}").'
     )
 
 

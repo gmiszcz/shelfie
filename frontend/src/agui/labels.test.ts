@@ -32,6 +32,12 @@ describe('describeAction', () => {
     expect(describeAction('find_books', { query: 'Herbert' })).toBe('Find books "Herbert"');
   });
 
+  it('labels ask_librarian with the asking pill', () => {
+    expect(describeAction('ask_librarian', { question: 'ile w tym roku?' })).toBe(
+      'Asking the librarian…',
+    );
+  });
+
   it('falls back to the tool name for an unknown tool', () => {
     expect(describeAction('mystery', {})).toBe('mystery');
   });
