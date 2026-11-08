@@ -33,6 +33,7 @@ export function SettingsSidebar({ visible, onHide }: Props) {
     toggleDetailSection,
     setShowAllDetails,
     setShowVoiceButton,
+    setSettingByKey,
     reset,
   } = useSettings();
   const [view, setView] = useState<View>('menu');
@@ -99,6 +100,16 @@ export function SettingsSidebar({ visible, onHide }: Props) {
               <InputSwitch
                 checked={settings.showAllDetails}
                 onChange={(e) => setShowAllDetails(!!e.value)}
+              />
+            </label>
+            <label className="settings-menu-row settings-switch-row">
+              <span className="settings-menu-text">
+                <span className="settings-menu-label">Chat button</span>
+                <span className="settings-menu-sub">Assistant bubble; off keeps only the mic</span>
+              </span>
+              <InputSwitch
+                checked={settings.showChatButton}
+                onChange={(e) => setSettingByKey('showChatButton', !!e.value)}
               />
             </label>
             <label className="settings-menu-row settings-switch-row">

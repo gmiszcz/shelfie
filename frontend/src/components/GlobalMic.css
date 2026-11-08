@@ -180,3 +180,13 @@
     bottom: calc(4.5rem + 3.5rem + var(--default-gap) + env(safe-area-inset-bottom, 0px));
   }
 }
+
+/* Chat bubble hidden in Settings: the mic takes the bottom-right corner itself. */
+.global-mic.no-chat {
+  right: var(--content-padding);
+}
+@media (max-width: 640px) {
+  .global-mic.no-chat {
+    right: var(--content-padding);
+  }
+}

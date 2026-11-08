@@ -22,6 +22,7 @@ function seedCardFields(overrides: Partial<Record<CardField, boolean>>): void {
     detailSections: all(DETAIL_SECTIONS),
     showAllDetails: false,
     showVoiceButton: true,
+    showChatButton: true,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
 }

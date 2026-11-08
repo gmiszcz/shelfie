@@ -184,7 +184,7 @@ export function GlobalMic() {
   }
 
   return (
-    <div className="global-mic">
+    <div className={`global-mic${settings.showChatButton ? '' : ' no-chat'}`}>
       {toast && (
         <div
           className={`global-mic-toast${toast.isError ? ' error' : ''}`}

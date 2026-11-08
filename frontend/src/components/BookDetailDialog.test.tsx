@@ -24,6 +24,7 @@ function seedSettings(partial: {
     detailSections: { ...all(DETAIL_SECTIONS), ...(partial.detailSections ?? {}) },
     showAllDetails: partial.showAllDetails ?? true,
     showVoiceButton: true,
+    showChatButton: true,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
 }

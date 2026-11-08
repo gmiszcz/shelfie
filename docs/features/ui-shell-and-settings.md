@@ -235,3 +235,8 @@ stacking, so both "I preferred this" buttons fit on one screen without scrolling
   `<details>` (tap to open); category and focus dropdowns share one row; smaller toolbar.
 
 Checked on 390x844 and 375x667: on 390 the whole pair + "About the same" fit above the tab bar.
+
+## Update 2026-11-08: chat button toggle
+
+Settings menu has a **Chat button** switch (`showChatButton`, default on). Off hides the floating chat bubble; the microphone then takes the bottom-right corner (`.global-mic.no-chat`) and still drives the UI agent. The chat panel can still open from the mic toast.
+

@@ -66,6 +66,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       setSettings((prev) => ({ ...prev, showVoiceButton: value }));
       return true;
     }
+    if (key === 'showChatButton') {
+      setSettings((prev) => ({ ...prev, showChatButton: value }));
+      return true;
+    }
     if ((CARD_FIELDS as string[]).includes(key)) {
       setSettings((prev) => ({
         ...prev,

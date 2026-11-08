@@ -3,6 +3,7 @@ import { InputTextarea } from 'primereact/inputtextarea';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useChat } from '../chat/ChatProvider';
+import { useSettings } from '../settings/SettingsContext';
 import { type ChatMessage } from '../chat/chatState';
 import { renderMarkdown } from '../chat/markdown';
 import type { FinalMeta } from '../chat/useVoiceInput';
@@ -175,6 +176,7 @@ export function ChatWidget() {
     stop,
     newChat,
   } = useChat();
+  const { settings } = useSettings();
 
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -233,13 +235,17 @@ export function ChatWidget() {
 
   return (
     <>
-      <Button
-        className="chat-fab"
-        icon="pi pi-comments"
-        rounded
-        aria-label={open ? 'Close chat' : 'Open assistant'}
-        onClick={() => setOpen(!open)}
-      />
+      {/* The bubble can be hidden in Settings ("Chat button"); the panel still opens
+          from the mic toast and closes from its own header. */}
+      {settings.showChatButton && (
+        <Button
+          className="chat-fab"
+          icon="pi pi-comments"
+          rounded
+          aria-label={open ? 'Close chat' : 'Open assistant'}
+          onClick={() => setOpen(!open)}
+        />
+      )}
 
       {open && (
         <div className="chat-panel" role="dialog" aria-label="Shelfie assistant">

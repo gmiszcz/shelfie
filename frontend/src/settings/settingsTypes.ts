@@ -113,6 +113,11 @@ export interface Settings {
    * Default on.
    */
   showVoiceButton: boolean;
+  /**
+   * Show the floating chat (assistant) button. Off leaves only the microphone,
+   * which still drives the UI agent without opening the chat. Default on.
+   */
+  showChatButton: boolean;
 }
 
 function allOn<K extends string>(keys: K[]): Record<K, boolean> {
@@ -124,6 +129,7 @@ export const DEFAULT_SETTINGS: Settings = {
   detailSections: allOn(DETAIL_SECTIONS),
   showAllDetails: false,
   showVoiceButton: true,
+  showChatButton: true,
 };
 
 const STORAGE_KEY = 'shelfie.settings.v1';
@@ -148,6 +154,8 @@ export function mergeSettings(stored: unknown): Settings {
       typeof s.showVoiceButton === 'boolean'
         ? s.showVoiceButton
         : DEFAULT_SETTINGS.showVoiceButton,
+    showChatButton:
+      typeof s.showChatButton === 'boolean' ? s.showChatButton : DEFAULT_SETTINGS.showChatButton,
   };
 }
 
