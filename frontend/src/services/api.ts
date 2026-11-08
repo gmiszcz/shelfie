@@ -232,11 +232,12 @@ export const api = {
       body: JSON.stringify({ left_id: leftId, right_id: rightId, winner, session_id: sessionId }),
     }),
 
-  /** POST /api/agent/chat — the response body is an SSE stream; read it with chat/sse.ts. */
+  /** POST /api/agent/chat — the response body is an SSE stream; read it with chat/sse.ts.
+   *  scope "library_readonly" is the answer-only librarian the UI agent's ask_librarian uses. */
   chat: (
     message: string,
     sessionId: string | null,
-    scope: 'library' | 'ui' = 'library',
+    scope: 'library' | 'library_readonly' | 'ui' = 'library',
     signal?: AbortSignal,
   ) =>
     fetch(`${BASE}/agent/chat`, {

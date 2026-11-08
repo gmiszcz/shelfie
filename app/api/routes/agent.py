@@ -18,8 +18,11 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 class ChatIn(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     session_id: str | None = Field(default=None, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
-    #: "library" (default, read-only data assistant) or "ui" (also drives the UI).
-    scope: Literal["library", "ui"] = "library"
+    #: "library" (default, full read+write data assistant) or "library_readonly"
+    #: (answer-only: the write tools are pruned server-side). The legacy "ui" value is
+    #: accepted and treated as "library" (the UI-control scope was removed). The UI
+    #: agent's ask_librarian tool uses "library_readonly".
+    scope: Literal["library", "library_readonly", "ui"] = "library"
 
 
 @router.post("/chat")

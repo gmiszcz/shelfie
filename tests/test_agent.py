@@ -12,7 +12,13 @@ from fastapi.testclient import TestClient
 from strands_compose.types import StreamEvent
 
 from app.agent import tools
-from app.agent.engine import ChatEngine, ChatSession
+from app.agent.engine import (
+    READONLY_TOOLS,
+    ChatEngine,
+    ChatSession,
+    _apply_scope,
+    _readonly_prompt_note,
+)
 from app.api.deps import chat_engine
 from app.main import app
 
@@ -79,11 +85,13 @@ class FakeEntry:
 def _engine(fail: bool = False) -> tuple[ChatEngine, list[FakeEntry]]:
     created: list[FakeEntry] = []
 
-    def factory(session_id: str) -> ChatSession:
+    def factory(session_id: str, scope: str = "library") -> ChatSession:
         queue = FakeQueue()
         entry = FakeEntry(queue, fail=fail)
         created.append(entry)
-        return ChatSession(session_id=session_id, entry=entry, queue=queue, manifest=None)
+        return ChatSession(
+            session_id=session_id, entry=entry, queue=queue, manifest=None, scope=scope
+        )
 
     return ChatEngine(factory), created
 
@@ -212,3 +220,123 @@ def test_star_band_filter_in_search_and_list(library_db: Path) -> None:
     hit = tools.search_library(query="dune", stars=5)
     assert hit["count"] == 1 and hit["books"][0]["title"] == "Dune"
     assert tools.search_library(query="dune", stars=4)["count"] == 0
+
+
+# --- read-only scope (server-side enforcement) and per-reply date prompt -----------------
+
+
+class _FakeTool:
+    def __init__(self, name: str) -> None:
+        self.tool_name = name
+
+
+class _FakeRegistry:
+    """Minimal stand-in for strands' ToolRegistry (registry dict + remove)."""
+
+    def __init__(self, names: list[str]) -> None:
+        self.registry: dict[str, _FakeTool] = {n: _FakeTool(n) for n in names}
+
+    def remove(self, name: str) -> None:
+        self.registry.pop(name, None)
+
+
+class _FakeAgentEntry:
+    """Entry that looks enough like a strands Agent: registry + settable system_prompt."""
+
+    system_prompt: str | None = None
+
+    def __init__(self, tool_names: list[str], prompt: str) -> None:
+        self.tool_registry = _FakeRegistry(tool_names)
+        self.system_prompt = prompt
+        self.prompts_seen: list[str] = []
+
+    async def invoke_async(self, message: str) -> str:
+        self.prompts_seen.append(self.system_prompt or "")
+        return "ok"
+
+
+def test_apply_scope_prunes_every_write_tool() -> None:
+    names = sorted(READONLY_TOOLS) + ["add_book", "update_book", "delete_book", "merge_series"]
+    entry = _FakeAgentEntry(names, "base")
+    _apply_scope(entry, "library_readonly")
+    assert set(entry.tool_registry.registry) == set(READONLY_TOOLS)
+
+
+def test_apply_scope_default_library_keeps_all_tools() -> None:
+    names = sorted(READONLY_TOOLS) + ["add_book", "delete_book"]
+    entry = _FakeAgentEntry(names, "base")
+    _apply_scope(entry, "library")
+    assert set(entry.tool_registry.registry) == set(names)
+
+
+def test_readonly_note_forbids_changes() -> None:
+    note = _readonly_prompt_note()
+    assert "READ-ONLY MODE" in note
+    assert "NO tools" in note
+
+
+def _agent_engine(prompt: str = "LIBRARIAN BASE") -> tuple[ChatEngine, list[_FakeAgentEntry]]:
+    """An engine whose entries carry a tool registry + mutable system_prompt."""
+    created: list[_FakeAgentEntry] = []
+    all_tools = sorted(READONLY_TOOLS) + ["add_book", "delete_book"]
+
+    def factory(session_id: str, scope: str = "library") -> ChatSession:
+        entry = _FakeAgentEntry(list(all_tools), prompt)
+        _apply_scope(entry, scope)
+        base = entry.system_prompt
+        if scope == "library_readonly" and isinstance(base, str):
+            base = base + _readonly_prompt_note()
+        created.append(entry)
+        return ChatSession(
+            session_id=session_id,
+            entry=entry,
+            queue=FakeQueue(),
+            manifest=None,
+            base_system_prompt=base,
+            scope=scope,
+        )
+
+    return ChatEngine(factory), created
+
+
+async def test_stream_injects_current_date_into_system_prompt() -> None:
+    import datetime as _dt
+
+    engine, created = _agent_engine()
+    [_ async for _ in engine.stream(1, "ile w tym roku?", "s1", "library")]
+    assert len(created) == 1
+    seen = created[0].prompts_seen[-1]
+    year = _dt.datetime.now().astimezone().year
+    assert "LIBRARIAN BASE" in seen
+    assert f"current year is {year}" in seen
+    assert "finished_on" in seen
+
+
+async def test_readonly_and_library_sessions_do_not_alias() -> None:
+    engine, created = _agent_engine()
+    [_ async for _ in engine.stream(1, "q", "shared", "library")]
+    [_ async for _ in engine.stream(1, "q", "shared", "library_readonly")]
+    # Same id, two scopes -> two distinct sessions with different tool sets.
+    assert len(created) == 2
+    rw, ro = created
+    assert "add_book" in rw.tool_registry.registry
+    assert "add_book" not in ro.tool_registry.registry
+    assert set(ro.tool_registry.registry) == set(READONLY_TOOLS)
+    # The read-only session's prompt carries the refusal rule.
+    assert "READ-ONLY MODE" in (ro.prompts_seen[-1])
+
+
+async def test_readonly_route_scope_accepted(client: TestClient) -> None:
+    engine, created = _agent_engine()
+    app.dependency_overrides[chat_engine] = lambda: engine
+    try:
+        resp = client.post(
+            "/api/agent/chat",
+            json={"message": "ile?", "session_id": "ro1", "scope": "library_readonly"},
+        )
+    finally:
+        app.dependency_overrides.pop(chat_engine, None)
+    assert resp.status_code == 200
+    # The route forwarded the read-only scope: the created entry had its write tools pruned.
+    assert "add_book" not in created[0].tool_registry.registry
+    assert set(created[0].tool_registry.registry) == set(READONLY_TOOLS)

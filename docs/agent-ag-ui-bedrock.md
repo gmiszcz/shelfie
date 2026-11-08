@@ -331,3 +331,70 @@ error. Individual turns run ~1.4–3.2 s (the first turn of a command carries th
 - `app/agent/ui_agent.py` — cached client, split/cacheable system blocks, metrics log, multi-tool
   result merge, shorter prompt without the "describe_ui first" rule.
 - `app/api/routes/agui.py` — sync generator (threadpool) for non-blocking SSE.
+
+
+## 2026-11-08 — librarian link (ask_librarian), read-only scope, shared date, thinking off
+
+The UI agent (browser tools) could drive the screen but could not answer DATA questions
+("ile przeczytałem w tym roku", counts, stats). It now delegates every data question to
+the backend librarian through one browser tool, with a server-enforced read-only scope.
+
+### `ask_librarian(question)` — the only new browser tool
+
+- Defined in `frontend/src/agui/tools.ts` alongside the generic UI tools. Its executor
+  calls an injected `askLibrarian(question, signal)` (host-provided, so `tools.ts` stays
+  decoupled from the SSE transport) and returns `{ ok: true, final_answer: true, answer }`.
+- `frontend/src/agui/client.ts` recognises a tool result carrying `final_answer: true`
+  (`finalAnswerOf`): it ends the run loop immediately and surfaces `answer` as the reply
+  **verbatim, with no extra model turn**. The assistant/tool messages are still recorded,
+  so the thread stays consistent for the next command.
+- `frontend/src/chat/ChatProvider.tsx` supplies `askLibrarian`: it keeps **one read-only
+  librarian session per UI-agent thread** (`librarianSessionRef`, id `lib-<thread>`), POSTs
+  `/api/agent/chat` with `scope: "library_readonly"`, and reads the SSE stream with the
+  existing `readChatStream` + `api.chat` to the final `session_finish` text. The librarian
+  session is reset together with the UI thread in `newChat` (both scopes dropped server-side).
+- Action pill: `describeAction('ask_librarian', …)` → "Asking the librarian…"
+  (`frontend/src/agui/labels.ts`), shown the instant the call starts.
+- UI system prompt (`app/agent/ui_agent.py`) now routes: any DATA question → `ask_librarian`
+  and stop (do not paraphrase, do not take another turn); screen actions → the UI tools.
+
+### Read-only scope — enforced server-side, not just in the prompt
+
+- New chat scope `library_readonly` (`app/api/routes/agent.py` widens the `scope` literal;
+  the legacy `ui` value is still accepted and treated as `library`).
+- `app/agent/engine.py`: `_apply_scope` prunes every tool NOT in `READONLY_TOOLS` from the
+  resolved agent's `tool_registry`, so a read-only session has no write tool at all — the
+  model cannot call what it does not have. `READONLY_TOOLS` = search_library, get_book,
+  get_book_details, list_books, reading_stats, library_overview, list_series, get_series,
+  list_favourites, list_waiting_list, series_alerts. A `_readonly_prompt_note()` also tells
+  it to refuse changes. Sessions are keyed by `(user_id, scope, session_id)` so a read-only
+  session never aliases a read+write one with the same id.
+
+### Shared current-date note (fixes "which year is it?")
+
+- New `app/agent/dates.py` (`now`, `date_system_block`) is the single source of the
+  "today is YYYY-MM-DD, current year N, this year = finished_on in N, never ask the year"
+  rule, used by BOTH agents. `ui_agent._date_system_block` reuses it and adds its UI tail.
+  `engine.ChatEngine._apply_date_prompt` injects it into the librarian's system prompt **in
+  code at each reply**, rebuilt from the live clock every turn, so a long session stays
+  correct across midnight.
+
+### Live check (temp copy of data, zero Google Books calls)
+
+Detached backend on 127.0.0.1:8035, `DATA_DIR`/`AUTH_DB_PATH` → a scratch COPY of the
+library, `GOOGLE_BOOKS_MAX_CALLS=0`, `AWS_EC2_METADATA_DISABLED=true`. A scripted driver ran
+the UI-agent loop:
+
+- "ile książek przeczytałem w tym roku?" → **1 UI turn + ask_librarian** → "W 2026 roku
+  przeczytałeś 5 książek …" (DB: 5 finished in 2026). Correct year resolved with no question.
+- "a w 2025?" (follow-up, same librarian session) → **1 UI turn + ask_librarian** → "W 2025
+  roku przeczytałeś 40 książek" (DB: 40). Context carried.
+- "usuń Diunę" via ask_librarian → refused ("tryb tylko do odczytu, nie mam narzędzi do
+  zmiany"); the copied DB was unchanged (208 total, 5/40 by year). Read-only holds.
+
+### Files
+
+- `app/agent/dates.py` (new), `app/agent/engine.py`, `app/agent/ui_agent.py`,
+  `app/agent/config.yaml` (thinking removed), `app/api/routes/agent.py`.
+- `frontend/src/agui/tools.ts`, `frontend/src/agui/client.ts`, `frontend/src/agui/labels.ts`,
+  `frontend/src/chat/ChatProvider.tsx`, `frontend/src/services/api.ts`.

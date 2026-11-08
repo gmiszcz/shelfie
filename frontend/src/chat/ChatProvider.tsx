@@ -145,6 +145,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const sessionRef = useRef<string | null>(
     typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SESSION_KEY) : null,
   );
+  // One READ-ONLY librarian session per UI-agent thread, so ask_librarian follow-ups
+  // ("a w 2025?") keep context. It is derived from the UI thread id and reset with it
+  // (see newChat), so a fresh chat starts the librarian clean too.
+  const librarianSessionRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   // The UI agent keeps the full AG-UI conversation across turns, plus a cache of
   // the loaded books for its browser-side find_books tool.
@@ -206,12 +210,57 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [handleLibraryEvent],
   );
 
+  /**
+   * Ask the backend librarian a data question (the UI agent's ask_librarian tool).
+   * Keeps ONE read-only librarian session per UI thread so follow-ups have context,
+   * POSTs /api/agent/chat with scope "library_readonly", and reads the SSE stream to
+   * the final `session_finish` text (reusing readChatStream + api.chat).
+   */
+  const askLibrarian = useCallback(
+    async (question: string, signal?: AbortSignal): Promise<string> => {
+      if (!librarianSessionRef.current) {
+        const base = (sessionRef.current ?? newId('t')).replace(/[^A-Za-z0-9_-]/g, '');
+        librarianSessionRef.current = `lib-${base}`.slice(0, 64);
+      }
+      const resp = await api.chat(
+        question,
+        librarianSessionRef.current,
+        'library_readonly',
+        signal,
+      );
+      let answer = '';
+      let errored: string | null = null;
+      await readChatStream(
+        resp,
+        (event: ChatEvent) => {
+          if (event.type === 'token' && typeof event.text === 'string') {
+            answer += event.text;
+          } else if (event.type === 'session_finish' && typeof event.text === 'string') {
+            if (event.text) {
+              answer = event.text;
+            }
+          } else if (event.type === 'error' && typeof event.message === 'string') {
+            errored = event.message;
+          }
+        },
+        signal,
+      );
+      if (errored) {
+        throw new Error(errored);
+      }
+      return answer.trim();
+    },
+    [],
+  );
+
   /** Run the UI agent over the shared thread, dispatching into the shared reducer. */
   const runUi = useCallback(async (text: string, controller: AbortController) => {
     await ensureBooks();
     const tools = createTools({
       getBooks: () => booksRef.current,
       series: { list: api.listSeries, get: api.getSeries, refresh: api.refreshSeries },
+      askLibrarian,
+      signal: controller.signal,
     });
     // Trim stale tool-result dumps from earlier commands before adding this one.
     const history = trimUiHistory(uiMessagesRef.current);
@@ -255,7 +304,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
     dispatch({ type: 'finish', ok: true });
     return { reply: result.finalText, ok: true };
-  }, [ensureBooks]);
+  }, [ensureBooks, askLibrarian]);
 
   const runWithGuards = useCallback(
     async (text: string, runner: (t: string, c: AbortController) => Promise<unknown>) => {
@@ -346,8 +395,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     stop();
     const current = sessionRef.current;
     const wasLibrary = mode === 'library';
+    const librarian = librarianSessionRef.current;
     dispatch({ type: 'reset' });
     sessionRef.current = null;
+    librarianSessionRef.current = null;
     uiMessagesRef.current = [];
     setLastUiExchange(null);
     try {
@@ -358,6 +409,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     if (current && wasLibrary) {
       try {
         await api.resetChat(current);
+      } catch {
+        // best-effort
+      }
+    }
+    // Drop the UI thread's read-only librarian session too, so a fresh chat has no
+    // leftover ask_librarian context (reset covers every scope of that id server-side).
+    if (librarian) {
+      try {
+        await api.resetChat(librarian);
       } catch {
         // best-effort
       }

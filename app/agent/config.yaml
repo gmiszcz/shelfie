@@ -12,10 +12,10 @@ models:
     params:
       region_name: ${REGION}
       max_tokens: 4096
-      # Haiku 5.5 only supports adaptive thinking; it streams reasoning before the answer.
-      additional_request_fields:
-        thinking:
-          type: adaptive
+      # Thinking is OFF for speed: the librarian answers data questions, where the
+      # extra reasoning tokens only added latency (time-to-first-token + total). It
+      # streamed adaptive reasoning before the answer; removing additional_request_fields
+      # drops that. Measurements: see docs/features/chatbot.md.
 
 agents:
   librarian:
