@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { FavouriteToggle } from './FavouriteToggle';
@@ -22,6 +23,20 @@ describe('FavouriteToggle', () => {
     render(<FavouriteToggle value={false} onChange={onChange} />);
     fireEvent.click(screen.getByRole('button', { name: 'Add to favourites' }));
     expect(onChange).toHaveBeenCalledWith(true);
+  });
+
+  it('always shows exactly ONE heart, however fast it is clicked (animation restarts)', () => {
+    function Live() {
+      const [v, setV] = useState(false);
+      return <FavouriteToggle value={v} onChange={setV} />;
+    }
+    const { container } = render(<Live />);
+    const btn = container.querySelector('button')!;
+    for (let i = 0; i < 7; i += 1) {
+      fireEvent.click(btn);
+    }
+    expect(container.querySelectorAll('i.pi').length).toBe(1);
+    expect(container.querySelectorAll('.ui-fav-burst').length).toBeLessThanOrEqual(1);
   });
 
   it('does not bubble the click to a parent (so the card dialog never opens)', () => {

@@ -56,6 +56,10 @@
 .ui-fav {
   position: relative;
 }
+.ui-fav-icon {
+  display: inline-flex;
+  line-height: 1;
+}
 .ui-fav--overlay {
   position: absolute;
 }

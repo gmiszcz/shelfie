@@ -53,7 +53,9 @@ export function FavouriteToggle({
         onChange(!value);
       }}
       onAnimationEnd={(e) => {
-        if (e.target === e.currentTarget || (e.target as HTMLElement).tagName === 'I') {
+        // The burst is the longest part of "pop"; the icon is the only part of "unpop".
+        const el = e.target as HTMLElement;
+        if (el.classList.contains('ui-fav-burst') || (anim?.kind === 'unpop' && el.tagName === 'I')) {
           setAnim(null);
         }
       }}
@@ -64,12 +66,13 @@ export function FavouriteToggle({
         }
       }}
     >
-      <i
-        key={anim?.key ?? 0}
-        className={value ? 'pi pi-heart-fill' : 'pi pi-heart'}
-        aria-hidden="true"
-      />
-      {anim?.kind === 'pop' && <span key={anim.key} className="ui-fav-burst" aria-hidden="true" />}
+      {/* ONE keyed wrapper: a new key per click restarts the animation by remounting the
+          icon. Never give the icon and the burst the same key (siblings with duplicate
+          keys are not cleaned up, and hearts pile up in a row). */}
+      <span className="ui-fav-icon" key={anim ? `a${anim.key}` : 'idle'}>
+        <i className={value ? 'pi pi-heart-fill' : 'pi pi-heart'} aria-hidden="true" />
+        {anim?.kind === 'pop' && <span className="ui-fav-burst" aria-hidden="true" />}
+      </span>
     </button>
   );
 }
