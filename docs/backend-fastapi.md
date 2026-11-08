@@ -1,10 +1,27 @@
 # Backend — FastAPI
 
-The backend is a FastAPI app built with the `fastapi-backend` skill and standardized by the
-`python-fastapi-docker-boilerplate` skill. It serves the REST + streaming API and, in production,
-the built React frontend.
+> **Status: early design-era planning doc — parts are superseded.** The app shipped with a
+> different auth model (session cookies, not JWT) and no MCP/A2A. For the current backend read
+> [architecture-overview.md](architecture-overview.md), [features/auth.md](features/auth.md)
+> (accounts, sessions, per-user data), [features/chatbot.md](features/chatbot.md) and
+> [agent-ag-ui-bedrock.md](agent-ag-ui-bedrock.md) (the two agents), and the live OpenAPI at
+> `/docs`. The "(intended)" layout and the JWT/MCP/A2A fields below describe the original plan,
+> not the code.
 
-## Layout (intended)
+The backend is a FastAPI app. It serves the REST + streaming API and, in production, the built
+React frontend (`app/main.py` mounts `frontend/dist`). Each account has its own SQLite library
+under `data/users/<id>/`; a shared `auth.sqlite` holds accounts and sessions.
+
+## Layout (as built — summary)
+
+The real `app/` tree differs from the plan below: there is no `auth.py` JWT seam (auth is
+`app/authdb.py` + `app/services/auth_service.py` with cookie sessions), no `repositories/` layer
+(reads use `app/db.py`; writes use `app/services/`), the Google Books client is
+`app/integrations/google_books.py`, and `app/api/router.py` aggregates many route modules
+(`books`, `series`, `stats`, `auth`, `admin`, `covers`, `search`, `preferences`, `agent`,
+`agui`, `transcribe`, …). There are **no** MCP or A2A endpoints.
+
+## Layout (original plan — not the code)
 
 ```
 app/
@@ -33,10 +50,16 @@ tests/               # pytest + TestClient
 in code. Mirrors the reference `Settings` pattern (typed fields, validators, `@lru_cache`
 `get_settings()`). See `.env.example` for the full list. Key fields:
 
-- `HOST`, `PORT`, `DB_PATH`, `LOG_LEVEL`
-- `GOOGLE_BOOKS_API_KEY` (optional; raises quota)
-- `JWT_SECRET`, `JWT_ALGORITHM`, `JWT_EXPIRE_MINUTES`
-- `AWS_REGION` (Bedrock/Transcribe; credentials come from the standard AWS chain, not `.env`)
+The real `Settings` (`app/config.py`) has **no** JWT fields. Key fields as built:
+
+- `HOST`, `PORT`, `LOG_LEVEL`, data/auth DB paths
+- `GOOGLE_BOOKS_API_KEY` (optional; raises quota), `GOOGLE_BOOKS_MAX_CALLS`
+- `AWS_REGION`, `BEDROCK_MODEL_ID`, `AWS_BEARER_TOKEN_BEDROCK` (Bedrock auth key, loaded from
+  `.env` and exported to the process env in `app/main.py`)
+- `TRANSCRIBE_AWS_ACCESS_KEY_ID` / `TRANSCRIBE_AWS_SECRET_ACCESS_KEY` (voice), read from `.env`
+- `REGISTRATION_ENABLED`, `COOKIE_SECURE`, session/throttle/password fields
+
+See `.env.example` for the full, current list.
 
 ## Data model (intended)
 

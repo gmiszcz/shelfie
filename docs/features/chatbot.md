@@ -4,11 +4,11 @@ The current chat agent: its tools, the SSE wire protocol it streams, and the cha
 widget that renders it.
 
 > Documents the current code: `app/agent/engine.py`, `app/agent/tools.py`,
-> `app/agent/config.yaml`, `app/api/routes/agent.py`,
+> `app/agent/config.yaml`, `app/agent/dates.py`, `app/api/routes/agent.py`,
 > `frontend/src/components/ChatWidget.tsx`, `frontend/src/chat/sse.ts`,
-> `frontend/src/chat/chatState.ts`. The forward-looking AG-UI / voice design lives
-> in [../agent-ag-ui-bedrock.md](../agent-ag-ui-bedrock.md); this file describes
-> what is actually wired up today.
+> `frontend/src/chat/chatState.ts`. The UI agent (which drives the screen and
+> delegates data questions here via `ask_librarian`) and the Transcribe voice path
+> are in [../agent-ag-ui-bedrock.md](../agent-ag-ui-bedrock.md).
 
 ## What it is
 
@@ -16,9 +16,11 @@ A single librarian agent that answers questions about the user's own library **a
 manages it** — it can both read and change the library's data. It runs on **AWS
 Bedrock** (Claude Haiku 5.5, `eu.anthropic.claude-haiku-5-5`, region `eu-central-1`
 by default) through **strands-compose**, configured in `app/agent/config.yaml`.
-Credentials come from the standard AWS chain; the model id and region are read from
-the environment, which the app copies from `.env` (`BEDROCK_MODEL_ID`, `AWS_REGION`)
-before loading the config.
+Bedrock auth uses the long-term API key `AWS_BEARER_TOKEN_BEDROCK`, which `app/main.py`
+(`_export_bedrock_token`) copies from `.env` into the process environment so boto3
+finds it (the standard AWS chain is the fallback). The model id and region are read
+from the environment, which the app copies from `.env` (`BEDROCK_MODEL_ID`,
+`AWS_REGION`) before loading the config.
 
 The agent **cannot drive the user interface** (navigate, filter the on-screen grid,
 open dialogs, toggle settings/theme). That is the job of a separate UI agent in the
@@ -33,8 +35,8 @@ The system prompt instructs it to answer in the user's language, always use tool
 (never invent books/dates/ratings), prefer `display_score` over raw `stars` for
 ranking, keep answers short, and — crucially — to run destructive or wide-reaching
 writes **through a confirmation step** (see below). A `MaxToolCallsGuard` caps a turn
-at **12** tool calls. Haiku 5.5 streams adaptive "thinking" (reasoning) before the
-answer.
+at **20** tool calls (`config.yaml`). Model "thinking" is **off** (`config.yaml`): the
+librarian answers data questions, where the extra reasoning tokens only added latency.
 
 ## Tools
 

@@ -56,9 +56,12 @@ UI.
 | `set(id, value)` | Write a value control; validated against its options (error lists the valid values). |
 | `invoke(id, action?, args?)` | Act on a button / dialog / list item (error lists the valid actions/ids). |
 | `navigate(tab)` | Switch the active tab. |
-| `find_books(query)` | The only data tool, still client-side: resolve a name to ids/titles. |
+| `find_books(query)` | Client-side: resolve a name to ids/titles. |
+| `series_releases(name, refresh?)` | A series' owned/missing volumes and next volume per edition; `refresh=true` runs a live web search. |
+| `ask_librarian(question)` | Ask the backend (read-only) librarian a DATA question; its answer is shown verbatim and ends the run. |
 
-No tool knows any specific control. **Adding a tab or control is purely a
+The registry tools (`describe_ui` / `get_state` / `set` / `invoke` / `navigate`) know no specific
+control; `find_books`, `series_releases` and `ask_librarian` are the data/delegation tools. **Adding a tab or control is purely a
 `useAgentAnchor` call** — the agent, its tools and the backend are untouched. A
 dev-time guard (`frontend/src/App.test.tsx`) renders the app and asserts every
 nav tab and every interactive control in a known list has an anchor, so a new

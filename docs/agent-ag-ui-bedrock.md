@@ -2,16 +2,36 @@
 
 Shelfie has **two chat agents**, switched in the chat widget header:
 
-- **Library agent** — a read-only data assistant that answers questions about the library. It runs
-  **on the server** (Strands Compose + Bedrock) with database tools, and streams its answer to the
-  browser over SSE. Endpoint: `POST /api/agent/chat`. (Unchanged; see "Library agent" below.)
+- **Library agent** — a data assistant that both **reads and manages** the library. It runs **on
+  the server** (strands-compose + Bedrock) with in-process database tools, and streams its answer
+  to the browser over SSE. Endpoint: `POST /api/agent/chat`. See "Library agent" below.
 - **UI agent** — an assistant that **drives the user interface**. It follows the **AG-UI
   frontend-tools** pattern (as in CopilotKit / the AG-UI client): **its tools are defined and
   executed in the browser**. The only server part is a thin LLM runner, because Bedrock credentials
-  cannot live in the browser. Endpoint: `POST /api/agui/run`.
+  cannot live in the browser. It delegates DATA questions to the librarian through an
+  `ask_librarian` tool. Endpoint: `POST /api/agui/run`.
 
-Both run on **AWS Bedrock** (Claude Haiku 5.5, `eu-central-1`). Voice input (AWS Transcribe) works
-in either mode.
+Both run on **AWS Bedrock** (Claude Haiku 5.5, `eu-central-1`). Bedrock auth uses the long-term API
+key `AWS_BEARER_TOKEN_BEDROCK`, which `app/main.py` (`_export_bedrock_token`) copies from `.env` into
+the process environment so boto3 finds it; on Fly `AWS_EC2_METADATA_DISABLED=true` stops boto3
+probing the EC2 metadata service. Voice input (AWS Transcribe) works in either mode.
+
+## Who answers what
+
+Every chat/voice request takes one of these paths. File names are given (not line numbers, which
+drift):
+
+| Entry point | Agent | Request path (code-cited chain) |
+|---|---|---|
+| Chat, **Library mode** | Library agent (read+write) | `ChatWidget.tsx` → `POST /api/agent/chat` (`scope: "library"`, `app/api/routes/agent.py`) → `ChatEngine.stream` (`app/agent/engine.py`) → librarian (`config.yaml`) → in-process tools (`app/agent/tools.py`: reads = SQLite, writes = `app.services.books`) → SSE wire events |
+| Chat, **UI mode** | UI agent (screen) | `ChatWidget.tsx` → `runAgent` (`frontend/src/agui/client.ts`) → `POST /api/agui/run` (`app/api/routes/agui.py`) → `run_stream` (`app/agent/ui_agent.py`, boto3 `converse_stream`) → AG-UI events → browser executes a tool (`frontend/src/agui/tools.ts` → `frontend/src/agent-ui/registry.ts`) → next turn |
+| **Global mic** (voice) | UI agent | `GlobalMic.tsx` → `/api/transcribe/stream` (WS) → final text → `sendUiAgent` (`ChatProvider.tsx`) → same UI-agent chain as above |
+| **Data question in UI mode** | Librarian via UI agent | UI agent calls `ask_librarian(question)` (`frontend/src/agui/tools.ts`) → host `askLibrarian` (`ChatProvider.tsx`) → `POST /api/agent/chat` (`scope: "library_readonly"`) → librarian with write tools pruned (`_apply_scope`, `app/agent/engine.py`) → answer short-circuits the run and is shown verbatim (`finalAnswerOf` in `frontend/src/agui/client.ts`) |
+| **Series release question** | Either agent | Library agent: `get_series` / `refresh_series` (`app/agent/tools.py` → `app/services/series_service.py`). UI agent: `series_releases(name, refresh?)` (`frontend/src/agui/tools.ts`) → `POST /api/series/{key}/refresh` (`app/api/routes/series.py`) → `research_series_releases` (researcher + editor agents, `app/agent/series_research.py`) |
+| **Enrichment / insights** (not chat) | Enrichment step | `POST /api/books` background task or `POST /api/books/{id}/enrich` → `app/services/enrichment.py` (its own Bedrock model, `structured_output_async`), independent of the chat agents |
+
+Bedrock auth for all paths: `AWS_BEARER_TOKEN_BEDROCK` (`app/main.py` `_export_bedrock_token`);
+`AWS_EC2_METADATA_DISABLED=true` on Fly (`fly.toml`).
 
 ## Why frontend tools, and why they are now universal
 
@@ -83,9 +103,12 @@ The runner (`app/agent/ui_agent.py`) emits, per turn:
 A turn that emits a tool call **ends right after it** (`TOOL_CALL_END` → `RUN_FINISHED`); the browser
 runs the tool and starts the next turn. This is the AG-UI frontend-tools contract.
 
-The system prompt tells the model to **call `describe_ui` first**, to act through `set` / `invoke` /
-`navigate` using only ids from the schema, to resolve names with `find_books`, to use the structured
-filters (never type a year into a search box), and to confirm briefly what it did.
+The system prompt already carries the live UI schema (sent as `state` every turn), so the model
+acts straight away and calls `describe_ui` **only after it navigates** to a tab whose controls are
+not yet mounted. It acts through `set` / `invoke` / `navigate` using only ids from the schema,
+resolves names with `find_books`, uses the structured filters (never types a year into a search
+box), routes DATA questions to `ask_librarian`, release questions to `series_releases`, and confirms
+briefly in the same turn as its last action.
 
 ## Browser tools (`frontend/src/agui/tools.ts`) — generic, registry-driven
 
@@ -100,6 +123,11 @@ Every tool runs in the browser and is **generic**: it reads or drives the runtim
 | `invoke(id, action?, args?)` | Act on a button / dialog / list item (e.g. open a book, open/close a dialog, apply a filter). |
 | `navigate(tab)` | Switch the active tab. |
 | `find_books(query, limit?)` | Search the **already-loaded** books → `{ id, title, authors, series, stars, display_score }[]`. |
+| `series_releases(name, refresh?)` | A series' owned/missing volumes and the next volume per edition (Polish + original/English) with date, status and source. `refresh=true` runs a live web search (~60 s). Matches a series by any of its names. |
+| `ask_librarian(question)` | Ask the backend librarian a DATA question (counts, dates, stats, a book's details). Read-only; its answer is shown to the user verbatim and ends the run (no extra turn). |
+
+The full set returned by `createTools` (`frontend/src/agui/tools.ts`), in order: `describe_ui`,
+`get_state`, `set`, `invoke`, `navigate`, `find_books`, `series_releases`, `ask_librarian`.
 
 ## Anchor registry (`frontend/src/agent-ui/`)
 
@@ -148,28 +176,46 @@ is also unit-tested with a **fake fetch** (`frontend/src/agui/client.test.ts`): 
 The registry, the generic tools and the anchor-coverage guard are unit-tested in
 `frontend/src/agent-ui/*.test.*`, `frontend/src/agui/tools.test.ts` and `frontend/src/App.test.tsx`.
 
-## Library agent (unchanged, `POST /api/agent/chat`)
+## Library agent (`POST /api/agent/chat`)
 
-The library agent is the existing Strands Compose assistant (`app/agent/engine.py`,
-`app/agent/tools.py`, `app/agent/config.yaml`). It runs on the server with read-only database tools
-(`search_library`, `get_book_details`, `list_books`, `reading_stats`, `library_overview`) and streams
-a small wire protocol annotated with AG-UI names (`app/agent/agui.py`). The chat widget's **Library
-agent** mode uses it with `scope: "library"`.
+The library agent is the strands-compose assistant (`app/agent/engine.py`, `app/agent/tools.py`,
+`app/agent/config.yaml`). It runs on the server and **reads and writes** library data:
+
+- **Read** tools query SQLite directly: `search_library`, `get_book` / `get_book_details`,
+  `list_books`, `reading_stats`, `library_overview`, plus series/favourites/waiting-list reads.
+- **Write** tools go through `app.services.books` (the same layer the HTTP API uses):
+  `add_book`, `update_book`, `set_insights`, `delete_book`, and the series-edit tools.
+- Destructive (`delete_book`, always) and wide (`update_book` over three books) changes are
+  two-phase: the first call returns `needs_confirmation` and a summary; the model relays it and only
+  applies after the user agrees in chat (`confirm=true`).
+
+The chat widget's **Library mode** uses `scope: "library"`. The `ask_librarian` path from the UI
+agent uses `scope: "library_readonly"`, where `_apply_scope` (`app/agent/engine.py`) prunes every
+non-read tool server-side, so the model has no write tool at all. The engine injects the current
+date into the system prompt fresh every turn (`_apply_date_prompt` + `app/agent/dates.py`), so "this
+year" always resolves correctly. Events stream as a small wire protocol annotated with AG-UI names
+(`app/agent/agui.py`). Full detail: [features/chatbot.md](features/chatbot.md).
 
 ## Voice input (AWS Transcribe streaming)
 
-Unchanged from wave 2: a mic button records audio, downsamples to 16 kHz 16-bit mono PCM and streams
-it to `/api/transcribe/stream` (WebSocket), which drives Amazon Transcribe and returns partial/final
-transcripts; the final text is appended to the input box (pl-PL default, en-US toggle). See
-`frontend/src/chat/useVoiceInput.ts`, `app/api/routes/transcribe.py`, `app/services/transcribe.py`.
+A mic button records audio, downsamples to 16 kHz 16-bit mono PCM and streams it to
+`/api/transcribe/stream` (WebSocket), which drives Amazon Transcribe and returns partial/final
+transcripts. The final text is sent to the UI agent (global mic) or dropped into the input box for
+review (chat mic), pl-PL default with an en-US toggle. Transcribe credentials come from
+`TRANSCRIBE_AWS_ACCESS_KEY_ID` / `TRANSCRIBE_AWS_SECRET_ACCESS_KEY` (`app/services/transcribe.py`
+`_resolve_credentials`), else the boto3 chain — this path does **not** use the Bedrock bearer token.
+See `frontend/src/chat/useVoiceInput.ts`, `app/api/routes/transcribe.py`, `app/services/transcribe.py`,
+and [features/voice-input.md](features/voice-input.md).
 
 ## Files
 
-- `app/agent/ui_agent.py` — thin Bedrock runner (`run_stream`): request → `converse_stream` → AG-UI events; injects the current date. **No DB tools.**
-- `app/api/routes/agui.py` — `POST /api/agui/run` (SSE).
+- `app/agent/ui_agent.py` — thin Bedrock runner (`run_stream`): request → `converse_stream` → AG-UI events; cached boto3 client, prompt caching, per-turn metrics, current-date block. **No DB tools.**
+- `app/agent/dates.py` — the shared current-date system block both agents inject per reply.
+- `app/api/routes/agui.py` — `POST /api/agui/run` (SSE; sync generator so blocking `converse_stream` runs in Starlette's threadpool).
 - `frontend/src/agent-ui/` — the anchor registry: `types.ts`, `registry.ts` (`describeUi`/`setAnchor`/`invokeAnchor`/`navigate`), `useAgentAnchor.ts`.
-- `frontend/src/agui/client.ts` — the browser run loop (`runAgent`); sends the `describeUi()` schema as `state`.
-- `frontend/src/agui/tools.ts` — the generic browser tools (`describe_ui`/`get_state`/`set`/`invoke`/`navigate`/`find_books`).
+- `frontend/src/agui/client.ts` — the browser run loop (`runAgent`); sends the `describeUi()` schema as `state`; short-circuits on an `ask_librarian` final answer.
+- `frontend/src/agui/tools.ts` — the browser tools (`describe_ui`/`get_state`/`set`/`invoke`/`navigate`/`find_books`/`series_releases`/`ask_librarian`).
+- `frontend/src/chat/ChatProvider.tsx` — supplies `askLibrarian` (one read-only librarian session per UI thread) and `sendUiAgent` for the global mic.
 - `frontend/src/settings/libraryFilter.ts` — the structured library filter + data-derived option helpers.
 - `frontend/src/agui/events.ts` — AG-UI event types + SSE parser.
 - `frontend/src/agui/labels.ts` — action-card labels.
@@ -243,8 +289,7 @@ stream).
 
 ## 2026-11-08 — UI-agent bug fixes and turn-latency work
 
-Three reported bugs were fixed and the UI agent's per-turn latency was cut. All work is on
-`feat/ui-agent-fixes`.
+Three reported bugs were fixed and the UI agent's per-turn latency was cut.
 
 ### Bug 1 — "pokaż ulubione książki" switched tab but showed nothing
 

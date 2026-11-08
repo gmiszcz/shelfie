@@ -56,7 +56,10 @@ data/
 - Setup/reset links: 32 random bytes, hash stored, valid 24 h, single use. Creating a new
   link invalidates older unused links of that user.
 - Login throttle: more than 5 failed attempts for one e-mail or one IP within 15 minutes
-  returns `429` with `Retry-After`. Generic error text: "Invalid e-mail or password".
+  returns `429` with `Retry-After`. Generic error text: "Invalid e-mail or password". The
+  throttle IP is hard to spoof: `client_ip` (`app/api/deps.py`) uses `Fly-Client-IP` (set by
+  the Fly edge), else the LAST `X-Forwarded-For` hop (our own proxy), never the client's
+  first hop.
 - CSRF: `SameSite=Lax` plus every state-changing request (`POST/PUT/PATCH/DELETE`) must
   carry `X-Shelfie-Client: web` (the frontend adds it to every request) or it gets `403`.
   If an `Origin` header is present it must match the request host or the
@@ -78,8 +81,8 @@ data/
   (agent tools in `app/agent/tools.py`, `app/services/books_json.py`, research) reads the
   right files. Background tasks capture the `UserData` explicitly when scheduled and set
   the context var inside the task; they never fall back to a global path.
-- The chat engine keys its sessions by `(user_id, session_id)`. One user can never load
-  another user's chat session.
+- The chat engine keys its sessions by `(user_id, scope, session_id)`. One user can never
+  load another user's chat session, and a read-only scope never aliases a read+write one.
 - If no user context is set, data access raises an error. There is no silent default.
 
 ## HTTP API
@@ -121,7 +124,8 @@ users) take `--user <email or id>` and resolve the per-user paths.
 - `AuthProvider` loads `GET /api/auth/me` once; while loading it shows a neutral splash.
 - Not logged in: `LoginPage` (e-mail, password, "Log in"). Errors inline, 429 shows the wait.
 - `/setup?token=...`: `SetupPasswordPage` shows who the link is for, password + repeat,
-  strength hint (min 10), then logs in and opens the library.
+  strength hint (the minimum comes from `GET /api/auth/config` `password_min_length`, 8),
+  then logs in and opens the library.
 - Any `401` from the API sends the app back to the login page and keeps the target route.
 - User menu: the avatar top-right of the top bar on every screen size, phones included
   (not in the bottom tab bar). Items: name, "Account", "Change password",
@@ -164,8 +168,8 @@ resolved as follows; none change the request/response shape:
   disabled.
 - **Covers** are served through `GET /api/covers/{name}`, which now requires a session and
   reads only the current user's `covers/` folder (name-validated, path-contained).
-- **Chat sessions** are keyed `(user_id, session_id)` in the engine; the client-facing
-  `session_id` is unchanged.
+- **Chat sessions** are keyed `(user_id, scope, session_id)` in the engine; the
+  client-facing `session_id` is unchanged.
 - **Bootstrap** (`app.cli users bootstrap`) backs up `data/` to `data/backup-auth-<ts>/`,
   creates admin id 1, moves the legacy library into `data/users/1/`, asserts the row counts of
   `books` / `comparisons` / `series_info` / `expected_books` are unchanged, prints a setup link
@@ -206,7 +210,6 @@ Two bugs came from that (fixed 2026-11-07):
 |---|---|---|
 | Admin password | `admin` is set via CLI with no length rule | change it in Account -> Change password |
 | Open registration | anyone who can reach the site can create an account; no e-mail check | keep the site tailnet-only, or set `registration_enabled=false` / add invites |
-| IP throttle | `client_ip` trusts the first `X-Forwarded-For` value, which a client can set itself; behind the proxy every request is otherwise `127.0.0.1` | trust only the hop the proxy adds (last value), or throttle by e-mail only |
 | Forgotten password | no e-mail delivery; the admin must generate and send a reset link | add SMTP / transactional e-mail later |
 | Error messages | a `403` CSRF rejection is shown to the user as "Invalid e-mail or password" | show a distinct message for non-`401` errors |
 | Dev server in production role | the app is served by Vite dev mode | serve the built `dist/` from FastAPI or nginx for real use |

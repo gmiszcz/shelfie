@@ -44,7 +44,7 @@ tools via `uv run --no-sync`.
 1. **web** — `node:22-...-slim` pinned to `$BUILDPLATFORM`: builds the Vite bundle on the native
    builder (not under QEMU — the output is just static files).
 2. **runtime** — `python:3.12-slim-...`: installs `requirements.txt`, copies `app/` and the built
-   `frontend/dist`, declares a `/data` `VOLUME`, a `HEALTHCHECK` on `/api/health`, and
+   `frontend/dist`, declares an `/app/data` `VOLUME`, a `HEALTHCHECK` on `/api/health`, and
    `CMD ["python", "-m", "app"]`.
 
 Compose:
@@ -58,13 +58,24 @@ Multi-arch targets live in CI: default `linux/amd64`; PRs and `main` add `linux/
 
 ## CI/CD: GitHub Actions → GHCR
 
-`.github/workflows/ci.yml` runs on push to `main`/`dev` and PRs to `main`. Three jobs:
+`.github/workflows/ci.yml` runs on push to `main`/`dev` and PRs to `main`. Four jobs:
 
 1. **backend** — install uv + just, `uv sync --locked --extra dev`, `just check-backend`.
 2. **frontend** — Node 22 + npm cache, `npm ci`, `just check-frontend`.
 3. **docker** (`needs: [backend, frontend]`) — QEMU + Buildx, decide platforms/tags by branch,
    `docker/build-push-action`. **Push to GHCR only on push to `main`** (`:latest` + `:<sha>`); PRs
    build without pushing; dev stays amd64-only (no QEMU cost).
+4. **deploy** (`needs: [docker]`) — **only on push to `main`**: rolls the image out to Fly.io.
+
+## Deploy: Fly.io
+
+The `deploy` job runs on a merge to `main`, in a `production` environment with a `fly-deploy`
+concurrency group so two deploys never overlap. It **reuses** the image the `docker` job just
+pushed to GHCR (nothing is rebuilt): `flyctl auth docker`, then `docker buildx imagetools create`
+copies `ghcr.io/gmiszcz/shelfie:<sha>` to `registry.fly.io/mybooks:<sha>`, and
+`flyctl deploy --app mybooks --image … --ha=false` rolls it out. Auth is `FLY_API_TOKEN`
+(a repo secret); the app name `mybooks` and `fly.toml` carry the runtime config. See
+[features/deploy-fly.md](features/deploy-fly.md).
 
 Hardening:
 

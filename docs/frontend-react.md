@@ -1,9 +1,26 @@
 # Frontend — React + PrimeReact
 
-Built with the `react-primereact-frontend` skill. React 19 + Vite + PrimeReact + Redux Toolkit.
-The production bundle is static files served by the FastAPI backend from `frontend/dist`.
+> **Status: early design-era planning doc — the layout below is not the code.** The app shipped
+> without Redux and axios; data is cached with TanStack Query (see
+> [features/data-cache.md](features/data-cache.md)). For the current frontend read
+> [features/design-system.md](features/design-system.md),
+> [features/ui-shell-and-settings.md](features/ui-shell-and-settings.md) and
+> [features/ui-agent-registry.md](features/ui-agent-registry.md). The design-system notes below
+> still hold.
 
-## Layout (intended)
+React 19 + Vite + PrimeReact. The production bundle is static files served by the FastAPI backend
+from `frontend/dist`.
+
+## Layout (as built — summary)
+
+The real `frontend/src` has: `ui/` (shared components), `components/` (`ChatWidget`, `MicButton`,
+`GlobalMic`, dialogs), `pages/` (`Library`, `Ranking`, `Stats`, `Favourites`, `Series`, …),
+`chat/` (chat provider + voice), `agent-ui/` (the UI-agent anchor registry), `agui/` (the browser
+AG-UI tools + run loop), `auth/`, `queries/` (TanStack Query hooks + IndexedDB persister),
+`services/` (the `fetch`-based API client), `settings/`, and `hooks/`. There is **no** Redux
+`store/`, **no** axios `api/`, and **no** `BookDetail`/`Compare`/`Agent` pages.
+
+## Layout (original plan — not the code)
 
 ```
 frontend/
@@ -34,7 +51,9 @@ frontend/
   `?url` (`App.tsx`) and swapped on one `<link id="primereact-theme">`. No CDN. **Light is the
   default theme.** The `data-theme` attribute on `<html>` swaps the app token set (surfaces,
   accents, soft pill tints) in lockstep with the PrimeReact lara light/dark theme.
-- Redux Toolkit for UI/config/library state; typed hooks.
+- Server data (books, series, stats) is cached with TanStack Query + an IndexedDB persister,
+  keyed per user; see [features/data-cache.md](features/data-cache.md). (The original plan used
+  Redux Toolkit; the app does not.)
 
 ## Design system
 
@@ -70,16 +89,18 @@ PrimeReact widgets are kept but retinted to the system by overrides at the end o
 - **Book detail.** Full metadata, reading status transitions, star rating input.
 - **Comparison session.** Two covers side by side, "I preferred this one" / "about the same".
   Triggered when a book is rated 5.0; drives the rating engine. Shows how many comparisons remain.
-- **Agent surface (AG-UI / A2UI).** The agent streams output over SSE/WebSocket and can render or
-  update PrimeReact components, show its tool calls live, and pause for human-in-the-loop
-  confirmation. Voice input is captured in the browser and streamed to AWS Transcribe. See
-  [agent-ag-ui-bedrock.md](agent-ag-ui-bedrock.md).
+- **Agent surfaces.** Two assistants: a **library agent** streamed over SSE, and a **UI agent**
+  whose tools run in the browser against a runtime anchor registry and drive PrimeReact controls.
+  Voice input is captured in the browser and streamed to AWS Transcribe. There is no A2UI. See
+  [agent-ag-ui-bedrock.md](agent-ag-ui-bedrock.md) and
+  [features/ui-agent-registry.md](features/ui-agent-registry.md).
 
 ## Streaming
 
-A small client wrapper subscribes to the backend's SSE/WebSocket agent stream and dispatches
-AG-UI/A2UI events into Redux, so agent-driven UI changes flow through the same state as user-driven
-ones. Reconnect/backoff handled in a `useServerStatus`-style hook.
+The chat widget consumes the library agent's SSE wire protocol (`frontend/src/chat/`) and the UI
+agent's AG-UI event stream (`frontend/src/agui/`). There is no Redux; agent-driven UI changes act
+through the anchor registry, and server data flows through TanStack Query (see
+[features/data-cache.md](features/data-cache.md)).
 
 ## Accounts & login (`frontend/src/auth/`)
 

@@ -1,116 +1,101 @@
 # Shelfie
 
-Personal book collection manager and reading tracker. Single-user today, structured for
-multi-tenant + SSO/JWT later. FastAPI backend, React + PrimeReact frontend, an agent layer on
-AWS Bedrock, and a dynamic relative rating engine that refines favorites through pairwise
+Personal book collection manager and reading tracker. Multi-user, with per-user libraries. A
+FastAPI backend serves a React + PrimeReact frontend, two AI assistants run on AWS Bedrock, voice
+input uses AWS Transcribe, and a dynamic relative rating engine refines favourites through pairwise
 comparisons.
 
-> **Status: preparation phase.** No application code yet. This repository currently holds the
-> standardized tooling (uv, Justfile, Docker, CI/CD), the research briefs, and the architecture
-> documentation under [`docs/`](docs/). Implementation starts in a later phase.
+Live app: [https://mybooks.fly.dev](https://mybooks.fly.dev) (Fly.io app `mybooks`).
 
----
+## What it does
 
-## Vision
-
-Track a private library and reading history, enrich every book with metadata and covers from the
-Google Books API, and rank favorites more finely than five stars allow: when a book earns a
-perfect 5.0, Shelfie runs a short "left or right?" session against other top books and refines a
-continuous latent score (so 4.9 and 5.0 can be told apart). An agent layer lets you search, add,
-and curate the library by voice and chat, with the UI streamed and partly rendered by the agent.
+- Track a private library and reading history (status, dates, stars, shelves, tags, notes).
+- Enrich every book with metadata and covers from the Google Books API (OpenLibrary fallback).
+- Rank favourites more finely than five stars: when a book earns a perfect 5.0, Shelfie runs a
+  short "left or right?" session against other top books and refines a continuous `display_score`.
+- Track book series — owned / read / missing volumes, name aliases, and a web release check for the
+  next volume (Polish + original editions).
+- Chat with a **library agent** that reads and manages the library data, and a **UI agent** that
+  drives the on-screen interface; add and search by voice.
 
 ## Technology stack
 
 | Layer | Choice |
 |---|---|
 | Backend | FastAPI, Uvicorn, Pydantic v2 + pydantic-settings, httpx |
-| Frontend | React 19, Vite, PrimeReact, Redux Toolkit |
-| Data | SQLite to start (file-backed), model structured for a later move to Postgres |
-| Book metadata | Google Books API v1 (search by ISBN/title/author, descriptions, covers) |
-| Rating engine | Pairwise comparison — Bradley-Terry (batch MLE) with Elo as the MVP path |
-| Agent layer | AWS Bedrock via Strands Compose; A2A (agent-to-agent), MCP (backend tools), AG-UI / A2UI (frontend) |
+| Frontend | React 19, Vite, PrimeReact, TanStack Query (+ IndexedDB persister) |
+| Data | SQLite per user (`data/users/<id>/`), shared `auth.sqlite` |
+| Book metadata | Google Books API v1, OpenLibrary fallback |
+| Rating engine | Pairwise comparison → continuous display score |
+| Library agent | AWS Bedrock (Claude Haiku 5.5) via strands-compose, in-process data tools |
+| UI agent | Thin Bedrock `converse_stream` runner + browser-side AG-UI frontend-tools |
 | Voice | AWS Transcribe (web mic → streaming transcription) |
 | Env & tasks | uv + `.venv`, `just` task runner |
-| Delivery | Multi-stage, multi-arch Docker image; GitHub Actions → GHCR |
+| Delivery | Multi-stage, multi-arch Docker image; GitHub Actions → GHCR → Fly.io |
+
+There is **no MCP, A2A or A2UI** — the library agent's tools call `app.services` / SQLite
+in-process, and the UI agent's tools run in the browser.
 
 ## Architecture at a glance
 
 ```
-          ┌────────────────────────────────────────────┐
-          │                Frontend (React)             │
-          │  PrimeReact UI · AG-UI/A2UI streaming (SSE/WS)│
-          │  voice capture → AWS Transcribe              │
+          ┌──────────────────────────────────────────────┐
+          │                Frontend (React)               │
+          │  PrimeReact UI · TanStack Query cache         │
+          │  voice capture → AWS Transcribe (WebSocket)   │
           └───────────────┬──────────────────────────────┘
-                          │ REST + SSE/WebSocket
+                          │ REST + SSE + WebSocket
           ┌───────────────▼──────────────────────────────┐
           │                Backend (FastAPI)              │
-          │  books API · rating engine · auth (JWT-ready) │
-          │  MCP tools  ·  A2A  ·  Strands Compose agents  │
+          │  books/series API · rating engine · auth      │
+          │  library agent (SSE) · UI agent runner (SSE)  │
           └───────┬───────────────┬───────────────┬───────┘
                   │               │               │
         ┌─────────▼──┐   ┌────────▼────────┐  ┌───▼─────────┐
         │ Google     │   │ AWS Bedrock      │  │ AWS         │
-        │ Books API  │   │ (Strands Compose)│  │ Transcribe  │
+        │ Books API  │   │ (Haiku 5.5)      │  │ Transcribe  │
         └────────────┘   └──────────────────┘  └─────────────┘
 ```
 
 Full detail: [`docs/architecture-overview.md`](docs/architecture-overview.md).
 
-## Documentation
-
-| Doc | Covers |
-|---|---|
-| [architecture-overview.md](docs/architecture-overview.md) | System shape, components, data flow, phasing |
-| [backend-fastapi.md](docs/backend-fastapi.md) | FastAPI layout, config, data model, single-user → multi-tenant, JWT/SSO |
-| [frontend-react.md](docs/frontend-react.md) | React + PrimeReact structure, state, theming, agent-driven UI surface |
-| [rating-engine-algorithm.md](docs/rating-engine-algorithm.md) | Dynamic relative rating: Elo, Bradley-Terry, TrueSkill/Glicko, pair selection |
-| [agent-ag-ui-bedrock.md](docs/agent-ag-ui-bedrock.md) | Strands Compose, AG-UI/A2UI, A2A, MCP, Bedrock, Transcribe, human-in-the-loop |
-| [devops-ci-cd.md](docs/devops-ci-cd.md) | uv/.venv, Justfile gate, multi-stage/multi-arch Docker, GitHub Actions → GHCR |
-| [research-google-books-api.md](docs/research-google-books-api.md) | Google Books API reference: endpoints, response shape, cover resolution, quotas |
-
-### Feature documentation
-
-How the app actually works today, feature by feature, documented from the real
-code. Index: [`docs/features/README.md`](docs/features/README.md).
-
-| Doc | Covers |
-|---|---|
-| [features/data-pipeline.md](docs/features/data-pipeline.md) | `books.json` as source of truth, `build-dbase` / `sample`, the book schema and every field's origin, CSV conversion history |
-| [features/library-and-search.md](docs/features/library-and-search.md) | Library view, search, Google Books → OpenLibrary fallback, language filter, API-key / 429 behaviour |
-| [features/manual-add-and-covers.md](docs/features/manual-add-and-covers.md) | Manual add form, cover search / upload / URL, storage, validation |
-| [features/statistics.md](docs/features/statistics.md) | `/api/stats`, grouping, date range, charts |
-| [features/chatbot.md](docs/features/chatbot.md) | The current library assistant: tools, SSE events, widget |
-| [features/api-reference.md](docs/features/api-reference.md) | Every endpoint with parameters and response shape |
-
-## Development
+## Run it locally
 
 Requires [uv](https://docs.astral.sh/uv/), [just](https://github.com/casey/just), Node 22+, and
 (for images) Docker with Buildx.
 
 ```bash
 just install     # uv sync --extra dev + npm install + create .env
-just dev         # FastAPI (hot-reload) + Vite dev server in parallel
+just dev         # FastAPI (:8000, hot-reload) + Vite dev server (:5174) in parallel
 just check       # the full gate: ruff, mypy, bandit, pytest, tsc, vitest, build
 just docker      # build the multi-arch image locally and run it
 ```
 
-`just check` is the single gate CI enforces. See
-[`docs/devops-ci-cd.md`](docs/devops-ci-cd.md) for the pipeline.
+The backend listens on port **8000**; the Vite dev server on **5174** (it proxies `/api` to the
+backend). For a production run, `just build` then `just run` serves the built frontend from FastAPI
+on one port. Create the first account with `just users-bootstrap` / `just users-add` (see
+[`docs/features/cli.md`](docs/features/cli.md)). AWS credentials for Bedrock/Transcribe go in `.env`
+(`AWS_BEARER_TOKEN_BEDROCK`, `TRANSCRIBE_AWS_*`); see `.env.example`.
 
-## Roadmap
+`just check` is the single gate CI enforces. See [`docs/devops-ci-cd.md`](docs/devops-ci-cd.md) for
+the pipeline, including the Fly.io deploy step.
 
-- **Phase 0 — Preparation (current).** Repo tooling standardized on the shared boilerplate skill;
-  research done; architecture documented. No app code.
-- **Phase 1 — Backend core.** FastAPI skeleton, config, SQLite data model, book CRUD, Google Books
-  integration (search, metadata, covers), single-user auth seam (JWT-ready).
-- **Phase 2 — Frontend core.** React + PrimeReact shell, library views, add-by-ISBN/search,
-  reading status, star rating.
-- **Phase 3 — Rating engine.** Comparison event log, Bradley-Terry fit, pairwise "left or right?"
-  sessions on a 5.0, continuous display scores, calibration sessions.
-- **Phase 4 — Agent layer.** Strands Compose on Bedrock, MCP tools over the backend, A2A, AG-UI/A2UI
-  streaming to the frontend, human-in-the-loop.
-- **Phase 5 — Voice.** AWS Transcribe web control.
-- **Phase 6 — Multi-tenant + SSO.** Flip the prepared seams on: per-user data isolation, SSO/JWT.
+## Documentation
+
+| Doc | Covers |
+|---|---|
+| [architecture-overview.md](docs/architecture-overview.md) | System shape, components, request/protocol map, the two agents |
+| [agent-ag-ui-bedrock.md](docs/agent-ag-ui-bedrock.md) | Both agents, Bedrock, AG-UI frontend tools, Transcribe, "who answers what" |
+| [rating-engine-algorithm.md](docs/rating-engine-algorithm.md) | Dynamic relative rating: stars, pairwise comparisons, display score |
+| [devops-ci-cd.md](docs/devops-ci-cd.md) | uv/.venv, the `just check` gate, Docker, GitHub Actions → GHCR → Fly |
+| [research-google-books-api.md](docs/research-google-books-api.md) | Google Books API reference: endpoints, response shape, cover resolution, quotas |
+| [backend-fastapi.md](docs/backend-fastapi.md) | Backend layout, config and data model (planning doc; reconcile with the real `app/`) |
+| [frontend-react.md](docs/frontend-react.md) | Frontend structure and theming (planning doc; reconcile with the real `frontend/src/`) |
+
+### Feature documentation
+
+How the app works today, feature by feature, documented from the real code. Full index:
+[`docs/features/README.md`](docs/features/README.md).
 
 ## License
 

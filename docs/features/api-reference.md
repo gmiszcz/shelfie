@@ -184,13 +184,26 @@ if a book cannot be read back.
 See [chatbot.md](chatbot.md).
 
 ### `POST /api/agent/chat`
-Stream one agent turn as Server-Sent Events.
-**Body:** `{ message: str (1–4000), session_id?: str ([A-Za-z0-9_-], ≤64) }`.
+Stream one **library-agent** turn as Server-Sent Events.
+**Body:** `{ message: str (1–4000), session_id?: str ([A-Za-z0-9_-], ≤64), scope?: "library" | "library_readonly" | "ui" }`.
+`scope` defaults to `library` (read+write); `library_readonly` prunes the write tools server-side
+(used by the UI agent's `ask_librarian`); legacy `ui` is treated as `library`.
 **Response:** `text/event-stream` of the wire protocol:
 `session_start → (reasoning | token | tool_start | tool_end)* → session_finish | error`.
 
 ### `DELETE /api/agent/sessions/{session_id}`
-Drop one in-memory chat session's state. **Response:** `204`.
+Drop one in-memory chat session's state (all scopes). **Response:** `204`.
+
+### `POST /api/agui/run`
+One **UI-agent** model turn. **Body:** `{ threadId, runId, messages, tools, state }` (the browser
+owns the tool schemas and sends the live UI state). **Response:** `text/event-stream` of AG-UI
+events (`RUN_STARTED` → text and/or tool-call events → `RUN_FINISHED` | `RUN_ERROR`). See
+[../agent-ag-ui-bedrock.md](../agent-ag-ui-bedrock.md).
+
+### `GET /api/transcribe/stream` (WebSocket)
+Voice input: send `{action:"start"}`, binary 16 kHz 16-bit mono PCM frames, then `{action:"stop"}`;
+receive `{partial|final|error}` transcript frames. Closes with code `4401` when the session cookie
+is missing. See [voice-input.md](voice-input.md).
 
 ## Series & waiting list
 
@@ -201,8 +214,8 @@ All series derived from the library, with computed progress. **Response:** `Seri
 (`series_key`, `name`, `author`, `aliases`, `owned_volumes[]`, `missing_volumes[]`,
 `owned_count`, `read_count`, `unread_owned_count`, `total_known`, `section`, `watch`,
 `next_expected`, `next_expected_pl`, `next_expected_en`, `checking`, `last_checked`,
-`notes`). Each `NextExpected` is `{ title, date, source_url, confidence, status }` where
-`status ∈ {announced, released, unknown}`.
+`notes`, `release_summary`). Each `NextExpected` is `{ title, date, source_url, confidence,
+status }` where `status ∈ {released, announced, in_translation, no_news, unknown}`.
 
 ### `GET /api/series/{key}`
 One series by canonical key **or any alias** (e.g. `Kroniki Mroku` → King's Dark Tidings).

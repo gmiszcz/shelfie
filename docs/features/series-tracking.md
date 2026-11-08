@@ -113,11 +113,12 @@ research run is bounded.
 
 The agent finds the next volume after the highest owned one **separately for the Polish
 edition** (Polish publisher + `lubimyczytac`, `empik`, `taniaksiazka`, publisher site; e.g.
-Wydawnictwo SQN for *Kroniki Mroku*) and the **original/English edition** (author site,
+Fabryka Słów for *Kroniki Mroku*) and the **original/English edition** (author site,
 Goodreads, Amazon). It returns strict JSON `{pl:{...}, en:{...}}`, each
-`{title, date, status, source_url, confidence}` where `status ∈ {announced, released,
-unknown}`. **It never invents a date** — when none is found it returns `unknown` with a
-null date (enforced again in `research_next_volumes`).
+`{title, date, status, source_url, confidence}` where `status ∈ {released, announced,
+in_translation, no_news, unknown}` (`_STATUS_VALUES` in `series_research.py`). **It never
+invents a date** — when none is found it returns `unknown` with a null date (enforced again
+in the editor step). See the wave-6 rework below for the current `release_summary` shape.
 
 ### Storing the result
 
@@ -429,8 +430,8 @@ migration keeps data).
 ## Update 2026-11-08 (b): found volumes, add mode, no alert history
 
 - `release_summary.found_volumes`: every volume the research found that is not owned (missing gaps like #1 and the next one), with title, status, date, source, `added_book_id`. The research prompt lists the missing numbers explicitly.
-- Preference `add_mode` (Settings � Series search � Found volumes): `auto` (default) adds each released/announced found volume as Want to read (max 3 per run, ONE Google Books query each; without a hit it is added from the title); `ask` shows a **Want to read** button per volume on the card (`POST /api/series/{key}/volumes`).
+- Preference `add_mode` (Settings → Series search → Found volumes): `auto` (default) adds each released/announced found volume as Want to read (max 3 per run, ONE Google Books query each; without a hit it is added from the title); `ask` shows a **Want to read** button per volume on the card (`POST /api/series/{key}/volumes`).
 - Dismissed notifications are no longer returned (no 'Show earlier'); only their key is kept so the same alert does not return.
 - Card: one small shared `LangPicker` (same as the add-book search) in the same row as the Watch switch (label 'New volumes'). Waiting list shows edition tag + full date.
-- Live check (copy of data): Cmentarze osobliwo�ci (own #2, #3) -> found #1 'Cmentarz osobliwo�ci' (2023-09-06) and added it as Want to read.
+- Live check (copy of data): Cmentarze osobliwości (own #2, #3) → found #1 'Cmentarz osobliwości' (2023-09-06) and added it as Want to read.
 
