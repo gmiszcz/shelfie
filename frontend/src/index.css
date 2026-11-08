@@ -768,9 +768,14 @@ body {
 }
 
 .detail-rating {
-  display: inline-flex;
+  display: flex;
+  flex: 1;
   align-items: center;
   gap: var(--small-gap);
+}
+/* Stars on the left, the score hugging the right edge. */
+.detail-rating .detail-score {
+  margin-left: auto;
 }
 
 /* Cover with the favourite heart on it (same overlay as the library card). */
@@ -808,6 +813,8 @@ body {
 /* Quiet one-line facts (dates, pages, added, copies): dot-separated. */
 .detail-line {
   display: flex;
+  /* "Started … | Finished …" and "Added … | N pages": second item on the right edge. */
+  justify-content: space-between;
   flex-wrap: wrap;
   column-gap: var(--default-gap);
   row-gap: var(--small-padding);
