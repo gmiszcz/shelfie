@@ -336,8 +336,9 @@ export function Library() {
     kind: 'button',
     label: 'Add a book',
     description:
-      'Open the add-book flow. Invoke with action "search" (args { query? } — the Google-search ' +
-      'dialog, optionally with a query typed) or action "manual" (args { prefill? } — the manual form).',
+      'Open the add-book flow. Invoke with action "search" (args { query } — opens the ' +
+      'Google-search dialog, types the query AND runs the search, so results show at once; ' +
+      'nothing else to click) or action "manual" (args { prefill? } — the manual form).',
     tab: 'library',
     actions: ['search', 'manual'],
     invoke: (action, args) => {

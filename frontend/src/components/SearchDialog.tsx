@@ -2,7 +2,7 @@ import { Button } from 'primereact/button';
 import { Dialog } from 'primereact/dialog';
 import { Message } from 'primereact/message';
 import { ProgressSpinner } from 'primereact/progressspinner';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { formatAuthors, formatYear, hitKey } from '../format';
 import { api } from '../services/api';
@@ -43,25 +43,20 @@ export function SearchDialog({
   const [results, setResults] = useState<VolumeSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Seed the search box when opened via the agent with a query typed in.
-  useEffect(() => {
-    if (visible && initialQuery != null) {
-      setQuery(initialQuery);
-    }
-  }, [visible, initialQuery]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
   const [adding, setAdding] = useState<string | null>(null);
 
-  const runSearch = async () => {
-    if (!query.trim()) return;
+  const runSearch = async (text: string = query) => {
+    const q = text.trim();
+    if (!q) return;
     setLoading(true);
     setError(null);
     setNotice(null);
     setSearched(true);
     try {
-      const resp = await api.search(query.trim(), lang || undefined);
+      const resp = await api.search(q, lang || undefined);
       setResults(resp.items);
       setNotice(resp.notice ?? null);
     } catch (err) {
@@ -71,6 +66,24 @@ export function SearchDialog({
       setLoading(false);
     }
   };
+
+  // Opened by the agent with a query: type it AND run the search at once (one Google
+  // Books call per open). `autoRan` stops StrictMode's double effect from searching twice;
+  // it resets when the dialog closes. The user's own "Add book" click passes no query.
+  const autoRan = useRef<string | null>(null);
+  useEffect(() => {
+    if (!visible) {
+      autoRan.current = null;
+      return;
+    }
+    if (initialQuery == null) return;
+    setQuery(initialQuery);
+    if (initialQuery.trim() && autoRan.current !== initialQuery) {
+      autoRan.current = initialQuery;
+      void runSearch(initialQuery);
+    }
+    // runSearch is recreated every render; only a new open / new query should re-run this.
+  }, [visible, initialQuery]);
 
   const add = async (hit: VolumeSearchResult) => {
     setAdding(hit.google_volume_id ?? hit.title);

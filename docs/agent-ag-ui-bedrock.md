@@ -162,7 +162,7 @@ Playwright against the live backend):
 | „przejdź do statystyk i pokaż ostatnie 12 miesięcy” | `navigate(stats)` → `set(stats.period, "last12Months")` | Statistics tab, period changed |
 | „w rankingu wyszukaj Sanderson” | `navigate(ranking)` → `set(ranking.search, "Sanderson")` | ranking search filled |
 | „włącz w ustawieniach liczbę stron na kartach” | `set(settings.cardFields.pageCount, true)` | page-count card field on |
-| „chcę dodać książkę Diuna” | `invoke(library.addBook, search, {query:"Diuna"})` | add-search dialog prefilled |
+| „chcę dodać książkę Diuna” | `invoke(library.addBook, search, {query:"Diuna"})` | add-search dialog opens with "Diuna" typed and the Google Books search already run (results shown) |
 | „pokaż książki z tego roku” | `invoke(library.filter, apply, {finished_year: <current>})` | finished-this-year, chip shows it, count matches DB |
 | „pokaż przeczytane w 2025” | `invoke(library.filter, apply, {finished_year: 2025})` | finished-2025, count matches DB |
 | „pokaż fantasy z 2024” | `invoke(library.filter, apply, {shelf:"Fantasy", finished_year:2024})` | shelf + year, structured chip |

@@ -99,7 +99,7 @@ short line.
   `settings.showVoiceButton`, and one toggle per settings card field / detail
   section (`settings.cardFields.*`, `settings.detailSections.*`).
 - **Library tab:** `library.search`, `library.starFilter`, `library.filter`,
-  `library.books` (list → open), `library.addBook` (search/manual),
+  `library.books` (list → open), `library.addBook` (search/manual; `search` with a `query` types it **and runs** the Google Books search, once per open, see `SearchDialog.test.tsx`),
   `library.dialogs` (close), and the structured facets above.
 - **Stats tab:** `stats.period`, `stats.group`, `stats.metric`, `stats.tableSearch`.
 - **Ranking tab:** `ranking.search`, `ranking.category`, `ranking.focus`.
