@@ -129,9 +129,17 @@ export function BookDetailDialog({
         <div className="detail-meta">
           {book.subtitle && <p className="detail-subtitle">{book.subtitle}</p>}
           <div className="detail-byline">
-            <strong>{formatAuthors(book.authors)}</strong>
-            {year && ` · ${year}`}
-            {book.publisher && ` · ${book.publisher}`}
+            <span>
+              <strong>{formatAuthors(book.authors)}</strong>
+              {year && ` · ${year}`}
+              {book.publisher && ` · ${book.publisher}`}
+            </span>
+            {/* Just the code (PL / EN): short, no label. */}
+            {on('language') && nonEmpty(book.language) && (
+              <span className="detail-lang" data-detail="language" title="Language">
+                {book.language.toUpperCase()}
+              </span>
+            )}
           </div>
 
           {onFavourite && (
@@ -153,76 +161,116 @@ export function BookDetailDialog({
             </div>
           )}
 
-          {on('status') && (
-            <div className="flex align-items-center gap-2">
-              <span>Status:</span>
-              <Dropdown
-                value={book.status}
-                options={STATUS_OPTIONS}
-                onChange={(e) => onStatus(book.id, e.value as ReadingStatus)}
-              />
-              <StatusTag status={book.status} />
+          {/* One row: the status tag (click it to change) and the stars with the score. */}
+          {(on('status') || on('rating') || on('score')) && (
+            <div className="detail-row">
+              {on('status') && (
+                <span data-detail="status">
+                <Dropdown
+                  className="detail-status-pick"
+                  panelClassName="detail-status-panel"
+                  value={book.status}
+                  options={STATUS_OPTIONS}
+                  onChange={(e) => onStatus(book.id, e.value as ReadingStatus)}
+                  valueTemplate={() => <StatusTag status={book.status} />}
+                  itemTemplate={(o: { value: ReadingStatus }) => <StatusTag status={o.value} />}
+                  aria-label="Reading status"
+                />
+                </span>
+              )}
+              {(on('rating') || on('score')) && (
+                <div className="detail-rating">
+                  {on('rating') && (
+                    <span data-detail="rating">
+                      <HalfStarRating
+                        value={book.stars}
+                        onChange={(value) => onStars(book.id, value)}
+                        ariaLabel="Your rating"
+                        hideClear
+                      />
+                    </span>
+                  )}
+                  {on('score') && book.display_score != null && (
+                    <span className="detail-score" data-detail="score" title="Score">
+                      {book.display_score.toFixed(1)}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
-          {on('rating') && (
-            <div className="flex align-items-center gap-2">
-              <span>Rating:</span>
-              <HalfStarRating
-                value={book.stars}
-                onChange={(value) => onStars(book.id, value)}
-                ariaLabel="Your rating"
-              />
-            </div>
-          )}
+          {/* Dates and pages on one quiet line. */}
+          {(() => {
+            const bits: ReactNode[] = [];
+            if (on('readingDates') && book.started_on) {
+              bits.push(<span key="s" data-detail="readingDates">Started {book.started_on}</span>);
+            }
+            if (on('readingDates') && book.finished_on) {
+              bits.push(
+                <span key="f" data-detail="readingDates">
+                  Finished {book.finished_on}
+                </span>,
+              );
+            }
+            if (on('pages') && (hasPositive(book.page_count) || hasPositive(book.pages_read))) {
+              const pages = hasPositive(book.page_count) ? book.page_count : book.pages_read;
+              bits.push(
+                <span key="p" data-detail="pages">
+                  {pages} pages
+                </span>,
+              );
+            }
+            return bits.length > 0 ? <div className="detail-line">{bits}</div> : null;
+          })()}
 
-          {on('score') && book.display_score != null && (
-            <div className="flex align-items-center gap-2">
-              <Tag value={`Score ${book.display_score.toFixed(1)}`} severity="info" />
-            </div>
-          )}
+          {/* Chips: shelves, categories, format and edition — no labels. */}
+          {(() => {
+            const chips: ReactNode[] = [];
+            if (on('shelves')) {
+              book.shelves.forEach((s) =>
+                chips.push(
+                  <span key={`s-${s}`} data-detail="shelves">
+                    <Tag value={s} severity="success" />
+                  </span>,
+                ),
+              );
+            }
+            book.categories.forEach((c) => chips.push(<Tag key={`c-${c}`} value={c} />));
+            if (on('format') && nonEmpty(book.format)) {
+              chips.push(
+                <span key="fmt" className="detail-chip" data-detail="format" title="Format">
+                  {book.format}
+                </span>,
+              );
+            }
+            if (nonEmpty(book.edition)) {
+              chips.push(
+                <span key="ed" className="detail-chip" title="Edition">
+                  {book.edition}
+                </span>,
+              );
+            }
+            return chips.length > 0 ? <div className="detail-chips">{chips}</div> : null;
+          })()}
 
-          {on('readingDates') && (book.started_on || book.finished_on) && (
-            <div className="flex gap-3 flex-wrap" style={{ color: 'var(--app-text-muted)' }}>
-              {book.started_on && <span>Started {book.started_on}</span>}
-              {book.finished_on && <span>Finished {book.finished_on}</span>}
-            </div>
-          )}
-
-          {on('pages') && (hasPositive(book.page_count) || hasPositive(book.pages_read)) && (
-            <div style={{ color: 'var(--app-text-muted)' }}>
-              {hasPositive(book.pages_read) && `${book.pages_read} pages read`}
-              {hasPositive(book.pages_read) && hasPositive(book.page_count) && ' / '}
-              {hasPositive(book.page_count) && `${book.page_count} pages`}
-            </div>
-          )}
-
-          {on('shelves') && book.shelves.length > 0 && (
-            <div className="flex gap-1 flex-wrap align-items-center">
-              <span style={{ color: 'var(--app-text-muted)' }}>Shelves:</span>
-              {book.shelves.map((s) => (
-                <Tag key={s} value={s} severity="success" />
-              ))}
-            </div>
-          )}
-
-          {book.categories.length > 0 && (
-            <div className="flex gap-1 flex-wrap">
-              {book.categories.map((c) => (
-                <Tag key={c} value={c} />
-              ))}
-            </div>
-          )}
-
-          <Field label="Format" value={nonEmpty(book.format) ? book.format : null} />
-          <Field label="Edition" value={nonEmpty(book.edition) ? book.edition : null} />
-          {book.language && <Field label="Language" value={book.language} />}
-          {hasPositive(book.copies) && book.copies > 1 && (
-            <Field label="Copies" value={book.copies} />
-          )}
-          {book.signed && <Field label="Signed" value="Yes" />}
-          <Field label="Condition" value={nonEmpty(book.condition) ? book.condition : null} />
-          {nonEmpty(book.added_at) && <Field label="Added" value={book.added_at} />}
+          {/* Small facts on one quiet line. */}
+          {(() => {
+            const facts: ReactNode[] = [];
+            if (hasPositive(book.copies) && book.copies > 1) {
+              facts.push(<span key="cp">{book.copies} copies</span>);
+            }
+            if (book.signed) facts.push(<span key="sg">Signed</span>);
+            if (nonEmpty(book.condition)) facts.push(<span key="cd">{book.condition}</span>);
+            if (on('added') && nonEmpty(book.added_at)) {
+              facts.push(
+                <span key="ad" data-detail="added">
+                  Added {book.added_at.slice(0, 10)}
+                </span>,
+              );
+            }
+            return facts.length > 0 ? <div className="detail-line">{facts}</div> : null;
+          })()}
         </div>
       </div>
 
