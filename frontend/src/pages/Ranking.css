@@ -249,3 +249,84 @@
     border-radius: var(--radius-md);
   }
 }
+
+/* --- Phone ranking list (replaces the wide table below 641px) ------------------------ */
+.rank-mobile-list,
+.rank-mobile-more {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .rank-table-panel .rank-table {
+    display: none;
+  }
+  .rank-table-panel {
+    padding: var(--default-padding);
+  }
+  .rank-mobile-list {
+    display: flex;
+    flex-direction: column;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .rank-mobile-row {
+    display: grid;
+    grid-template-columns: 2.2rem 2.4rem minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: var(--small-gap);
+    padding: var(--small-gap) var(--small-padding);
+    border-bottom: 1px solid var(--app-border);
+  }
+  .rank-mobile-row:last-child {
+    border-bottom: none;
+  }
+  .rank-mobile-row .rank-number {
+    font-size: 0.85rem;
+    text-align: right;
+  }
+  .rank-mobile-row .ui-cover--thumb {
+    width: 2.4rem;
+  }
+  .rank-mobile-main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: 2px;
+  }
+  .rank-mobile-main .t {
+    font-weight: 600;
+    font-size: 0.92rem;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .rank-mobile-main .a {
+    color: var(--app-text-muted);
+    font-size: 0.78rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .rank-mobile-stars .half-star-star {
+    font-size: 0.8rem;
+  }
+  .rank-mobile-row .rank-score {
+    font-size: 0.95rem;
+  }
+  .rank-mobile-row .p-button {
+    width: 2.2rem;
+    height: 2.2rem;
+  }
+  .rank-mobile-empty {
+    padding: var(--big-padding);
+    color: var(--app-text-muted);
+    text-align: center;
+  }
+  .rank-mobile-more {
+    display: flex;
+    width: 100%;
+    justify-content: center;
+  }
+}

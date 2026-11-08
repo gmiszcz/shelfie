@@ -77,3 +77,10 @@ The ranking page keeps three pairs ready (`frontend/src/hooks/usePairQueue.ts`).
 ## First pair on open (no "Loading…" hang)
 
 On open the page seeds the category from the cached book list (the one with the most rated books) and loads the first pair. This runs once (`seeded` ref) and has **no** cleanup flag: with the persisted cache the list is ready at once and the background refetch then changes `books`, and a cancelling cleanup (or React StrictMode's double effect) used to leave `pairInit` true, so the compare panel hung on "Loading…". `setPairInit(false)` now always runs when `loadPair` finishes. Regression test: `Ranking.test.tsx` ("finishes loading under StrictMode").
+
+## Phone list instead of the table (≤ 640 px)
+
+The ranking `DataTable` has ten columns and scrolled sideways on a phone. Below 641 px it is
+hidden and `.rank-mobile-list` shows one compact row per book: rank, small cover, title +
+author with small stars under them, the score, and the focus button. 20 rows show at first;
+"Show more" adds 20. The full table is unchanged on wider screens (`Ranking.tsx`, `Ranking.css`).
