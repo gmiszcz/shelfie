@@ -31,6 +31,7 @@ vi.mock('./services/api', () => ({
     })),
     recomputeRatings: vi.fn(async () => ({ rated_books: 0, comparisons: 0 })),
     nextPair: vi.fn(async () => null),
+    nextPairs: vi.fn(async () => []),
     // The Series tab (useSeries) loads these on mount; empty results are enough to
     // let the page mount so navigation to it can be exercised.
     listSeries: vi.fn(async () => []),
@@ -52,6 +53,8 @@ vi.mock('./services/api', () => ({
 import App from './App';
 // eslint-disable-next-line import/first
 import { AuthProvider } from './auth';
+// eslint-disable-next-line import/first
+import { QueryWrapper } from './queries/testUtils';
 // eslint-disable-next-line import/first
 import {
   _resetRegistry,
@@ -106,9 +109,11 @@ afterEach(() => {
 
 async function renderApp() {
   render(
-    <AuthProvider>
-      <App />
-    </AuthProvider>,
+    <QueryWrapper>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </QueryWrapper>,
   );
   // Wait until the registry has the nav anchor (App mounted) and the library tab mounted.
   await waitFor(() => expect(getAnchor('nav.tab')).toBeTruthy());

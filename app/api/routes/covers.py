@@ -50,4 +50,7 @@ async def get_cover(name: str, _user: CurrentUser) -> FileResponse:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cover not found")
     if not path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cover not found")
-    return FileResponse(path, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+    # `private`: a cover is served from the current user's folder, so it must never be
+    # cached by a shared proxy — only by that user's own browser. Immutable + 1-year max-age
+    # because a cover's content-addressed filename never changes once written.
+    return FileResponse(path, headers={"Cache-Control": "private, max-age=31536000, immutable"})

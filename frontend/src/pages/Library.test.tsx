@@ -54,6 +54,8 @@ import { Library } from './Library';
 // eslint-disable-next-line import/first
 import { SettingsProvider } from '../settings/SettingsContext';
 // eslint-disable-next-line import/first
+import { QueryWrapper } from '../queries/testUtils';
+// eslint-disable-next-line import/first
 import {
   _resetRegistry,
   getAnchor,
@@ -64,9 +66,11 @@ import {
 
 async function renderLibrary() {
   render(
-    <SettingsProvider>
-      <Library />
-    </SettingsProvider>,
+    <QueryWrapper>
+      <SettingsProvider>
+        <Library />
+      </SettingsProvider>
+    </QueryWrapper>,
   );
   await waitFor(() => expect(screen.getByText(/3 books/)).toBeTruthy());
 }

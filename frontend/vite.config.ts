@@ -1,7 +1,14 @@
 /// <reference types="vitest/config" />
+import { readFileSync } from 'fs';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
+
+// The frontend package version, injected as the build constant `__APP_VERSION__` so the
+// React Query persist cache is busted automatically on a new release (see queries/queryClient.ts).
+const pkg = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8')) as {
+  version: string;
+};
 
 export default defineConfig(({ mode }) => {
   const rootEnv = loadEnv(mode, path.resolve(__dirname, '..'), '');
@@ -9,6 +16,9 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version),
+    },
     server: {
       host: '127.0.0.1',
       port: 5174,

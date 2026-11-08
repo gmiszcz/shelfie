@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response, status
 
+from app.api.conditional import conditional_json
 from app.api.deps import CurrentUser, DbConn
 from app.schemas.books import Book, BookCreate, BookUpdate
 from app.services import books as service
@@ -14,12 +15,19 @@ router = APIRouter(prefix="/books", tags=["books"])
 
 @router.get("", response_model=list[Book])
 async def list_books(
+    request: Request,
     user_id: CurrentUser,
     conn: DbConn,
     min_score: float | None = None,
     max_score: float | None = None,
-) -> list[Book]:
-    return await service.list_library(conn, user_id, min_score=min_score, max_score=max_score)
+) -> Response:
+    """The user's library. Carries an ETag; a matching If-None-Match gets a 304 (no body).
+
+    The frontend refetches this on every tab return (stale-while-revalidate), so the 304
+    saves re-sending an unchanged list. The ETag is the hash of this exact JSON body.
+    """
+    books = await service.list_library(conn, user_id, min_score=min_score, max_score=max_score)
+    return conditional_json(request, books)
 
 
 @router.post("", response_model=Book, status_code=status.HTTP_201_CREATED)

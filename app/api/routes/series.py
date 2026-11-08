@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response, status
 
+from app.api.conditional import conditional_json
 from app.api.deps import AppSettings, CurrentUser, DbConn
 from app.schemas.series import (
     AlertsResponse,
@@ -27,8 +28,10 @@ router = APIRouter(prefix="/series", tags=["series"])
 
 
 @router.get("", response_model=list[SeriesSummary])
-async def list_series(user_id: CurrentUser, conn: DbConn) -> list[SeriesSummary]:
-    return await service.list_series(conn, user_id)
+async def list_series(request: Request, user_id: CurrentUser, conn: DbConn) -> Response:
+    """The user's series. Carries an ETag; a matching If-None-Match gets a 304 (no body)."""
+    series = await service.list_series(conn, user_id)
+    return conditional_json(request, series)
 
 
 @router.get("/alerts", response_model=AlertsResponse)

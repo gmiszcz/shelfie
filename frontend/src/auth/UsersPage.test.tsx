@@ -37,6 +37,8 @@ import { AuthProvider } from './AuthProvider';
 import { UserMenu } from './UserMenu';
 // eslint-disable-next-line import/first
 import { UsersPage } from './UsersPage';
+// eslint-disable-next-line import/first
+import { QueryWrapper } from '../queries/testUtils';
 
 const ADMIN: AuthUser = { id: 1, email: 'admin@shelfie.app', display_name: 'Patryk Batóg', is_admin: true };
 const MEMBER: AuthUser = { id: 2, email: 'jane@example.com', display_name: 'Jane Reader', is_admin: false };
@@ -45,9 +47,11 @@ function renderMenu(who: AuthUser) {
   apiMock.me.mockResolvedValue(who);
   const onOpenUsers = vi.fn();
   render(
-    <AuthProvider>
-      <UserMenu onOpenUsers={onOpenUsers} />
-    </AuthProvider>,
+    <QueryWrapper>
+      <AuthProvider>
+        <UserMenu onOpenUsers={onOpenUsers} />
+      </AuthProvider>
+    </QueryWrapper>,
   );
   return onOpenUsers;
 }
@@ -116,9 +120,11 @@ describe('UsersPage — add person shows a copyable link', () => {
     apiMock.addUser.mockResolvedValue(CREATED);
 
     render(
-      <AuthProvider>
-        <UsersPage />
-      </AuthProvider>,
+      <QueryWrapper>
+        <AuthProvider>
+          <UsersPage />
+        </AuthProvider>
+      </QueryWrapper>,
     );
 
     // The existing admin row loads.

@@ -17,6 +17,7 @@ vi.mock('../services/api', () => ({
   api: {
     listBooks: vi.fn(async () => BOOKS),
     nextPair: vi.fn(async () => PAIR),
+    nextPairs: vi.fn(async () => [PAIR]),
     compare: vi.fn(async () => undefined),
     recomputeRatings: vi.fn(async () => ({ rated_books: 2, comparisons: 0 })),
   },
@@ -26,9 +27,15 @@ vi.mock('../services/api', () => ({
 import { Ranking } from './Ranking';
 // eslint-disable-next-line import/first
 import { _resetRegistry, getAnchor, getAnchorState, setAnchor } from '../agent-ui';
+// eslint-disable-next-line import/first
+import { QueryWrapper } from '../queries/testUtils';
 
 async function renderRanking() {
-  render(<Ranking />);
+  render(
+    <QueryWrapper>
+      <Ranking />
+    </QueryWrapper>,
+  );
   await waitFor(() => expect(screen.getByText(/2 rated books/)).toBeTruthy());
 }
 
@@ -44,7 +51,11 @@ describe('Ranking page', () => {
   });
 
   it('renders the shared SearchInput (role=search), not the old .rank-search span', async () => {
-    const { container } = render(<Ranking />);
+    const { container } = render(
+      <QueryWrapper>
+        <Ranking />
+      </QueryWrapper>,
+    );
     await waitFor(() => expect(screen.getByText(/2 rated books/)).toBeTruthy());
     expect(container.querySelector('.ui-search')).toBeTruthy();
     expect(screen.getByRole('search')).toBeTruthy();

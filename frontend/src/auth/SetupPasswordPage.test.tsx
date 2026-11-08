@@ -31,6 +31,8 @@ vi.mock('../services/api', () => ({
 import { AuthProvider } from './AuthProvider';
 // eslint-disable-next-line import/first
 import { SetupPasswordPage } from './SetupPasswordPage';
+// eslint-disable-next-line import/first
+import { QueryWrapper } from '../queries/testUtils';
 
 const INFO: SetupTokenInfo = {
   email: 'jane@example.com',
@@ -42,9 +44,11 @@ const USER: AuthUser = { id: 2, email: 'jane@example.com', display_name: 'Jane R
 function renderSetup(token = 'tok123', onDone = vi.fn()) {
   apiMock.me.mockRejectedValue(new MockApiError(401, 'no'));
   render(
-    <AuthProvider>
-      <SetupPasswordPage token={token} onDone={onDone} />
-    </AuthProvider>,
+    <QueryWrapper>
+      <AuthProvider>
+        <SetupPasswordPage token={token} onDone={onDone} />
+      </AuthProvider>
+    </QueryWrapper>,
   );
   return onDone;
 }

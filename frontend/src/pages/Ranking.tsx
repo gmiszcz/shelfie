@@ -26,6 +26,7 @@ import {
   shelvesOf,
 } from '../ranking';
 import { usePairQueue } from '../hooks/usePairQueue';
+import { useBooksQuery } from '../queries';
 import { api } from '../services/api';
 import type { Book, Winner } from '../types';
 import { BookCover, SearchInput } from '../ui';
@@ -38,9 +39,16 @@ const toGroupValue = (g: string | null): string => (g == null ? NO_GROUP : g);
 const fromGroupValue = (v: string): string | null => (v === NO_GROUP ? null : v);
 
 export function Ranking() {
-  const [books, setBooks] = useState<Book[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // The book list comes from the shared, persisted cache (same key as the Library), so
+  // switching Library ↔ Ranking does NOT refetch while the data is fresh.
+  const booksQuery = useBooksQuery();
+  const books = useMemo(() => booksQuery.data ?? [], [booksQuery.data]);
+  const booksLoading = booksQuery.isPending;
+  const error = booksQuery.error ? booksQuery.error.message : null;
+
+  // Local loading flag that also covers the first pair load.
+  const [pairInit, setPairInit] = useState(true);
+  const loading = booksLoading || pairInit;
 
   // Compare state.
   const [focus, setFocus] = useState<number | null>(null);
@@ -62,11 +70,13 @@ export function Ranking() {
   const categoryRef = useRef<string | null | undefined>(undefined);
   categoryRef.current = category;
 
+  // Refresh the cached book list (scores change after comparisons / recompute). Returns the
+  // fresh rows so the initial-category seed can read them.
+  const { refetch: refetchBooks } = booksQuery;
   const loadBooks = useCallback(async () => {
-    const data = await api.listBooks();
-    setBooks(data);
-    return data;
-  }, []);
+    const result = await refetchBooks();
+    return result.data ?? [];
+  }, [refetchBooks]);
 
   // Refresh the table's scores after comparisons, debounced so quick choices batch into one load.
   const reloadTimer = useRef<number | null>(null);
@@ -104,33 +114,34 @@ export function Ranking() {
     [resetPairs],
   );
 
+  // Seed the compare category from the (cached) book list the first time it is available,
+  // then load the first pair. Runs once per data arrival; `category === undefined` means
+  // "not seeded yet". This replaces the old fetch-on-mount now that the list is cached.
+  const seeded = useRef(false);
   useEffect(() => {
+    if (seeded.current || booksQuery.isPending) {
+      return;
+    }
+    seeded.current = true;
     let active = true;
     (async () => {
-      setLoading(true);
-      setError(null);
       try {
-        const data = await loadBooks();
         // Default category = the one with the most rated books.
-        const initial = defaultGroup(data);
+        const initial = defaultGroup(books);
         if (active) {
           setCategory(initial);
           await loadPair(null, initial);
         }
-      } catch (err) {
-        if (active) {
-          setError(err instanceof Error ? err.message : 'Could not load books');
-        }
       } finally {
         if (active) {
-          setLoading(false);
+          setPairInit(false);
         }
       }
     })();
     return () => {
       active = false;
     };
-  }, [loadBooks, loadPair]);
+  }, [booksQuery.isPending, books, loadPair]);
 
   const ratedBooks = useMemo(() => books.filter((b) => b.stars != null), [books]);
 

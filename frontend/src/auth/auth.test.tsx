@@ -53,6 +53,8 @@ import { AuthProvider, useAuth } from './AuthProvider';
 import { AuthGate } from './AuthGate';
 // eslint-disable-next-line import/first
 import { LoginPage } from './LoginPage';
+// eslint-disable-next-line import/first
+import { QueryWrapper } from '../queries/testUtils';
 
 /** Fire a global 401 the way api.ts would. */
 function emitUnauthorized() {
@@ -84,11 +86,11 @@ describe('LoginPage', () => {
     apiMock.login.mockResolvedValue(ADMIN);
 
     render(
-      <AuthProvider>
+      <QueryWrapper><AuthProvider>
         <AuthGate>
           <ProtectedApp />
         </AuthGate>
-      </AuthProvider>,
+      </AuthProvider></QueryWrapper>,
     );
 
     // Starts anonymous → the login form shows.
@@ -106,11 +108,11 @@ describe('LoginPage', () => {
     apiMock.login.mockRejectedValue(new MockApiError(401, 'Invalid e-mail or password'));
 
     render(
-      <AuthProvider>
+      <QueryWrapper><AuthProvider>
         <AuthGate>
           <ProtectedApp />
         </AuthGate>
-      </AuthProvider>,
+      </AuthProvider></QueryWrapper>,
     );
 
     await screen.findByLabelText('E-mail');
@@ -128,9 +130,9 @@ describe('LoginPage', () => {
     apiMock.login.mockRejectedValue(new MockApiError(429, 'slow down', 120));
 
     render(
-      <AuthProvider>
+      <QueryWrapper><AuthProvider>
         <LoginPage />
-      </AuthProvider>,
+      </AuthProvider></QueryWrapper>,
     );
 
     await screen.findByLabelText('E-mail');
@@ -146,9 +148,9 @@ describe('LoginPage', () => {
   it('has email and current-password autocomplete attributes', async () => {
     apiMock.me.mockRejectedValue(new MockApiError(401, 'no'));
     render(
-      <AuthProvider>
+      <QueryWrapper><AuthProvider>
         <LoginPage />
-      </AuthProvider>,
+      </AuthProvider></QueryWrapper>,
     );
     const email = await screen.findByLabelText('E-mail');
     expect(email.getAttribute('autocomplete')).toBe('email');
@@ -162,11 +164,11 @@ describe('AuthGate 401 handling', () => {
     apiMock.login.mockResolvedValue(ADMIN);
 
     render(
-      <AuthProvider>
+      <QueryWrapper><AuthProvider>
         <AuthGate>
           <ProtectedApp />
         </AuthGate>
-      </AuthProvider>,
+      </AuthProvider></QueryWrapper>,
     );
 
     // Authenticated at first.
@@ -189,11 +191,11 @@ describe('AuthGate 401 handling', () => {
     apiMock.logout.mockResolvedValue(undefined);
 
     render(
-      <AuthProvider>
+      <QueryWrapper><AuthProvider>
         <AuthGate>
           <ProtectedApp />
         </AuthGate>
-      </AuthProvider>,
+      </AuthProvider></QueryWrapper>,
     );
 
     await screen.findByText(/LIBRARY for Patryk/);
@@ -216,11 +218,11 @@ describe('RegisterPage', () => {
   it('opens from the login screen, creates the account and enters the app', async () => {
     apiMock.register.mockResolvedValue({ id: 2, email: 'ola@x.pl', display_name: 'Ola', is_admin: false });
     render(
-      <AuthProvider>
+      <QueryWrapper><AuthProvider>
         <AuthGate>
           <div>APP BODY</div>
         </AuthGate>
-      </AuthProvider>,
+      </AuthProvider></QueryWrapper>,
     );
     fireEvent.click(await screen.findByRole('button', { name: 'Create one' }));
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Ola' } });
@@ -235,11 +237,11 @@ describe('RegisterPage', () => {
   it('hides the register link when registration is off', async () => {
     apiMock.authConfig.mockResolvedValue({ registration_enabled: false, password_min_length: 8 });
     render(
-      <AuthProvider>
+      <QueryWrapper><AuthProvider>
         <AuthGate>
           <div>APP BODY</div>
         </AuthGate>
-      </AuthProvider>,
+      </AuthProvider></QueryWrapper>,
     );
     await screen.findByRole('button', { name: 'Log in' });
     await waitFor(() => expect(apiMock.authConfig).toHaveBeenCalled());
@@ -249,11 +251,11 @@ describe('RegisterPage', () => {
   it('shows a clear message when the e-mail is taken', async () => {
     apiMock.register.mockRejectedValue(new MockApiError(409, 'taken'));
     render(
-      <AuthProvider>
+      <QueryWrapper><AuthProvider>
         <AuthGate>
           <div>APP BODY</div>
         </AuthGate>
-      </AuthProvider>,
+      </AuthProvider></QueryWrapper>,
     );
     fireEvent.click(await screen.findByRole('button', { name: 'Create one' }));
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Ola' } });

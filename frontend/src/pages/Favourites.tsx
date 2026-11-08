@@ -6,6 +6,7 @@ import { BookGrid } from '../components/BookGrid';
 import { StarFilter } from '../components/StarFilter';
 import type { ScoreBounds, StarBucket } from '../components/StarFilter';
 import { useLibrary } from '../hooks/useLibrary';
+import { useFavourites } from '../queries';
 import { filterByScore } from '../ranking';
 import { applyFilter } from '../settings/libraryFilter';
 import { useAgentAnchor } from '../agent-ui';
@@ -20,7 +21,12 @@ import './Favourites.css';
  * in the detail dialog) un-favourites, which removes the book from this list.
  */
 export function Favourites() {
-  const { books, loading, error, update, remove } = useLibrary();
+  // Favourites are derived from the one cached book list (useFavourites), so this tab
+  // shares the Library's cache and needs no extra request. Mutations go through useLibrary,
+  // which writes the same cache.
+  const { favourites, isPending: loading, error: favError } = useFavourites();
+  const { update, remove } = useLibrary();
+  const error = favError ? favError.message : null;
   const [selected, setSelected] = useState<Book | null>(null);
   const [query, setQuery] = useState('');
   const [starBucket, setStarBucket] = useState<StarBucket | null>(null);
@@ -29,8 +35,6 @@ export function Favourites() {
 
   const notifyError = (message: string) =>
     toast.current?.show({ severity: 'error', summary: 'Error', detail: message });
-
-  const favourites = useMemo(() => books.filter((b) => b.favourite), [books]);
 
   const visibleBooks = useMemo(() => {
     const afterQuery = query.trim() ? applyFilter(favourites, { query }) : favourites;
