@@ -72,3 +72,7 @@ Cause: a constant ~2 s before the first byte on every request, independent of CP
 boto3 builds a new client per request and, finding no AWS credentials file on Fly, probed the
 EC2 metadata service (IMDS) until it timed out. `AWS_EC2_METADATA_DISABLED=true` (in
 `fly.toml [env]`) removes it. A bigger machine gives nothing; Fly stays on 512 MB.
+
+## Rotating `FLY_API_TOKEN` (GitHub environment `production`)
+
+Create the token with `fly tokens create deploy -a mybooks -x 8760h`, check it locally (`$env:FLY_API_TOKEN=...; fly status -a mybooks`), and store it **from a file without a trailing newline**: `cmd /c "gh secret set FLY_API_TOKEN --env production -R gmiszcz/shelfie < token.txt"`, then delete the file. Do not pipe the token from PowerShell 5 (`$t | gh secret set ...`): the pipe re-encodes it and adds a newline, and Fly then rejects it ("token validation error", or a 401 from `flyctl auth docker`). Revoke the old token afterwards (`fly tokens list/revoke -a mybooks`).
