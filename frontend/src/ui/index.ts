@@ -11,6 +11,8 @@ export type { SearchInputProps } from './SearchInput';
 export { FilterBar } from './FilterBar';
 export type { FilterBarProps, FilterOption } from './FilterBar';
 export { StatusTag } from './StatusTag';
+export { StatusSegmented } from './StatusSegmented';
+export type { StatusSegmentedProps } from './StatusSegmented';
 export { LangPicker, SERIES_LANG_OPTIONS } from './LangPicker';
 export type { LangOption, LangPickerProps } from './LangPicker';
 

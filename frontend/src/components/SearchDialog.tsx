@@ -117,7 +117,7 @@ export function SearchDialog({
 
   return (
     <Dialog
-      header="Add a book from Google Books"
+      header="Add a book"
       visible={visible}
       onHide={onHide}
       style={{ width: 'min(720px, 94vw)' }}
@@ -147,13 +147,27 @@ export function SearchDialog({
             className="search-dialog-lang"
           />
         </div>
-        <Button
-          label="Search"
-          icon="pi pi-search"
-          onClick={() => void runSearch()}
-          loading={loading}
-          className="search-dialog-submit"
-        />
+        {/* Search and Manually side by side (one row on phones too). */}
+        <div className="search-dialog-buttons">
+          <Button
+            label="Search"
+            icon="pi pi-search"
+            onClick={() => void runSearch()}
+            loading={loading}
+            className="search-dialog-submit"
+          />
+          {onAddManually && (
+            <Button
+              label="Manually"
+              icon="pi pi-pencil"
+              outlined
+              className="search-dialog-manual"
+              aria-label="Add manually"
+              title="Add the book by hand (the title you typed is filled in)"
+              onClick={() => addManually(query.trim() ? { title: query.trim() } : {})}
+            />
+          )}
+        </div>
       </div>
 
       {error && (
@@ -180,13 +194,7 @@ export function SearchDialog({
           ) : (
             <p>Try the original-language title or the author’s name.</p>
           )}
-          {onAddManually && (
-            <Button
-              label="Can't find it? Add it manually"
-              icon="pi pi-pencil"
-              onClick={() => addManually({ title: query.trim() })}
-            />
-          )}
+          {onAddManually && <p>Or tap Manually above to add it by hand.</p>}
         </div>
       )}
 
@@ -226,19 +234,7 @@ export function SearchDialog({
         })}
       </div>
 
-      {/* Always offered (except next to the empty state, which has its own button):
-          "Add manually" lives here, inside the add-book view, not next to the + button. */}
-      {onAddManually && !(searched && results.length === 0 && !error && !loading) && (
-        <div className="flex justify-content-center mt-3">
-          <Button
-            label={results.length > 0 ? "Can't find it? Add manually" : 'Add manually'}
-            icon="pi pi-pencil"
-            outlined={results.length === 0}
-            text={results.length > 0}
-            onClick={() => addManually(query.trim() ? { title: query.trim() } : {})}
-          />
-        </div>
-      )}
+
     </Dialog>
   );
 }

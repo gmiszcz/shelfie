@@ -1,6 +1,5 @@
 import { Button } from 'primereact/button';
 import { Dialog } from 'primereact/dialog';
-import { Dropdown } from 'primereact/dropdown';
 import { InputSwitch } from 'primereact/inputswitch';
 import { Tag } from 'primereact/tag';
 import { useEffect, useState } from 'react';
@@ -11,8 +10,7 @@ import { HalfStarRating } from './HalfStarRating';
 import { useSettings } from '../settings/SettingsContext';
 import type { DetailSection } from '../settings/settingsTypes';
 import type { Book, BookInsights, ReadingStatus } from '../types';
-import { STATUS_LABELS } from '../types';
-import { BookCover, FavouriteToggle, StatusTag } from '../ui';
+import { BookCover, FavouriteToggle, StatusSegmented } from '../ui';
 
 interface Props {
   book: Book | null;
@@ -24,11 +22,6 @@ interface Props {
   /** When provided, a heart toggle is shown next to the title. */
   onFavourite?: (id: number, next: boolean) => void;
 }
-
-const STATUS_OPTIONS = (Object.keys(STATUS_LABELS) as ReadingStatus[]).map((value) => ({
-  value,
-  label: STATUS_LABELS[value],
-}));
 
 /** A number is "meaningful" only when present and positive (hides 0 pages etc.). */
 function hasPositive(n: number | null | undefined): n is number {
@@ -158,23 +151,16 @@ export function BookDetailDialog({
             </div>
           )}
 
-          {/* One row: the status tag (click it to change) and the stars with the score. */}
-          {(on('status') || on('rating') || on('score')) && (
+          {/* Status: four one-tap buttons (no dropdown), like other book trackers. */}
+          {on('status') && (
+            <div data-detail="status">
+              <StatusSegmented value={book.status} onChange={(s) => onStatus(book.id, s)} />
+            </div>
+          )}
+
+          {/* Rating row: your stars, then the refined score as a small number. */}
+          {(on('rating') || on('score')) && (
             <div className="detail-row">
-              {on('status') && (
-                <span data-detail="status">
-                <Dropdown
-                  className="detail-status-pick"
-                  panelClassName="detail-status-panel"
-                  value={book.status}
-                  options={STATUS_OPTIONS}
-                  onChange={(e) => onStatus(book.id, e.value as ReadingStatus)}
-                  valueTemplate={() => <StatusTag status={book.status} />}
-                  itemTemplate={(o: { value: ReadingStatus }) => <StatusTag status={o.value} />}
-                  aria-label="Reading status"
-                />
-                </span>
-              )}
               {(on('rating') || on('score')) && (
                 <div className="detail-rating">
                   {on('rating') && (

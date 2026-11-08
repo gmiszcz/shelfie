@@ -132,11 +132,8 @@ describe('BookDetailDialog — compact layout', () => {
     expect(within(dialog).queryByLabelText('Clear rating')).toBeNull();
     expect(within(dialog).queryByText(/^Score /)).toBeNull();
     expect(within(dialog).getByText('4.8')).toBeTruthy();
-    // The status shows once (as the tag inside the dropdown), not twice.
-    // (Ignore the Dropdown's hidden native <option>, which is not visible.)
-    const shown = within(dialog)
-      .getAllByText('Finished')
-      .filter((el) => el.tagName !== 'OPTION');
-    expect(shown).toHaveLength(1);
+    // The status is one row of four buttons, the current one checked (no dropdown).
+    expect(within(dialog).getAllByRole('radio')).toHaveLength(4);
+    expect(within(dialog).queryByRole('combobox')).toBeNull();
   });
 });

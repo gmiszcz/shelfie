@@ -38,7 +38,9 @@ describe('AddBookFlow (the always-visible + button)', () => {
   it('the + button opens the Google Books search, which offers Add manually', async () => {
     renderFlow();
     fireEvent.click(screen.getByRole('button', { name: 'Add book' }));
-    await waitFor(() => expect(screen.getByText('Add a book from Google Books')).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText('Search Google Books')).toBeTruthy());
+    // "Manually" sits in the same row as "Search".
+    expect(screen.getByRole('button', { name: 'Search' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Add manually' }));
     await waitFor(() => expect(getAnchorState('library.addBook').value).toBe('form'));
   });
