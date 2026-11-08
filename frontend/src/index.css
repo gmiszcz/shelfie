@@ -773,7 +773,23 @@ body {
   gap: var(--small-gap);
 }
 
+/* Cover with the favourite heart on it (same overlay as the library card). */
+.detail-cover {
+  position: relative;
+  align-self: flex-start;
+}
+
+/* Rating is the main control here: bigger stars, easy to tap and correct. */
+.detail-stars .half-star-star,
+.detail-stars .half-star-star .pi {
+  font-size: 1.75rem;
+}
+.detail-stars .half-star-stars {
+  gap: var(--small-padding);
+}
+
 .detail-score {
+  font-size: 1.1rem;
   font-family: var(--font-mono);
   font-weight: 600;
   color: var(--app-accent);
@@ -1563,6 +1579,9 @@ body {
   }
   .detail-grid .ui-cover--detail {
     width: 8rem;
+    align-self: center;
+  }
+  .detail-cover {
     align-self: center;
   }
   .detail-field {

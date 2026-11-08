@@ -124,7 +124,17 @@ export function BookDetailDialog({
       dismissableMask
     >
       <div className="detail-grid">
-        <BookCover src={book.cover_url} title={book.title} size="detail" />
+        {/* The heart sits ON the cover, exactly like on the library card. */}
+        <div className="detail-cover">
+          <BookCover src={book.cover_url} title={book.title} size="detail" />
+          {onFavourite && (
+            <FavouriteToggle
+              variant="overlay"
+              value={book.favourite}
+              onChange={(next) => onFavourite(book.id, next)}
+            />
+          )}
+        </div>
 
         <div className="detail-meta">
           {book.subtitle && <p className="detail-subtitle">{book.subtitle}</p>}
@@ -141,19 +151,6 @@ export function BookDetailDialog({
               </span>
             )}
           </div>
-
-          {onFavourite && (
-            <div className="flex align-items-center gap-2">
-              <FavouriteToggle
-                variant="inline"
-                value={book.favourite}
-                onChange={(next) => onFavourite(book.id, next)}
-              />
-              <span style={{ color: 'var(--app-text-muted)' }}>
-                {book.favourite ? 'In favourites' : 'Add to favourites'}
-              </span>
-            </div>
-          )}
 
           {book.translators.length > 0 && (
             <div style={{ color: 'var(--app-text-muted)' }}>
@@ -181,7 +178,7 @@ export function BookDetailDialog({
               {(on('rating') || on('score')) && (
                 <div className="detail-rating">
                   {on('rating') && (
-                    <span data-detail="rating">
+                    <span data-detail="rating" className="detail-stars">
                       <HalfStarRating
                         value={book.stars}
                         onChange={(value) => onStars(book.id, value)}
@@ -210,14 +207,6 @@ export function BookDetailDialog({
               bits.push(
                 <span key="f" data-detail="readingDates">
                   Finished {book.finished_on}
-                </span>,
-              );
-            }
-            if (on('pages') && (hasPositive(book.page_count) || hasPositive(book.pages_read))) {
-              const pages = hasPositive(book.page_count) ? book.page_count : book.pages_read;
-              bits.push(
-                <span key="p" data-detail="pages">
-                  {pages} pages
                 </span>,
               );
             }
@@ -266,6 +255,15 @@ export function BookDetailDialog({
               facts.push(
                 <span key="ad" data-detail="added">
                   Added {book.added_at.slice(0, 10)}
+                </span>,
+              );
+            }
+            // Pages sit to the right of "Added" (same quiet line).
+            if (on('pages') && (hasPositive(book.page_count) || hasPositive(book.pages_read))) {
+              const pages = hasPositive(book.page_count) ? book.page_count : book.pages_read;
+              facts.push(
+                <span key="p" data-detail="pages">
+                  {pages} pages
                 </span>,
               );
             }

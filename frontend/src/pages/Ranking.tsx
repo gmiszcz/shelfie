@@ -62,6 +62,8 @@ export function Ranking() {
   // Table filters.
   const [shelf, setShelf] = useState<string>(ALL_SHELVES);
   const [onlyTopRated, setOnlyTopRated] = useState(false);
+  // Phone list: how many rows are shown (grows by 20 with "Show more").
+  const [mobileLimit, setMobileLimit] = useState(20);
   const [search, setSearch] = useState('');
 
   const sessionId = useRef<string>(newSessionId());
@@ -462,6 +464,45 @@ export function Ranking() {
         </div>
 
         <div className="rank-table-panel" data-agent-anchor="ranking.list">
+          {/* Phones: one compact row per book (rank, small cover, title/author, score and
+              stars, focus) — no sideways scrolling. The full table is for wider screens. */}
+          <ol className="rank-mobile-list" aria-label="Ranking">
+            {ranked.slice(0, mobileLimit).map((row, i) => (
+              <li key={row.id} className="rank-mobile-row">
+                <span className="rank-number">#{i + 1}</span>
+                <BookCover src={row.cover_url} title={row.title} size="thumb" />
+                <div className="rank-mobile-main">
+                  <span className="t" title={row.title}>
+                    {row.title}
+                  </span>
+                  <span className="a">{formatAuthors(row.authors)}</span>
+                  {row.stars != null && (
+                    <span className="rank-mobile-stars">
+                      <HalfStarRating
+                        value={row.stars}
+                        onChange={() => {}}
+                        readOnly
+                        ariaLabel={`${row.stars} stars`}
+                      />
+                    </span>
+                  )}
+                </div>
+                <span className="rank-score">{formatScore(row)}</span>
+                {focusBody(row)}
+              </li>
+            ))}
+            {!loading && ranked.length === 0 && (
+              <li className="rank-mobile-empty">No rated books match these filters.</li>
+            )}
+          </ol>
+          {ranked.length > mobileLimit && (
+            <Button
+              className="rank-mobile-more"
+              label={`Show more (${ranked.length - mobileLimit})`}
+              text
+              onClick={() => setMobileLimit((n) => n + 20)}
+            />
+          )}
           <DataTable
             value={ranked}
             loading={loading}

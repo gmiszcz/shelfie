@@ -278,3 +278,16 @@ Settings → Detail dialog has new toggles (default on): **Language (PL / EN)** 
 
 The favourite heart (`ui/FavouriteToggle.tsx`) animates on click: adding plays a pop + a small
 burst ring (0.5 s), removing a soft shrink; `prefers-reduced-motion` turns both off.
+
+Update (later on 2026-11-08): the favourite heart sits **on the cover** (`.detail-cover` +
+`FavouriteToggle variant="overlay"`, same as the library card); the "Add to favourites" row is
+gone. The stars are bigger (`.detail-stars`, 1.75 rem) because the rating is the control you
+change most. Pages moved to the quiet line next to "Added".
+
+## App icon
+
+`frontend/public/icons/icon.svg` ("night shelf": four spines on a shelf, three sparkles for the
+AI). PNGs rendered from it: `apple-touch-icon.png` (180, iOS home screen), `icon-192.png`,
+`icon-512.png` (`manifest.json`), `favicon-32.png`. Linked in `frontend/index.html`. The square is
+full-bleed; iOS and Android round the corners. To change it, edit the SVG and re-render the PNGs
+(Chromium screenshot of the SVG at each size).
