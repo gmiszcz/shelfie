@@ -194,8 +194,12 @@ function AppShell() {
     getState: () => (page === 'users' ? 'library' : page),
     invoke: (_action, args) => {
       const tab = args?.tab;
-      if (tab === 'library' || tab === 'stats' || tab === 'ranking') {
-        setPage(tab);
+      // Accept EVERY real agent tab (PAGES), not a hand-picked subset — missing
+      // ids here silently drop a navigate (the registry still reports ok), so the
+      // agent thinks it switched tab while the UI never moved. `users` is admin-
+      // only and deliberately absent from PAGES, so it stays unreachable.
+      if (typeof tab === 'string' && PAGES.some((p) => p.id === tab)) {
+        setPage(tab as UiTab);
       }
     },
   });

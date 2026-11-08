@@ -13,7 +13,7 @@ import type { ScoreBounds, StarBucket } from '../components/StarFilter';
 import { SearchInput } from '../ui';
 import { useLibrary } from '../hooks/useLibrary';
 import { filterByScore } from '../ranking';
-import { applyFilter, describeFilter, isEmptyFilter } from '../settings/libraryFilter';
+import { applyFilter, describeFilter, isEmptyFilter, resolveFacet } from '../settings/libraryFilter';
 import {
   authorsOf,
   finishedYears,
@@ -115,9 +115,10 @@ export function Library() {
     description:
       'Filter the grid by one or more STRUCTURED facets. Invoke with action "apply" and args ' +
       '{ query?, series?, author?, shelf?, tag?, status?, min_stars?, finished_year?, ' +
-      'started_year?, published_year?, finished_from?, finished_to?, book_ids? } ' +
-      '(resolve exact names/ids with find_books first; use finished_year for "read in <year>"), ' +
-      'or action "clear" to remove it.',
+      'started_year?, published_year?, finished_from?, finished_to?, book_ids? }. ' +
+      'series/author/shelf/tag accept a plain HUMAN NAME — it is matched to the real value ' +
+      'itself (case, diacritics and inflection tolerant), so you do NOT need find_books for a ' +
+      'normal filter. Use finished_year for "read in <year>". action "clear" removes the filter.',
     tab: 'library',
     actions: ['apply', 'clear'],
     getState: () => assistantFilter,
@@ -128,10 +129,25 @@ export function Library() {
       }
       const f = (args ?? {}) as FilterArgs;
       const filter: LibraryFilter = {};
-      for (const key of ['query', 'series', 'author', 'shelf', 'tag', 'status'] as const) {
+      // query/status pass through; series/author/shelf/tag are human names the agent
+      // typed, so resolve each against the actual values in the library (case /
+      // diacritics / inflection tolerant) — no find_books round-trip needed.
+      for (const key of ['query', 'status'] as const) {
         const val = f[key];
         if (typeof val === 'string' && val.trim()) {
           filter[key] = val.trim();
+        }
+      }
+      const facetCandidates: Record<'series' | 'author' | 'shelf' | 'tag', string[]> = {
+        series: seriesOf(books),
+        author: authorsOf(books),
+        shelf: shelvesOf(books),
+        tag: tagsOf(books),
+      };
+      for (const key of ['series', 'author', 'shelf', 'tag'] as const) {
+        const val = f[key];
+        if (typeof val === 'string' && val.trim()) {
+          filter[key] = resolveFacet(val.trim(), facetCandidates[key]);
         }
       }
       for (const key of [

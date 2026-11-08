@@ -49,6 +49,64 @@ export function isEmptyFilter(f: LibraryFilter | null | undefined): boolean {
   );
 }
 
+/** Diacritics-insensitive fold (mirrors agui/tools.ts matchSeries), for name matching. */
+export function fold(v: string): string {
+  return v
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ł/g, 'l')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+/** True when `needle` matches `value` by fold (exact, then either-contains). */
+function foldMatch(value: string, needle: string): boolean {
+  const v = fold(value);
+  const n = fold(needle);
+  if (!n) {
+    return false;
+  }
+  if (v === n) {
+    return true;
+  }
+  return v.includes(n) || n.includes(v);
+}
+
+/**
+ * Resolve a human name the agent typed (e.g. "droga szamana", "sanderson") to an
+ * EXACT value present in the library, tolerating case, diacritics and simple
+ * inflection — so `library.filter` rarely needs a find_books round-trip. Returns
+ * the matched canonical value, or the original name when nothing matches closely.
+ */
+export function resolveFacet(name: string, candidates: string[]): string {
+  const n = fold(name);
+  if (!n) {
+    return name;
+  }
+  const exact = candidates.find((c) => fold(c) === n);
+  if (exact) {
+    return exact;
+  }
+  const contains = candidates.find((c) => {
+    const f = fold(c);
+    return f.includes(n) || n.includes(f);
+  });
+  if (contains) {
+    return contains;
+  }
+  // Inflected / partial: every query word is a prefix of, or shares its first 5
+  // letters with, some word of the candidate (same rule as agui matchSeries).
+  const qWords = n.split(' ').filter((w) => w.length > 2);
+  const wordHit = (qw: string, cw: string) =>
+    cw.startsWith(qw) || qw.startsWith(cw) || (qw.length >= 5 && cw.slice(0, 5) === qw.slice(0, 5));
+  const fuzzy = candidates.find((c) => {
+    const cWords = fold(c).split(' ');
+    return qWords.length > 0 && qWords.every((qw) => cWords.some((cw) => wordHit(qw, cw)));
+  });
+  return fuzzy ?? name;
+}
+
 function matchesQuery(book: Book, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) {
@@ -66,8 +124,7 @@ function matchesQuery(book: Book, query: string): boolean {
 }
 
 function includesCI(values: string[], needle: string): boolean {
-  const n = needle.toLowerCase();
-  return values.some((v) => v.toLowerCase() === n);
+  return values.some((v) => foldMatch(v, needle));
 }
 
 /** The 4-digit year at the start of an ISO-ish date string, or null. */
@@ -94,7 +151,7 @@ export function applyFilter(books: Book[], filter: LibraryFilter | null | undefi
     if (f.query && !matchesQuery(book, f.query)) {
       return false;
     }
-    if (f.series && (book.series ?? '').toLowerCase() !== f.series.toLowerCase()) {
+    if (f.series && !foldMatch(book.series ?? '', f.series)) {
       return false;
     }
     if (f.author && !includesCI(book.authors, f.author)) {

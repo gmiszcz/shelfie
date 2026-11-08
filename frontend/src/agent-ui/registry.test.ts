@@ -8,6 +8,7 @@ import {
   invokeAnchor,
   LIST_ITEM_CAP,
   navigate,
+  OPTION_CAP,
   registerAnchor,
   setActiveTab,
   setAnchor,
@@ -140,5 +141,65 @@ describe('invokeAnchor / navigate', () => {
     const miss = getAnchorState('zzz');
     expect(miss.ok).toBe(false);
     expect(miss.valid).toContain('a.b');
+  });
+});
+
+// --- item 2: shrink the schema sent to the model every turn -------------------------
+
+describe('schema size limits', () => {
+  it('omits the uncapped value of a list anchor (items is enough)', () => {
+    setStaticTabs([{ id: 'library', label: 'Library' }]);
+    const books = Array.from({ length: 50 }, (_, i) => ({ id: i, title: `Book ${i}` }));
+    registerAnchor({
+      id: 'library.books',
+      kind: 'list',
+      label: 'Visible books',
+      tab: 'library',
+      getState: () => books, // the full, heavy value
+      items: () => books,
+    });
+    const schema = describeUi();
+    const anchor = schema.tabs.find((t) => t.id === 'library')!.anchors[0];
+    expect(anchor.value).toBeUndefined(); // value dropped for lists
+    expect(anchor.items).toHaveLength(LIST_ITEM_CAP); // items still present (bounded)
+  });
+
+  it('caps a long option list and adds a note pointing to find_books', () => {
+    setStaticTabs([{ id: 'library', label: 'Library' }]);
+    const options = Array.from({ length: 120 }, (_, i) => ({ value: `a${i}`, label: `A ${i}` }));
+    registerAnchor({
+      id: 'library.author',
+      kind: 'select',
+      label: 'Author filter',
+      tab: 'library',
+      getState: () => '',
+      set: () => {},
+      options: () => options,
+    });
+    const schema = describeUi();
+    const anchor = schema.tabs.find((t) => t.id === 'library')!.anchors[0];
+    expect(anchor.options).toHaveLength(OPTION_CAP);
+    expect(anchor.optionsTotal).toBe(120);
+    expect(anchor.note).toMatch(/find_books/);
+  });
+
+  it('keeps a short option list in full with no note', () => {
+    setStaticTabs([{ id: 'library', label: 'Library' }]);
+    registerAnchor({
+      id: 'library.status',
+      kind: 'select',
+      label: 'Status',
+      tab: 'library',
+      getState: () => '',
+      set: () => {},
+      options: () => [
+        { value: 'want', label: 'Want' },
+        { value: 'finished', label: 'Finished' },
+      ],
+    });
+    const anchor = describeUi().tabs.find((t) => t.id === 'library')!.anchors[0];
+    expect(anchor.options).toHaveLength(2);
+    expect(anchor.optionsTotal).toBeUndefined();
+    expect(anchor.note).toBeUndefined();
   });
 });

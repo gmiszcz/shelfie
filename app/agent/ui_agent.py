@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Iterator
 from datetime import datetime
 from typing import Any, Protocol
@@ -55,34 +56,40 @@ user's own browser, and the interface describes itself to you at runtime — the
 list of screens or controls baked into you.
 
 Your tools are generic and work for ANY current or future tab and control:
-- describe_ui: returns the whole UI as a schema — every tab (active or not) and the controls
-  (anchors) it owns, each with an id, kind, label, current value, allowed options and actions;
-  lists expose their items (e.g. the visible books) with ids and titles.
+- describe_ui: returns the whole UI schema — every tab and its controls (anchors) with id, kind,
+  label, options and actions; lists expose their items (e.g. visible books) with ids and titles.
 - get_state(id): read one control's current value.
 - set(id, value): set a value control (text-input, search, select, toggle, multi-select).
-- invoke(id, action?, args?): act on a button, dialog or list item (e.g. open a book, open a dialog).
+- invoke(id, action?, args?): act on a button, dialog or list item (e.g. open a book, a dialog).
 - navigate(tab): switch the active tab.
 - find_books(query): search the loaded books to resolve a name into exact ids/titles.
 - series_releases(name, refresh?): a series' owned/missing volumes and its next volume per
   edition (Polish and original/English) with date, status and source. refresh=true runs a live
   web search for release news (up to ~60 s).
 
+How to work:
+- You are ALREADY GIVEN the current UI schema in the "Current UI state" system block below, so
+  you do NOT need to call describe_ui before acting — read it and act straight away. Call
+  describe_ui ONLY after you navigate to a tab and need that tab's freshly mounted controls (its
+  anchors are not in the snapshot until it is the active/mounted tab).
+- Use the EXACT id, option value, tab name and action from the schema. NEVER invent one.
+- You MAY call SEVERAL tools in one turn when they do not depend on each other (e.g. navigate to a
+  tab and set one of its controls, or apply two filter facets at once) — issue them together
+  instead of one per turn.
+- Write your short confirmation sentence IN THE SAME TURN as your last action, so a simple request
+  finishes without an extra turn. The loop ends when every tool in a turn succeeded and you also
+  wrote text. On a tool error, the error lists the valid ids/values — correct your call and continue.
+
 Rules:
 - Answer in the SAME LANGUAGE the user writes in (Polish stays Polish).
-- ALWAYS call describe_ui FIRST (unless you already hold a fresh schema this turn). Choose the
-  control by its kind, label and description, and use the EXACT id from the schema. NEVER invent
-  an id, an option value, a tab name or an action — they are only valid if they appear in the schema.
 - ACT, do not merely describe. When the user asks to show, filter, open, add, switch or change
-  anything on screen, call the matching tool instead of explaining how to do it by hand.
-- Resolve real data first. When the user names a book, author or series, call find_books to get
-  the exact stored title / series / ids, THEN set the relevant control or invoke open on the book.
-- To change a tab's control, navigate to that tab first when it is not active (the schema marks the
-  active tab and whether each tab is mounted); its anchors are listed even when it is not mounted.
-- A set / invoke result reports ok, and on error lists the valid ids or option values — read it and
-  correct your call rather than repeating it.
-- After the UI changed, reply with ONE short sentence confirming what you did, in the user's
-  language. Keep it concrete ("Pokazuję książki z serii Droga Szamana.").
-- Never invent books, ids, ratings or counts. If find_books returns nothing, say so briefly.
+  anything, call the matching tool instead of explaining how to do it by hand.
+- Prefer the structured library filter. library.filter (action "apply") accepts human names for
+  series / author / shelf / tag directly — it matches them itself (case, diacritics and simple
+  inflection tolerant), so you usually do NOT need find_books for a plain filter. Use find_books
+  only to resolve a specific book to OPEN it, or when a filter reports no match.
+- Reply with ONE short concrete sentence confirming what you did ("Pokazuję książki z serii Droga
+  Szamana."). Never invent books, ids, ratings or counts. If a search returns nothing, say so briefly.
 - Release questions ("kiedy wyjdzie tom 7 Kronik Mroku", "czy wyszła ostatnia część", Polish
   premiere dates): call series_releases. If the asked edition has no date, or the user asks to
   check, call it again with refresh=true. Answer with the date and source for EACH edition
@@ -108,16 +115,31 @@ class ChatBedrockStreamer(Protocol):
     ) -> Iterator[dict[str, Any]]: ...
 
 
+# One boto3 ``bedrock-runtime`` client per region, cached for the whole process.
+# Building a client is not free (it loads botocore models and resolves credentials),
+# and ``run_stream`` is called once PER MODEL TURN, so a fresh client every request
+# added hundreds of ms of latency to each turn. boto3 clients are thread-safe for
+# calls, so one shared instance is correct.
+_bedrock_clients: dict[str, Any] = {}
+
+
+def _bedrock_client(region: str) -> Any:
+    client = _bedrock_clients.get(region)
+    if client is None:
+        import boto3  # type: ignore[import-untyped]
+
+        client = boto3.client("bedrock-runtime", region_name=region)
+        _bedrock_clients[region] = client
+    return client
+
+
 def boto3_streamer(region: str) -> ChatBedrockStreamer:
     """Real streamer: a boto3 ``bedrock-runtime`` client driving ``converse_stream``.
 
     Credentials come from the standard AWS chain (SSO / env / role), never from
-    ``.env``. The client is created lazily on first use so importing this module
-    never requires AWS to be configured (tests inject a fake streamer).
+    ``.env``. The client is created once per region and cached (see
+    :func:`_bedrock_client`) so a turn never pays client-construction latency.
     """
-    import boto3  # type: ignore[import-untyped]
-
-    client = boto3.client("bedrock-runtime", region_name=region)
 
     def stream(
         *,
@@ -126,6 +148,7 @@ def boto3_streamer(region: str) -> ChatBedrockStreamer:
         messages: list[dict[str, Any]],
         tool_config: dict[str, Any] | None,
     ) -> Iterator[dict[str, Any]]:
+        client = _bedrock_client(region)
         kwargs: dict[str, Any] = {
             "modelId": model_id,
             "system": system,
@@ -143,11 +166,13 @@ def boto3_streamer(region: str) -> ChatBedrockStreamer:
 # --- request -> Bedrock translation ------------------------------------------------------
 
 
-def _tool_config(tools: list[dict[str, Any]]) -> dict[str, Any] | None:
+def _tool_config(tools: list[dict[str, Any]], *, cache: bool = False) -> dict[str, Any] | None:
     """Translate the browser's JSON-Schema tool list into a Bedrock ``toolConfig``.
 
     Each browser tool is ``{name, description, parameters}`` where ``parameters``
-    is a JSON Schema object. Bedrock wants ``toolSpec.inputSchema.json``.
+    is a JSON Schema object. Bedrock wants ``toolSpec.inputSchema.json``. When
+    ``cache`` is set, a trailing ``cachePoint`` marks the (static) tool definitions
+    as a prompt-cache prefix so they are not re-tokenised every turn.
     """
     specs: list[dict[str, Any]] = []
     for tool in tools:
@@ -164,7 +189,11 @@ def _tool_config(tools: list[dict[str, Any]]) -> dict[str, Any] | None:
                 }
             }
         )
-    return {"tools": specs} if specs else None
+    if not specs:
+        return None
+    if cache:
+        specs.append({"cachePoint": {"type": "default"}})
+    return {"tools": specs}
 
 
 def _to_bedrock_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -177,26 +206,36 @@ def _to_bedrock_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]
         (Bedrock requires it inside a ``user`` message).
     """
     out: list[dict[str, Any]] = []
+    # When an assistant turn makes SEVERAL tool calls, Bedrock requires ALL their
+    # toolResult blocks to sit in the SINGLE user message that immediately follows
+    # the assistant message — not one user message per result. So consecutive
+    # ``tool`` messages are merged into one user message with multiple toolResult
+    # blocks; otherwise a multi-tool turn fails with "Expected toolResult blocks …".
+    pending_results: list[dict[str, Any]] = []
+
+    def _flush_results() -> None:
+        if pending_results:
+            out.append({"role": "user", "content": list(pending_results)})
+            pending_results.clear()
+
     for msg in messages:
         role = msg.get("role")
         if role == "tool":
             tool_call_id = str(msg.get("toolCallId", "") or msg.get("tool_call_id", ""))
             content = msg.get("content", "")
             text = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
-            out.append(
+            pending_results.append(
                 {
-                    "role": "user",
-                    "content": [
-                        {
-                            "toolResult": {
-                                "toolUseId": tool_call_id,
-                                "content": [{"text": text or "ok"}],
-                            }
-                        }
-                    ],
+                    "toolResult": {
+                        "toolUseId": tool_call_id,
+                        "content": [{"text": text or "ok"}],
+                    }
                 }
             )
             continue
+
+        # A non-tool message ends any run of tool results.
+        _flush_results()
 
         if role not in ("user", "assistant"):
             continue
@@ -223,6 +262,8 @@ def _to_bedrock_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]
             )
         if blocks:
             out.append({"role": role, "content": blocks})
+    # Any trailing tool results (the common case: the last turn's results).
+    _flush_results()
     return out
 
 
@@ -265,6 +306,33 @@ def _state_system_block(state: Any) -> str:
     return f"\n\nCurrent UI state (read-only snapshot): {compact}"
 
 
+def _build_system(state: Any, *, cache: bool) -> list[dict[str, Any]]:
+    """Build the Bedrock ``system`` list.
+
+    The STATIC prompt is its own block; with ``cache`` a ``cachePoint`` follows it
+    so Bedrock reuses the tokenised prefix across turns (the prompt never changes).
+    The per-turn DATE and UI-STATE go in a SEPARATE trailing block AFTER the cache
+    point, so changing state does not invalidate the cached prefix.
+    """
+    system: list[dict[str, Any]] = [{"text": SYSTEM_PROMPT}]
+    if cache:
+        system.append({"cachePoint": {"type": "default"}})
+    dynamic = _date_system_block() + _state_system_block(state)
+    system.append({"text": dynamic})
+    return system
+
+
+# Prompt caching is attempted first; if Bedrock rejects the cachePoint blocks for
+# this model/region we disable it for the rest of the process and log once.
+_prompt_cache_enabled = True
+_prompt_cache_warned = False
+
+
+def _looks_like_cache_rejection(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return "cachepoint" in text or "cache point" in text or "prompt cache" in text
+
+
 # --- the run: stream AG-UI events ---------------------------------------------------------
 
 
@@ -287,13 +355,13 @@ def run_stream(
     decides to call a browser tool. A turn that emits a tool call does not also
     continue past it: the browser executes the tool and starts the next turn.
     """
+    global _prompt_cache_enabled, _prompt_cache_warned
+
     stream = streamer or boto3_streamer(region)
 
     yield {"type": RUN_STARTED, "threadId": thread_id, "runId": run_id}
 
-    system = [{"text": SYSTEM_PROMPT + _date_system_block() + _state_system_block(state)}]
     bedrock_messages = _to_bedrock_messages(messages)
-    tool_config = _tool_config(tools)
 
     # Per-content-block assembly state.
     text_message_id: str | None = None
@@ -301,17 +369,60 @@ def run_stream(
     tool_name: str | None = None
     tool_args_buf = ""
 
-    try:
-        for event in stream(
+    # Per-turn metrics (item 0): time to first token, total time, Bedrock usage.
+    t0 = time.monotonic()
+    t_first: float | None = None
+    usage: dict[str, Any] = {}
+    bedrock_latency_ms: int | None = None
+    tool_calls_count = 0
+
+    def _open_stream(use_cache: bool) -> Iterator[dict[str, Any]]:
+        return stream(
             model_id=model_id,
-            system=system,
+            system=_build_system(state, cache=use_cache),
             messages=bedrock_messages,
-            tool_config=tool_config,
-        ):
+            tool_config=_tool_config(tools, cache=use_cache),
+        )
+
+    use_cache = _prompt_cache_enabled
+    try:
+        try:
+            events = _open_stream(use_cache)
+            first = next(events, None)
+        except Exception as exc:  # noqa: BLE001 - may be a cachePoint rejection
+            if use_cache and _looks_like_cache_rejection(exc):
+                # This model/region does not support prompt caching: disable it for
+                # the process, log once, and retry this turn without cache points.
+                _prompt_cache_enabled = False
+                if not _prompt_cache_warned:
+                    _prompt_cache_warned = True
+                    logger.warning("Bedrock prompt caching unavailable; continuing without it")
+                use_cache = False
+                events = _open_stream(False)
+                first = next(events, None)
+            else:
+                raise
+
+        def _all_events() -> Iterator[dict[str, Any]]:
+            if first is not None:
+                yield first
+            yield from events
+
+        for event in _all_events():
+            if "metadata" in event:
+                meta = event.get("metadata", {})
+                usage = meta.get("usage", {}) or usage
+                metrics = meta.get("metrics", {})
+                if isinstance(metrics, dict) and "latencyMs" in metrics:
+                    bedrock_latency_ms = metrics.get("latencyMs")
+                continue
             if "contentBlockStart" in event:
                 start = event["contentBlockStart"].get("start", {})
                 tool_use = start.get("toolUse")
                 if tool_use:
+                    if t_first is None:
+                        t_first = time.monotonic() - t0
+                    tool_calls_count += 1
                     tool_use_id = str(tool_use.get("toolUseId", ""))
                     tool_name = str(tool_use.get("name", ""))
                     tool_args_buf = ""
@@ -323,6 +434,8 @@ def run_stream(
             elif "contentBlockDelta" in event:
                 delta = event["contentBlockDelta"].get("delta", {})
                 if "text" in delta:
+                    if t_first is None:
+                        t_first = time.monotonic() - t0
                     if text_message_id is None:
                         text_message_id = f"{run_id}-msg"
                         yield {"type": TEXT_MESSAGE_START, "messageId": text_message_id}
@@ -353,7 +466,7 @@ def run_stream(
                 elif text_message_id is not None:
                     yield {"type": TEXT_MESSAGE_END, "messageId": text_message_id}
                     text_message_id = None
-            # messageStart / messageStop / metadata carry no AG-UI payload we surface.
+            # messageStart / messageStop carry no AG-UI payload we surface.
     except Exception as exc:  # noqa: BLE001 - reported to the browser as RUN_ERROR
         logger.exception("UI agent run failed")
         # Close any half-open text block so the client is not left waiting.
@@ -366,5 +479,25 @@ def run_stream(
             "message": f"{type(exc).__name__}: {exc}",
         }
         return
+
+    # One INFO line per model turn (item 0): timings + Bedrock token usage. The
+    # usage dict carries cacheReadInputTokens / cacheWriteInputTokens when prompt
+    # caching is active, so the log shows whether the cache is being hit.
+    total_ms = int((time.monotonic() - t0) * 1000)
+    ttft_ms = int(t_first * 1000) if t_first is not None else None
+    logger.info(
+        "ui_agent turn run=%s ttft_ms=%s total_ms=%s bedrock_latency_ms=%s "
+        "in_tokens=%s out_tokens=%s cache_read=%s cache_write=%s tool_calls=%s cache=%s",
+        run_id,
+        ttft_ms,
+        total_ms,
+        bedrock_latency_ms,
+        usage.get("inputTokens"),
+        usage.get("outputTokens"),
+        usage.get("cacheReadInputTokens"),
+        usage.get("cacheWriteInputTokens"),
+        tool_calls_count,
+        use_cache,
+    )
 
     yield {"type": RUN_FINISHED, "threadId": thread_id, "runId": run_id}

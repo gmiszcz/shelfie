@@ -6,7 +6,19 @@ import json
 from collections.abc import Iterator
 from typing import Any
 
+import pytest
+
 from app.agent import ui_agent
+
+
+@pytest.fixture(autouse=True)
+def _reset_prompt_cache_flags() -> Iterator[None]:
+    """Each test starts with prompt caching enabled and the 'warned once' flag clear."""
+    ui_agent._prompt_cache_enabled = True
+    ui_agent._prompt_cache_warned = False
+    yield
+    ui_agent._prompt_cache_enabled = True
+    ui_agent._prompt_cache_warned = False
 
 
 def _fake_text_stream() -> Iterator[dict[str, Any]]:
@@ -135,18 +147,63 @@ def test_messages_translate_user_assistant_toolresult() -> None:
     assert tool_result["toolUseId"] == "c1"
 
 
+def _system_text(captured: dict[str, Any]) -> str:
+    """The concatenated text of every system block (cachePoint blocks have no text)."""
+    return "\n".join(b.get("text", "") for b in captured["system"] if "text" in b)
+
+
+def test_multiple_tool_results_merge_into_one_user_message() -> None:
+    # An assistant turn with TWO tool calls, then TWO tool-result messages. Bedrock
+    # needs BOTH toolResults in the single user message after the assistant turn —
+    # separate user messages fail with "Expected toolResult blocks …".
+    messages = [
+        {"role": "user", "content": "pokaż dune"},
+        {
+            "role": "assistant",
+            "content": "",
+            "toolCalls": [
+                {"id": "c1", "name": "navigate", "args": {"tab": "library"}},
+                {"id": "c2", "name": "set", "args": {"id": "library.search", "value": "dune"}},
+            ],
+        },
+        {"role": "tool", "toolCallId": "c1", "content": json.dumps({"ok": True})},
+        {"role": "tool", "toolCallId": "c2", "content": json.dumps({"ok": True})},
+    ]
+    _, captured = _split(_run(_fake_text_stream, messages=messages))
+    out = captured["messages"]
+    # user, assistant(2 toolUse), user(2 toolResult).
+    assert len(out) == 3
+    assert out[1]["role"] == "assistant"
+    assert [b["toolUse"]["toolUseId"] for b in out[1]["content"]] == ["c1", "c2"]
+    assert out[2]["role"] == "user"
+    result_ids = [b["toolResult"]["toolUseId"] for b in out[2]["content"]]
+    assert result_ids == ["c1", "c2"]
+
+
 def test_state_snapshot_goes_into_system_prompt() -> None:
     _, captured = _split(_run(_fake_text_stream, state={"tab": "library", "starFilter": 5}))
-    system_text = captured["system"][0]["text"]
+    system_text = _system_text(captured)
     assert "Current UI state" in system_text
     assert '"tab":"library"' in system_text
+
+
+def test_static_prompt_and_dynamic_state_are_separate_blocks() -> None:
+    # The static prompt must be its own block (cacheable); the date + UI state go in a
+    # SEPARATE trailing block so changing state never invalidates the cached prefix.
+    _, captured = _split(_run(_fake_text_stream, state={"tab": "library"}))
+    blocks = captured["system"]
+    assert "in-app assistant" in blocks[0]["text"]
+    # The actual serialized state snapshot is only in the trailing dynamic block.
+    assert '"tab":"library"' not in blocks[0]["text"]
+    assert '"tab":"library"' in blocks[-1]["text"]
+    assert "Today is" in blocks[-1]["text"]
 
 
 def test_system_prompt_carries_the_current_date() -> None:
     import datetime as _dt
 
     _, captured = _split(_run(_fake_text_stream))
-    system_text = captured["system"][0]["text"]
+    system_text = _system_text(captured)
     year = _dt.datetime.now().astimezone().year
     assert "Today is" in system_text
     assert f"current year is {year}" in system_text
@@ -163,6 +220,83 @@ def test_date_block_resolves_this_and_last_year() -> None:
     assert "2026-11-07" in block
     assert "current year is 2026" in block
     assert "last year" in block and "2025" in block
+
+
+def test_prompt_cache_adds_cache_points_to_system_and_tools() -> None:
+    ui_agent._prompt_cache_enabled = True
+    tools = [{"name": "navigate", "description": "switch tab", "parameters": {"type": "object"}}]
+    _, captured = _split(_run(_fake_text_stream, tools=tools))
+    # A cachePoint sits between the static prompt block and the dynamic block.
+    kinds = ["cachePoint" if "cachePoint" in b else "text" for b in captured["system"]]
+    assert kinds == ["text", "cachePoint", "text"]
+    # And a cachePoint trails the tool definitions.
+    tool_entries = captured["tool_config"]["tools"]
+    assert "cachePoint" in tool_entries[-1]
+
+
+def test_prompt_cache_rejection_falls_back_and_disables() -> None:
+    ui_agent._prompt_cache_enabled = True
+    ui_agent._prompt_cache_warned = False
+    calls: list[bool] = []
+
+    def streamer(*, model_id, system, messages, tool_config):
+        used_cache = any("cachePoint" in b for b in system)
+        calls.append(used_cache)
+        if used_cache:
+            raise RuntimeError("This model does not support cachePoint blocks")
+        yield from _fake_text_stream()
+
+    events = list(
+        ui_agent.run_stream(
+            thread_id="t",
+            run_id="r",
+            messages=[{"role": "user", "content": "x"}],
+            tools=[{"name": "navigate", "parameters": {"type": "object"}}],
+            state=None,
+            model_id="m",
+            region="eu-central-1",
+            streamer=streamer,
+        )
+    )
+    # First attempt with cache rejected, retried without, then succeeded.
+    assert calls == [True, False]
+    assert ui_agent._prompt_cache_enabled is False
+    assert events[-1]["type"] == ui_agent.RUN_FINISHED
+    text = "".join(e.get("delta", "") for e in events if e["type"] == ui_agent.TEXT_MESSAGE_CONTENT)
+    assert text == "Pokazuję 5 książek."
+
+
+def test_turn_metrics_are_logged(caplog) -> None:
+    import logging
+
+    def streamer(*, model_id, system, messages, tool_config):
+        yield {"contentBlockDelta": {"delta": {"text": "hi"}}}
+        yield {"contentBlockStop": {}}
+        yield {
+            "metadata": {
+                "usage": {"inputTokens": 1200, "outputTokens": 40},
+                "metrics": {"latencyMs": 850},
+            }
+        }
+
+    with caplog.at_level(logging.INFO, logger="app.agent.ui_agent"):
+        list(
+            ui_agent.run_stream(
+                thread_id="t",
+                run_id="run-xyz",
+                messages=[{"role": "user", "content": "x"}],
+                tools=[],
+                state=None,
+                model_id="m",
+                region="eu-central-1",
+                streamer=streamer,
+            )
+        )
+    line = next(r.getMessage() for r in caplog.records if "ui_agent turn" in r.getMessage())
+    assert "run=run-xyz" in line
+    assert "in_tokens=1200" in line
+    assert "out_tokens=40" in line
+    assert "bedrock_latency_ms=850" in line
 
 
 def test_streamer_exception_becomes_run_error() -> None:

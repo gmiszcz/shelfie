@@ -31,6 +31,18 @@ vi.mock('./services/api', () => ({
     })),
     recomputeRatings: vi.fn(async () => ({ rated_books: 0, comparisons: 0 })),
     nextPair: vi.fn(async () => null),
+    // The Series tab (useSeries) loads these on mount; empty results are enough to
+    // let the page mount so navigation to it can be exercised.
+    listSeries: vi.fn(async () => []),
+    listExpected: vi.fn(async () => []),
+    seriesAlerts: vi.fn(async () => ({
+      count: 0,
+      unseen_count: 0,
+      in_progress: [],
+      new_volume: [],
+    })),
+    getSeriesPreferences: vi.fn(async () => ({ filter: null, sort: null })),
+    putSeriesPreferences: vi.fn(async () => undefined),
     chat: vi.fn(),
     resetChat: vi.fn(async () => undefined),
   },
@@ -52,7 +64,7 @@ import {
 } from './agent-ui';
 
 /** Every nav tab the app ships with — each MUST register a tab in the schema. */
-const REQUIRED_TABS = ['library', 'stats', 'ranking'];
+const REQUIRED_TABS = ['library', 'series', 'favourites', 'stats', 'ranking'];
 
 /**
  * Every interactive control the universal agent must be able to reach, by anchor
@@ -81,6 +93,7 @@ const TAB_ANCHORS: Record<string, string[]> = {
     'library.series',
     'library.author',
   ],
+  favourites: ['favourites.search', 'favourites.books'],
   stats: ['stats.period', 'stats.group', 'stats.metric', 'stats.tableSearch'],
   ranking: ['ranking.search', 'ranking.category', 'ranking.focus'],
 };
@@ -164,6 +177,33 @@ describe('driving the app through the registry (no agent-side per-control code)'
       await navigate('stats');
     });
     await waitFor(() => expect(describeUi().activeTab).toBe('stats'));
+  });
+
+  // Regression (bug 1): the nav.tab anchor's invoke only handled a hand-picked
+  // subset of tabs (library/stats/ranking), so navigate('favourites') reported ok
+  // but the page never switched and its anchors never mounted — the agent said it
+  // opened Favourites while nothing showed. Every nav tab must really switch.
+  it('navigate switches to EVERY nav tab and mounts its anchors', async () => {
+    await renderApp();
+    for (const tab of REQUIRED_TABS) {
+      await act(async () => {
+        await navigate(tab);
+      });
+      await waitFor(() => expect(describeUi().activeTab).toBe(tab));
+    }
+  });
+
+  it('navigate to favourites opens it and exposes the favourites book list', async () => {
+    await renderApp();
+    await act(async () => {
+      await navigate('favourites');
+    });
+    await waitFor(() => expect(describeUi().activeTab).toBe('favourites'));
+    await waitFor(() => expect(getAnchor('favourites.books')).toBeTruthy());
+    const schema = describeUi();
+    const fav = schema.tabs.find((t) => t.id === 'favourites');
+    expect(fav?.mounted).toBe(true);
+    expect(fav?.anchors.map((a) => a.id)).toContain('favourites.books');
   });
 
   it('set drives the library search box', async () => {

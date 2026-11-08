@@ -55,7 +55,7 @@ interface ToastContent {
  */
 export function GlobalMic() {
   const { settings } = useSettings();
-  const { voiceLang, streaming, sendUiAgent, setOpen, switchMode, lastUiExchange } = useChat();
+  const { voiceLang, streaming, sendUiAgent, revealUiChat, lastUiExchange } = useChat();
 
   const micRef = useRef<MicHandle | null>(null);
   const [toast, setToast] = useState<ToastContent | null>(null);
@@ -157,9 +157,10 @@ export function GlobalMic() {
       return;
     }
     dismissToast();
-    switchMode('ui');
-    setOpen(true);
-  }, [toast, dismissToast, switchMode, setOpen]);
+    // reveal (not switchMode): the spoken exchange is already in the shared UI
+    // thread, and switchMode('ui') would reset it to an empty conversation.
+    revealUiChat();
+  }, [toast, dismissToast, revealUiChat]);
 
   const onTouchStart = useCallback((e: React.TouchEvent) => {
     touchStartX.current = e.touches[0]?.clientX ?? null;

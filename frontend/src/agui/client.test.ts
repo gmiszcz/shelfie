@@ -213,6 +213,138 @@ describe('runAgent — tool loop', () => {
     expect(library.anchors.map((a) => a.id)).toContain('library.search');
   });
 
+  it('executes EVERY tool call in a turn that emits more than one (bug 2, item 6)', async () => {
+    const navigated: string[] = [];
+    const searched: unknown[] = [];
+    registerAnchor({
+      id: 'nav.tab',
+      kind: 'tab',
+      label: 'Navigation',
+      actions: ['navigate'],
+      invoke: (_a, args) => {
+        navigated.push(String(args?.tab));
+      },
+    });
+    registerAnchor({
+      id: 'library.search',
+      kind: 'search',
+      label: 'Library search',
+      tab: 'library',
+      getState: () => '',
+      set: (v) => {
+        searched.push(v);
+      },
+    });
+
+    const { impl } = scriptedFetch([
+      // One turn with TWO tool calls (navigate + set), no text.
+      [
+        { type: 'RUN_STARTED', threadId: 't', runId: 'r0' },
+        { type: 'TOOL_CALL_START', toolCallId: 'c1', toolCallName: 'navigate' },
+        { type: 'TOOL_CALL_END', toolCallId: 'c1', toolCallName: 'navigate', args: JSON.stringify({ tab: 'library' }) },
+        { type: 'TOOL_CALL_START', toolCallId: 'c2', toolCallName: 'set' },
+        { type: 'TOOL_CALL_END', toolCallId: 'c2', toolCallName: 'set', args: JSON.stringify({ id: 'library.search', value: 'dune' }) },
+        { type: 'RUN_FINISHED', threadId: 't', runId: 'r0' },
+      ],
+      // Next turn: the model answers in text.
+      [
+        { type: 'RUN_STARTED', threadId: 't', runId: 'r1' },
+        { type: 'TEXT_MESSAGE_START', messageId: 'm' },
+        { type: 'TEXT_MESSAGE_CONTENT', messageId: 'm', delta: 'Gotowe.' },
+        { type: 'TEXT_MESSAGE_END', messageId: 'm' },
+        { type: 'RUN_FINISHED', threadId: 't', runId: 'r1' },
+      ],
+    ]);
+
+    setStaticTabs([{ id: 'library', label: 'Library' }]);
+    const result = await runAgent({
+      threadId: 't',
+      messages: [{ role: 'user', content: 'pokaż dune' }],
+      tools: tools(),
+      fetchImpl: impl,
+    });
+
+    // Both calls ran, in order — neither was silently dropped.
+    expect(result.toolCalls.map((c) => c.name)).toEqual(['navigate', 'set']);
+    expect(navigated).toEqual(['library']);
+    expect(searched).toEqual(['dune']);
+    expect(result.finalText).toBe('Gotowe.');
+  });
+
+  it('ends in the same turn when the model writes text alongside its action (item 7)', async () => {
+    let appliedSeries: string | undefined;
+    registerAnchor({
+      id: 'library.filter',
+      kind: 'button',
+      label: 'Assistant filter',
+      tab: 'library',
+      actions: ['apply', 'clear'],
+      invoke: (_a, args) => {
+        appliedSeries = args?.series as string | undefined;
+      },
+    });
+
+    const { impl, calls } = scriptedFetch([
+      // A SINGLE turn: text confirmation AND the tool call together.
+      [
+        { type: 'RUN_STARTED', threadId: 't', runId: 'r0' },
+        { type: 'TEXT_MESSAGE_START', messageId: 'm' },
+        { type: 'TEXT_MESSAGE_CONTENT', messageId: 'm', delta: 'Pokazuję serię Dune.' },
+        { type: 'TEXT_MESSAGE_END', messageId: 'm' },
+        { type: 'TOOL_CALL_START', toolCallId: 'c1', toolCallName: 'invoke' },
+        { type: 'TOOL_CALL_END', toolCallId: 'c1', toolCallName: 'invoke', args: JSON.stringify({ id: 'library.filter', action: 'apply', args: { series: 'Dune' } }) },
+        { type: 'RUN_FINISHED', threadId: 't', runId: 'r0' },
+      ],
+    ]);
+
+    const result = await runAgent({
+      threadId: 't',
+      messages: [{ role: 'user', content: 'pokaż serię Dune' }],
+      tools: tools(),
+      fetchImpl: impl,
+    });
+
+    // The tool ran AND the loop finished without a second request for the sentence.
+    expect(appliedSeries).toBe('Dune');
+    expect(result.finalText).toBe('Pokazuję serię Dune.');
+    expect(calls).toHaveLength(1);
+    expect(result.error).toBeUndefined();
+  });
+
+  it('keeps looping after a tool ERROR even if the model also wrote text (item 7)', async () => {
+    const { impl, calls } = scriptedFetch([
+      // Turn 1: text + a call to a tool that fails (unknown anchor), so the loop must
+      // continue so the model can correct itself.
+      [
+        { type: 'RUN_STARTED', threadId: 't', runId: 'r0' },
+        { type: 'TEXT_MESSAGE_START', messageId: 'm' },
+        { type: 'TEXT_MESSAGE_CONTENT', messageId: 'm', delta: 'Próbuję…' },
+        { type: 'TEXT_MESSAGE_END', messageId: 'm' },
+        { type: 'TOOL_CALL_START', toolCallId: 'c1', toolCallName: 'set' },
+        { type: 'TOOL_CALL_END', toolCallId: 'c1', toolCallName: 'set', args: JSON.stringify({ id: 'nope.missing', value: 'x' }) },
+        { type: 'RUN_FINISHED', threadId: 't', runId: 'r0' },
+      ],
+      // Turn 2: the model recovers and answers.
+      [
+        { type: 'RUN_STARTED', threadId: 't', runId: 'r1' },
+        { type: 'TEXT_MESSAGE_START', messageId: 'm' },
+        { type: 'TEXT_MESSAGE_CONTENT', messageId: 'm', delta: 'Gotowe.' },
+        { type: 'TEXT_MESSAGE_END', messageId: 'm' },
+        { type: 'RUN_FINISHED', threadId: 't', runId: 'r1' },
+      ],
+    ]);
+
+    const result = await runAgent({
+      threadId: 't',
+      messages: [{ role: 'user', content: 'x' }],
+      tools: tools(),
+      fetchImpl: impl,
+    });
+
+    expect(calls).toHaveLength(2);
+    expect(result.finalText).toBe('Gotowe.');
+  });
+
   it('stops and reports an error on RUN_ERROR', async () => {
     const { impl } = scriptedFetch([
       [

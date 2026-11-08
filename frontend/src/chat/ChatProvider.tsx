@@ -55,6 +55,39 @@ function newId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/** Keep roughly the last N user turns' worth of messages in the UI-agent thread. */
+const UI_HISTORY_KEEP_EXCHANGES = 6;
+
+/**
+ * Shrink the UI-agent conversation before a new command.
+ *
+ * The thread accumulates every turn forever, and each `tool` message holds a FULL
+ * tool result — including whole `describe_ui` schema dumps — which are only useful
+ * to the model while it is resolving the command that produced them. Re-sending all
+ * of them every turn is the main driver of the "thinks much longer, then errors"
+ * slowdown. So: keep the most recent exchanges verbatim, and in older turns replace
+ * each tool result body with a short `[omitted]` marker. The messages (and their
+ * toolCallIds) stay in place, so toolUse/toolResult pairing is never broken.
+ */
+function trimUiHistory(messages: AgUiMessage[]): AgUiMessage[] {
+  // Find the cut point: the index of the Nth-from-last `user` message.
+  const userIdx: number[] = [];
+  messages.forEach((m, i) => {
+    if (m.role === 'user') userIdx.push(i);
+  });
+  if (userIdx.length <= UI_HISTORY_KEEP_EXCHANGES) {
+    return messages;
+  }
+  const cut = userIdx[userIdx.length - UI_HISTORY_KEEP_EXCHANGES];
+  return messages.map((m, i) => {
+    if (i >= cut || m.role !== 'tool') {
+      return m;
+    }
+    // An old tool result: drop its (possibly huge) body but keep the pairing.
+    return { ...m, content: '[omitted]' };
+  });
+}
+
 /** One finished UI-agent turn, surfaced for the global mic's toast. */
 export interface UiExchange {
   id: string;
@@ -81,6 +114,12 @@ export interface ChatContextValue {
    * passes `reveal: false` to drive the UI without opening the chat.
    */
   sendUiAgent: (text: string, opts?: { reveal?: boolean }) => Promise<void>;
+  /**
+   * Open the chat panel on the UI agent WITHOUT resetting the thread — used by the
+   * global mic's toast so tapping it reveals the exchange that was just spoken,
+   * instead of `switchMode('ui')` which starts a clean conversation.
+   */
+  revealUiChat: () => void;
   stop: () => void;
   newChat: () => Promise<void>;
   /** The latest finished UI-agent turn, for the global mic toast. */
@@ -174,7 +213,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       getBooks: () => booksRef.current,
       series: { list: api.listSeries, get: api.getSeries, refresh: api.refreshSeries },
     });
-    const history = uiMessagesRef.current;
+    // Trim stale tool-result dumps from earlier commands before adding this one.
+    const history = trimUiHistory(uiMessagesRef.current);
+    uiMessagesRef.current = history;
     history.push({ role: 'user', content: text });
 
     const result = await runAgent({
@@ -184,11 +225,20 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       signal: controller.signal,
       callbacks: {
         onTextDelta: (delta) => dispatch({ type: 'text_delta', text: delta }),
-        onToolCall: (call) =>
+        // Show the action pill the instant the call starts (args not in yet), then
+        // refine its label once the args are parsed (onToolCall).
+        onToolCallStart: (call) =>
           dispatch({
             type: 'action_start',
             id: call.id,
             name: call.name,
+            label: describeAction(call.name, {}),
+            args: {},
+          }),
+        onToolCall: (call) =>
+          dispatch({
+            type: 'action_label',
+            id: call.id,
             label: describeAction(call.name, call.args),
             args: call.args,
           }),
@@ -281,6 +331,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     abortRef.current?.abort();
   }, []);
 
+  /**
+   * Reveal the UI-agent conversation (the global mic toast taps here). Switching
+   * to UI mode must NOT reset: the head-less mic run already appended the exchange
+   * to this same shared thread, so we only flip the panel to UI mode and open it.
+   * `switchMode` is for the panel's own tabs, where a clean conversation is wanted.
+   */
+  const revealUiChat = useCallback(() => {
+    setMode('ui');
+    setOpen(true);
+  }, []);
+
   const newChat = useCallback(async () => {
     stop();
     const current = sessionRef.current;
@@ -328,6 +389,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       streaming,
       send,
       sendUiAgent,
+      revealUiChat,
       stop,
       newChat,
       lastUiExchange,
@@ -341,6 +403,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       streaming,
       send,
       sendUiAgent,
+      revealUiChat,
       stop,
       newChat,
       lastUiExchange,
