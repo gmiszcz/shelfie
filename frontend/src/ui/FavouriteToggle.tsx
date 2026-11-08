@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import './FavouriteToggle.css';
 
 export interface FavouriteToggleProps {
@@ -25,7 +27,16 @@ export function FavouriteToggle({
   className,
 }: FavouriteToggleProps) {
   const label = title ?? (value ? 'Remove from favourites' : 'Add to favourites');
-  const classes = ['ui-fav', `ui-fav--${variant}`, value ? 'ui-fav--on' : '', className ?? '']
+  // A short animation on each click: a "pop" + burst ring when added, a soft shrink
+  // when removed. The key restarts the CSS animation on every click.
+  const [anim, setAnim] = useState<{ kind: 'pop' | 'unpop'; key: number } | null>(null);
+  const classes = [
+    'ui-fav',
+    `ui-fav--${variant}`,
+    value ? 'ui-fav--on' : '',
+    anim ? `ui-fav--${anim.kind}` : '',
+    className ?? '',
+  ]
     .filter(Boolean)
     .join(' ');
 
@@ -38,7 +49,13 @@ export function FavouriteToggle({
       title={label}
       onClick={(e) => {
         e.stopPropagation();
+        setAnim({ kind: value ? 'unpop' : 'pop', key: Date.now() });
         onChange(!value);
+      }}
+      onAnimationEnd={(e) => {
+        if (e.target === e.currentTarget || (e.target as HTMLElement).tagName === 'I') {
+          setAnim(null);
+        }
       }}
       onKeyDown={(e) => {
         // Keep Enter/Space from bubbling to a parent card's key handler.
@@ -47,7 +64,12 @@ export function FavouriteToggle({
         }
       }}
     >
-      <i className={value ? 'pi pi-heart-fill' : 'pi pi-heart'} aria-hidden="true" />
+      <i
+        key={anim?.key ?? 0}
+        className={value ? 'pi pi-heart-fill' : 'pi pi-heart'}
+        aria-hidden="true"
+      />
+      {anim?.kind === 'pop' && <span key={anim.key} className="ui-fav-burst" aria-hidden="true" />}
     </button>
   );
 }

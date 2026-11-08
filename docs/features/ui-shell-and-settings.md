@@ -257,3 +257,24 @@ Checked on 390x844 and 375x667: on 390 the whole pair + "About the same" fit abo
 
 Settings menu has a **Chat button** switch (`showChatButton`, default on). Off hides the floating chat bubble; the microphone then takes the bottom-right corner (`.global-mic.no-chat`) and still drives the UI agent. The chat panel can still open from the mic toast.
 
+
+## Book detail card — compact layout (2026-11-08)
+
+`components/BookDetailDialog.tsx` + `index.css` (`.detail-*`). No "Label:" prefixes; values say
+what they are, and related items sit side by side:
+
+| Row | Content |
+|---|---|
+| byline | author · year · publisher, then the language code as a tiny badge (`PL` / `EN`) |
+| favourite | heart + "Add to favourites" |
+| status + rating | the status **tag is the dropdown** (click it to change; no second "Finished" next to it) · stars without the clear ✕ · the bare score number (`4.9`) |
+| quiet line | Started … · Finished … · N pages |
+| chips | shelves, categories, format, edition (no labels) |
+| quiet line | copies · signed · condition · Added … |
+
+Settings → Detail dialog has new toggles (default on): **Language (PL / EN)** (`language`),
+**Format** (`format`), **Date added** (`added`). Each row element carries `data-detail="<section>"`
+(used by `BookDetailDialog.test.tsx`).
+
+The favourite heart (`ui/FavouriteToggle.tsx`) animates on click: adding plays a pop + a small
+burst ring (0.5 s), removing a soft shrink; `prefers-reduced-motion` turns both off.

@@ -726,7 +726,7 @@ body {
   min-width: 240px;
   display: flex;
   flex-direction: column;
-  gap: var(--default-gap);
+  gap: var(--small-gap);
 }
 
 .detail-subtitle {
@@ -739,6 +739,100 @@ body {
 
 .detail-byline {
   color: var(--app-text);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--small-gap);
+}
+
+/* Language code (PL / EN) right after the byline: a tiny mono badge. */
+.detail-lang {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--small-gap);
+  height: 1.4rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--app-border-strong);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--app-text-muted);
+}
+
+/* Status tag + stars + score side by side. */
+.detail-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--default-gap);
+}
+
+.detail-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-gap);
+}
+
+.detail-score {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--app-accent);
+}
+
+/* The status dropdown looks like the status tag itself (click it to change). */
+.detail-status-pick.p-dropdown {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  min-height: 0;
+}
+.detail-status-pick.p-dropdown .p-dropdown-label {
+  padding: 0;
+}
+.detail-status-pick.p-dropdown .p-dropdown-trigger {
+  width: 1.5rem;
+  color: var(--app-text-faint);
+}
+.detail-status-pick.p-dropdown .p-dropdown-trigger .p-icon,
+.detail-status-pick.p-dropdown .p-dropdown-trigger .pi {
+  width: 0.7rem;
+  height: 0.7rem;
+  font-size: 0.7rem;
+}
+.detail-status-pick.p-dropdown:not(.p-disabled).p-focus {
+  box-shadow: none;
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-pill);
+}
+
+/* Quiet one-line facts (dates, pages, added, copies): dot-separated. */
+.detail-line {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--default-gap);
+  row-gap: var(--small-padding);
+  color: var(--app-text-muted);
+  font-size: 0.9rem;
+}
+
+.detail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--small-gap);
+}
+
+/* Neutral chip for format / edition (no label: the value says what it is). */
+.detail-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--small-padding) var(--small-gap);
+  border-radius: var(--radius-sm);
+  background: var(--accent-grey-soft);
+  color: var(--accent-grey-text);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
 }
 
 .detail-description {

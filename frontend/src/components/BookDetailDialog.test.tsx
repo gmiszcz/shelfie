@@ -46,12 +46,15 @@ function renderDialog() {
 
 /** A DOM probe for each detail section: a substring that is only present when the section renders. */
 const SECTION_PROBES: Record<DetailSection, (root: HTMLElement) => boolean> = {
-  status: (r) => within(r).queryByText('Status:') != null,
-  rating: (r) => within(r).queryByText('Rating:') != null,
-  score: (r) => within(r).queryByText(/^Score /) != null,
+  status: (r) => r.querySelector('[data-detail="status"]') != null,
+  rating: (r) => r.querySelector('[data-detail="rating"]') != null,
+  score: (r) => within(r).queryByText('4.8') != null,
   readingDates: (r) => within(r).queryByText(/Started /) != null,
   pages: (r) => within(r).queryByText(/412 pages/) != null,
-  shelves: (r) => within(r).queryByText('Shelves:') != null,
+  shelves: (r) => within(r).queryByText('sci-fi') != null,
+  language: (r) => within(r).queryByText('EN') != null,
+  format: (r) => within(r).queryByText('Hardcover') != null,
+  added: (r) => within(r).queryByText(/^Added /) != null,
   description: (r) => within(r).queryByText('Description') != null,
   series: (r) => within(r).queryByText('Series') != null,
   tags: (r) => within(r).queryByText('Tags') != null,
@@ -113,5 +116,27 @@ describe('BookDetailDialog — showAllDetails default', () => {
     expect(SECTION_PROBES.insights(dialog)).toBe(true);
     expect(SECTION_PROBES.notes(dialog)).toBe(true);
     expect(SECTION_PROBES.purchase(dialog)).toBe(true);
+  });
+});
+
+describe('BookDetailDialog — compact layout', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('has no field labels, no clear-rating X, and a bare score number', () => {
+    seedSettings({ showAllDetails: false });
+    renderDialog();
+    const dialog = screen.getByRole('dialog');
+    for (const label of ['Status:', 'Rating:', 'Shelves:', 'Language', 'Format']) {
+      expect(within(dialog).queryByText(label), `label "${label}"`).toBeNull();
+    }
+    expect(within(dialog).queryByLabelText('Clear rating')).toBeNull();
+    expect(within(dialog).queryByText(/^Score /)).toBeNull();
+    expect(within(dialog).getByText('4.8')).toBeTruthy();
+    // The status shows once (as the tag inside the dropdown), not twice.
+    // (Ignore the Dropdown's hidden native <option>, which is not visible.)
+    const shown = within(dialog)
+      .getAllByText('Finished')
+      .filter((el) => el.tagName !== 'OPTION');
+    expect(shown).toHaveLength(1);
   });
 });

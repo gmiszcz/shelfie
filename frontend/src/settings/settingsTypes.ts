@@ -32,7 +32,10 @@ export type DetailSection =
   | 'description'
   | 'insights'
   | 'notes'
-  | 'purchase';
+  | 'purchase'
+  | 'language'
+  | 'format'
+  | 'added';
 
 export const CARD_FIELDS: CardField[] = [
   'author',
@@ -59,6 +62,9 @@ export const DETAIL_SECTIONS: DetailSection[] = [
   'insights',
   'notes',
   'purchase',
+  'language',
+  'format',
+  'added',
 ];
 
 /** Human labels for the settings UI. */
@@ -87,6 +93,9 @@ export const DETAIL_SECTION_LABELS: Record<DetailSection, string> = {
   insights: 'Insights',
   notes: 'Notes, review & quotes',
   purchase: 'Purchase info',
+  language: 'Language (PL / EN)',
+  format: 'Format',
+  added: 'Date added',
 };
 
 /**
