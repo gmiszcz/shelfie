@@ -11,8 +11,8 @@ export type { SearchInputProps } from './SearchInput';
 export { FilterBar } from './FilterBar';
 export type { FilterBarProps, FilterOption } from './FilterBar';
 export { StatusTag } from './StatusTag';
-export { LangSegmented } from './LangSegmented';
-export type { LangSegmentedProps } from './LangSegmented';
+export { LangPicker, SERIES_LANG_OPTIONS } from './LangPicker';
+export type { LangOption, LangPickerProps } from './LangPicker';
 
 // Design-system primitives (the "quiet dashboard" look). Generic by design so new
 // tabs (Series, Favourites, …) can adopt them directly.

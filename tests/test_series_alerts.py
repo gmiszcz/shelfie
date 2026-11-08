@@ -97,10 +97,9 @@ def test_seen_persists_across_reloads(client: TestClient, db_file: Path) -> None
     seen_resp = client.post("/api/series/alerts/seen", json={"alert_keys": [nv["alert_key"]]})
     assert seen_resp.status_code == 200
 
-    # Fresh GET: the dismissed alert stays seen and is not counted.
+    # Fresh GET: the dismissed alert is gone for good (no "earlier" list) and not counted.
     after = client.get("/api/series/alerts").json()
-    nv_after = next(a for a in after["new_volume"] if a["series_name"] == "Seenish")
-    assert nv_after["seen"] is True
+    assert all(a["alert_key"] != nv["alert_key"] for a in after["new_volume"])
     assert after["unseen_count"] == before["unseen_count"] - 1
 
 

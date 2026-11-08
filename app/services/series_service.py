@@ -478,6 +478,9 @@ def _surname_close(author: str, candidate_authors: list[str]) -> bool:
     return any(_close(want, _surname(c)) for c in candidate_authors)
 
 
+MAX_AUTO_ADDS_PER_RUN = 3
+
+
 async def _maybe_auto_add(
     conn: aiosqlite.Connection,
     user_id: int,
@@ -486,77 +489,127 @@ async def _maybe_auto_add(
     *,
     settings: Settings | None = None,
 ) -> None:
-    """Auto-add the next volume to the library when it is out and not already owned.
+    """Handle every volume the research found that the user does not own.
 
-    Runs at most ONE Google Books search (title + author) through the shared
-    :class:`GoogleBooksClient` (disk cache + ``GOOGLE_BOOKS_MAX_CALLS`` budget). Stops on a
-    429 / budget with no retries and no variant queries. Accepts the single best hit only
-    when its significant title words match and the author surname is close. On success the
-    book is added via the book service (so books.json stays in sync), with status 'want',
-    the series name and the next volume; ``release.added_book_id`` is set. Never adds twice.
+    Owned numbers are dropped from ``release.found_volumes``. Then, per the user's
+    ``add_mode`` preference: 'auto' adds each released/announced one to the library as
+    'want' (at most ``MAX_AUTO_ADDS_PER_RUN`` per run, one Google Books query each);
+    'ask' leaves them on the card with an Add button. Never adds twice.
+    """
+    if release is None:
+        return
+    from app.schemas.series import FoundVolume
+
+    # The named next volume is always a candidate, even if the editor left it out of the list.
+    if release.next_title and not any(
+        (fv.volume is not None and fv.volume == release.next_volume)
+        or fv.title == release.next_title
+        for fv in release.found_volumes
+    ):
+        release.found_volumes.append(
+            FoundVolume(
+                volume=release.next_volume,
+                title=release.next_title,
+                status=release.status if release.status in ("released", "announced") else "unknown",
+                date=release.expected_date,
+                added_book_id=release.added_book_id,
+            )
+        )
+    release.found_volumes = [
+        fv
+        for fv in release.found_volumes
+        if fv.added_book_id is not None or not _owns_volume(summary, fv.volume)
+    ]
+    prefs = await get_series_preferences(conn, user_id)
+    if prefs.add_mode != "auto":
+        return
+    added = 0
+    for fv in release.found_volumes:
+        if added >= MAX_AUTO_ADDS_PER_RUN:
+            break
+        if fv.added_book_id is not None or fv.status not in ("released", "announced"):
+            continue
+        book_id = await _add_volume(conn, user_id, summary, fv.title, fv.volume, settings=settings)
+        if book_id is None:
+            continue
+        added += 1
+        fv.added_book_id = book_id
+        if release.next_volume is not None and fv.volume == release.next_volume:
+            release.added_book_id = book_id
+        elif release.next_title and fv.title == release.next_title:
+            release.added_book_id = book_id
+
+
+async def _add_volume(
+    conn: aiosqlite.Connection,
+    user_id: int,
+    summary: SeriesSummary,
+    title: str,
+    volume: float | None,
+    *,
+    settings: Settings | None = None,
+) -> int | None:
+    """Add one series volume to the library as 'want'. Returns the new book id.
+
+    ONE Google Books search (title + author) through the shared client (disk cache +
+    ``GOOGLE_BOOKS_MAX_CALLS`` budget; a 429/budget stops it with no retries). The hit is
+    used only when its significant title words match and the author surname is close.
+    Without a usable hit the book is still added from the title, author, series and
+    volume (no cover), so it appears in the library. Returns ``None`` if it already exists.
     """
     from app.services import books as books_service
 
-    if release is None or not release.next_title:
-        return
-    if release.status not in ("released", "announced"):
-        return
-    if release.added_book_id is not None:
-        return
-    if _owns_volume(summary, release.next_volume):
-        return
-
     settings = settings or get_settings()
-    google = _client(settings)
-    query = f"{release.next_title} {summary.author}".strip()
-    try:
-        _total, items = await google.search(query, max_results=5)
-    except Exception:  # noqa: BLE001 - 429/budget/transport: keep the waiting-list entry
-        logger.info("auto-add Google Books lookup skipped for %r", query, exc_info=True)
-        return
-
     hit = None
-    for item in items:
-        if _title_words_match(release.next_title, item.title) and _surname_close(
-            summary.author, list(item.authors or [])
-        ):
-            hit = item
-            break
-    if hit is None:
-        return
+    query = f"{title} {summary.author}".strip()
+    try:
+        _total, items = await _client(settings).search(query, max_results=5)
+        for item in items:
+            if _title_words_match(title, item.title) and _surname_close(
+                summary.author, list(item.authors or [])
+            ):
+                hit = item
+                break
+    except Exception:  # noqa: BLE001 - 429/budget/transport: add from the title instead
+        logger.info("Google Books lookup skipped for %r", query, exc_info=True)
 
-    volume = None
-    if release.next_volume is not None:
-        volume = (
-            str(int(release.next_volume))
-            if float(release.next_volume).is_integer()
-            else str(release.next_volume)
+    vol_str = None
+    if volume is not None:
+        vol_str = str(int(volume)) if float(volume).is_integer() else str(volume)
+    authors = [summary.author] if summary.author else []
+    if hit is not None:
+        create = BookCreate(
+            google_volume_id=hit.google_volume_id,
+            title=hit.title,
+            subtitle=hit.subtitle,
+            authors=list(hit.authors or []) or authors,
+            publisher=hit.publisher,
+            published_date=hit.published_date,
+            description=hit.description,
+            page_count=hit.page_count,
+            categories=list(hit.categories or []),
+            language=hit.language,
+            isbn_10=hit.isbn_10,
+            isbn_13=hit.isbn_13,
+            cover_url=hit.cover_url,
+            series=summary.name,
+            volume=vol_str,
+            status=ReadingStatus.want,
+            metadata_source="series_research",
         )
-    create = BookCreate(
-        google_volume_id=hit.google_volume_id,
-        title=hit.title,
-        subtitle=hit.subtitle,
-        authors=list(hit.authors or []) or ([summary.author] if summary.author else []),
-        publisher=hit.publisher,
-        published_date=hit.published_date,
-        description=hit.description,
-        page_count=hit.page_count,
-        categories=list(hit.categories or []),
-        language=hit.language,
-        isbn_10=hit.isbn_10,
-        isbn_13=hit.isbn_13,
-        cover_url=hit.cover_url,
-        series=summary.name,
-        volume=volume,
-        status=ReadingStatus.want,
-        metadata_source="series_research",
-    )
+    else:
+        create = BookCreate(
+            title=title,
+            authors=authors,
+            series=summary.name,
+            volume=vol_str,
+            status=ReadingStatus.want,
+            metadata_source="series_research",
+        )
     try:
         book = await books_service.add_book(conn, user_id, create)
     except books_service.DuplicateBookError:
-        return
-    # Mirror the new book's series/volume into books.json (add_book does not, so the two
-    # stores stay in sync for this auto-added entry).
+        return None
     books_json.sync_book_series(
         {
             "google_volume_id": book.google_volume_id,
@@ -567,9 +620,38 @@ async def _maybe_auto_add(
             "authors": list(book.authors or []),
         },
         series=summary.name,
-        volume=volume,
+        volume=vol_str,
     )
-    release.added_book_id = book.id
+    return book.id
+
+
+async def add_found_volume(
+    conn: aiosqlite.Connection,
+    user_id: int,
+    series_key: str,
+    title: str,
+    volume: float | None,
+    *,
+    settings: Settings | None = None,
+) -> SeriesSummary | None:
+    """Add one found volume from the card's Add button (add_mode 'ask')."""
+    summary = await get_series(conn, user_id, series_key)
+    if summary is None:
+        return None
+    book_id = await _add_volume(conn, user_id, summary, title, volume, settings=settings)
+    info = await repo.get_info(conn, user_id, summary.series_key)
+    if info is not None and info.release_summary is not None and book_id is not None:
+        rs = info.release_summary
+        for fv in rs.found_volumes:
+            if (volume is not None and fv.volume == volume) or fv.title == title:
+                fv.added_book_id = book_id
+        if (volume is not None and rs.next_volume == volume) or rs.next_title == title:
+            rs.added_book_id = book_id
+        await repo.upsert_info(conn, user_id, info)
+        await _sync_waiting_list(
+            conn, user_id, summary.series_key, summary.name, summary.author, rs
+        )
+    return await get_series(conn, user_id, summary.series_key)
 
 
 def _alert_key(kind: str, series_key: str, *parts: str | None) -> str:
@@ -654,11 +736,12 @@ async def alerts(conn: aiosqlite.Connection, user_id: int) -> AlertsResponse:
     seen_keys = await repo.seen_alert_keys(conn, user_id)
     await repo.prune_seen_alerts(conn, user_id, all_keys)
 
-    unseen = 0
-    for alert in (*in_progress, *new_volume):
-        alert.seen = alert.alert_key in seen_keys
-        if not alert.seen:
-            unseen += 1
+    # A dismissed alert is gone for good: it is not returned at all (no "earlier" list).
+    # Only its key is remembered, so the same alert does not pop up again; a genuinely
+    # new event has a new key and shows.
+    in_progress = [a for a in in_progress if a.alert_key not in seen_keys]
+    new_volume = [a for a in new_volume if a.alert_key not in seen_keys]
+    unseen = len(in_progress) + len(new_volume)
 
     return AlertsResponse(
         count=unseen,
@@ -706,10 +789,12 @@ async def get_series_preferences(conn: aiosqlite.Connection, user_id: int) -> Se
     sort = stored.get("sort")
     raw_lang = str(stored.get("default_search_lang", "pl"))
     lang = raw_lang if raw_lang in ("pl", "en", "both") else "pl"
+    raw_mode = str(stored.get("add_mode", "auto"))
     return SeriesPreferences(
         filter=active,
         sort=sort if isinstance(sort, str) else None,
         default_search_lang=lang,
+        add_mode=raw_mode if raw_mode in ("auto", "ask") else "auto",
     )
 
 
@@ -719,11 +804,17 @@ async def set_series_preferences(
     """Persist the user's Series-tab preferences (validated filter id)."""
     active = prefs.filter if prefs.filter in SERIES_FILTERS else "all"
     lang = prefs.default_search_lang if prefs.default_search_lang in ("pl", "en", "both") else "pl"
-    value: dict[str, Any] = {"filter": active, "default_search_lang": lang}
+    value: dict[str, Any] = {
+        "filter": active,
+        "default_search_lang": lang,
+        "add_mode": prefs.add_mode if prefs.add_mode in ("auto", "ask") else "auto",
+    }
     if prefs.sort:
         value["sort"] = prefs.sort
     await prefs_repo.set_pref(conn, user_id, _SERIES_PREF_KEY, value)
-    return SeriesPreferences(filter=active, sort=prefs.sort, default_search_lang=lang)
+    return SeriesPreferences(
+        filter=active, sort=prefs.sort, default_search_lang=lang, add_mode=value["add_mode"]
+    )
 
 
 # --- series editing (wave 5) -------------------------------------------------------------

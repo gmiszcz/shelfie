@@ -1,7 +1,8 @@
+import { Button } from 'primereact/button';
 import { useState } from 'react';
 
 import { useAgentAnchor } from '../agent-ui';
-import type { ReleaseEdition, ReleaseSummary } from '../types';
+import type { FoundVolume, ReleaseEdition, ReleaseSummary } from '../types';
 import { Pill } from '../ui';
 
 import { releaseStatusVisual } from './releaseStatus';
@@ -15,6 +16,74 @@ interface Props {
   checking: boolean;
   /** Open an owned/added library book by id (for the "added to library" badge). */
   onOpenBook: (bookId: number) => void;
+  /** Add a found volume to the library as Want to read (shown when not added yet). */
+  onAddVolume?: (title: string, volume: number | null) => Promise<void>;
+}
+
+function volLabel(v: number | null): string {
+  if (v == null) return '';
+  return Number.isInteger(v) ? `#${v}` : `#${v}`;
+}
+
+/** Found volumes not in the library: each with its date and an Add / In library control. */
+function FoundVolumes({
+  volumes,
+  onOpenBook,
+  onAddVolume,
+}: {
+  volumes: FoundVolume[];
+  onOpenBook: (bookId: number) => void;
+  onAddVolume?: (title: string, volume: number | null) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  if (volumes.length === 0) return null;
+  return (
+    <ul className="series-found">
+      {volumes.map((fv) => {
+        const key = `${fv.volume ?? ''}-${fv.title}`;
+        const released = fv.status === 'released';
+        return (
+          <li key={key} className="series-found-row">
+            <span className="series-found-main">
+              {fv.volume != null && <span className="series-found-vol">{volLabel(fv.volume)}</span>}
+              <span className="series-found-title" title={fv.title}>
+                {fv.title}
+              </span>
+            </span>
+            <span className={`series-found-date${released ? ' released' : ''}`}>
+              <i className={released ? 'pi pi-check-circle' : 'pi pi-calendar'} aria-hidden="true" />
+              {fv.date ?? (released ? 'out' : 'no date')}
+            </span>
+            {fv.added_book_id != null ? (
+              <button
+                type="button"
+                className="series-found-in"
+                onClick={() => onOpenBook(fv.added_book_id as number)}
+              >
+                <i className="pi pi-check" aria-hidden="true" /> In library
+              </button>
+            ) : (
+              onAddVolume && (
+                <Button
+                  label="Want to read"
+                  icon="pi pi-plus"
+                  size="small"
+                  outlined
+                  className="series-found-add"
+                  loading={busy === key}
+                  disabled={busy !== null}
+                  onClick={() => {
+                    setBusy(key);
+                    void onAddVolume(fv.title, fv.volume).finally(() => setBusy(null));
+                  }}
+                />
+              )
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 /** One per-edition row (PL / EN) shown under Details. */
@@ -58,7 +127,14 @@ function EditionRow({ lang, edition }: { lang: 'PL' | 'EN'; edition: ReleaseEdit
  * with small source links, and an "added to library" badge when a book was added.
  * When there is no summary yet it falls back to "Not checked yet".
  */
-export function SeriesReleaseWatch({ seriesKey, seriesName, summary, checking, onOpenBook }: Props) {
+export function SeriesReleaseWatch({
+  seriesKey,
+  seriesName,
+  summary,
+  checking,
+  onOpenBook,
+  onAddVolume,
+}: Props) {
   const [open, setOpen] = useState(false);
 
   // UI-agent anchor for the Details toggle, one per series card.
@@ -97,7 +173,7 @@ export function SeriesReleaseWatch({ seriesKey, seriesName, summary, checking, o
     return (
       <div className="series-release series-release--empty">
         <i className="pi pi-question-circle" aria-hidden="true" />
-        <span>Not checked yet</span>
+        <span>No summary yet · press ↻ to check</span>
       </div>
     );
   }
@@ -119,8 +195,14 @@ export function SeriesReleaseWatch({ seriesKey, seriesName, summary, checking, o
           aria-hidden="true"
         />
         <span className="series-release-status">{visual.label}</span>
-        <span className="series-release-headline">{summary.headline}</span>
       </div>
+      <p className="series-release-headline">{summary.headline}</p>
+
+      <FoundVolumes
+        volumes={summary.found_volumes ?? []}
+        onOpenBook={onOpenBook}
+        onAddVolume={onAddVolume}
+      />
 
       {hasDetails && (
         <button

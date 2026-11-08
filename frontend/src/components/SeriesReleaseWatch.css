@@ -56,11 +56,86 @@
   color: var(--app-text-muted);
 }
 
+/* The one fact sentence: full width under the status, never squeezed beside it. */
 .series-release-headline {
+  margin: 0;
   min-width: 0;
   font-size: 0.85rem;
-  line-height: 1.3;
+  line-height: 1.4;
   color: var(--app-text);
+}
+
+/* Found volumes (gaps + next): title, date, Want to read / In library. */
+.series-found {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-padding);
+}
+.series-found-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'main action'
+    'date action';
+  align-items: center;
+  column-gap: var(--small-gap);
+  row-gap: 2px;
+  padding: var(--small-padding) var(--default-padding);
+  border-radius: var(--radius-md);
+  background: var(--app-surface-2);
+}
+.series-found-main {
+  grid-area: main;
+  display: flex;
+  align-items: baseline;
+  gap: var(--small-padding);
+  min-width: 0;
+}
+.series-found-vol {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--app-accent);
+}
+.series-found-title {
+  min-width: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.series-found-date {
+  grid-area: date;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-padding);
+  font-size: 0.75rem;
+  color: var(--app-text-muted);
+}
+.series-found-date.released .pi {
+  color: var(--accent-green);
+}
+.series-found-add.p-button,
+.series-found-in {
+  grid-area: action;
+  min-height: 2.25rem;
+  font-size: 0.75rem;
+  padding: 0 var(--default-padding);
+}
+.series-found-in {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-padding);
+  border: none;
+  background: transparent;
+  color: var(--accent-green);
+  font-weight: 600;
+  cursor: pointer;
 }
 
 /* Details toggle: left-aligned, link-like, 44px touch target. */

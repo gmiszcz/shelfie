@@ -425,3 +425,12 @@ all existing rows keep their data and default to `search_lang='pl'`.
 Tests: `tests/test_series_research.py` (lang filter, editor parsing/validation, garbage
 title rejected, auto-add happy / skipped-when-owned / 429-keeps-waiting / not-twice,
 migration keeps data).
+
+## Update 2026-11-08 (b): found volumes, add mode, no alert history
+
+- `release_summary.found_volumes`: every volume the research found that is not owned (missing gaps like #1 and the next one), with title, status, date, source, `added_book_id`. The research prompt lists the missing numbers explicitly.
+- Preference `add_mode` (Settings › Series search › Found volumes): `auto` (default) adds each released/announced found volume as Want to read (max 3 per run, ONE Google Books query each; without a hit it is added from the title); `ask` shows a **Want to read** button per volume on the card (`POST /api/series/{key}/volumes`).
+- Dismissed notifications are no longer returned (no 'Show earlier'); only their key is kept so the same alert does not return.
+- Card: one small shared `LangPicker` (same as the add-book search) in the same row as the Watch switch (label 'New volumes'). Waiting list shows edition tag + full date.
+- Live check (copy of data): Cmentarze osobliwoœci (own #2, #3) -> found #1 'Cmentarz osobliwoœci' (2023-09-06) and added it as Want to read.
+

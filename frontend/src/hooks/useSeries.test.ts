@@ -132,6 +132,7 @@ describe('useSeries preferences', () => {
       filter: 'complete',
       sort: null,
       default_search_lang: 'pl',
+      add_mode: 'auto',
     });
   });
 });

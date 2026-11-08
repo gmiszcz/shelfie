@@ -205,9 +205,46 @@
 
 .series-waiting-title {
   font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+/* Edition + date: the facts that matter, always fully visible. */
+.series-waiting-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--small-padding) var(--small-gap);
+}
+.series-waiting-ed {
+  padding: 0 var(--small-padding);
+  border-radius: var(--radius-pill);
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+.series-waiting-date {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-padding);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--app-text);
   white-space: nowrap;
+}
+.series-waiting-date .pi {
+  font-size: 0.75rem;
+  color: var(--app-accent);
+}
+.series-waiting-date.none {
+  font-weight: 400;
+  color: var(--app-text-muted);
 }
 
 .series-waiting-meta {

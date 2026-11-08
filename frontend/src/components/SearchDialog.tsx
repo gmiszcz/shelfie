@@ -1,13 +1,12 @@
 import { Button } from 'primereact/button';
 import { Dialog } from 'primereact/dialog';
-import { Dropdown } from 'primereact/dropdown';
 import { Message } from 'primereact/message';
 import { ProgressSpinner } from 'primereact/progressspinner';
 import { useEffect, useState } from 'react';
 
 import { formatAuthors, formatYear, hitKey } from '../format';
 import { api } from '../services/api';
-import { BookCover, SearchInput } from '../ui';
+import { BookCover, LangPicker, SearchInput, type LangOption } from '../ui';
 import type { BookInput, VolumeSearchResult } from '../types';
 
 interface Props {
@@ -22,7 +21,7 @@ interface Props {
 }
 
 /** `code` is what the small picker shows; `label` names it in the open list. */
-const LANG_OPTIONS = [
+const LANG_OPTIONS: readonly LangOption[] = [
   { value: '', code: 'ALL', label: 'Any language' },
   { value: 'pl', code: 'PL', label: 'Polski' },
   { value: 'en', code: 'EN', label: 'English' },
@@ -30,7 +29,6 @@ const LANG_OPTIONS = [
   { value: 'fr', code: 'FR', label: 'Français' },
   { value: 'es', code: 'ES', label: 'Español' },
 ];
-type LangOption = (typeof LANG_OPTIONS)[number];
 
 export function SearchDialog({
   visible,
@@ -128,23 +126,12 @@ export function SearchDialog({
               ariaLabel="Search Google Books"
             />
           </div>
-          <Dropdown
+          <LangPicker
             value={lang}
             options={LANG_OPTIONS}
-            optionValue="value"
-            optionLabel="code"
-            onChange={(e) => setLang(e.value)}
-            valueTemplate={(o: LangOption | null) => <span>{o?.code ?? 'PL'}</span>}
-            itemTemplate={(o: LangOption) => (
-              <span className="search-lang-item">
-                <strong>{o.code}</strong> {o.label}
-              </span>
-            )}
-            dropdownIcon={null as unknown as string}
+            onChange={setLang}
+            ariaLabel="Language filter"
             className="search-dialog-lang"
-            panelClassName="search-dialog-lang-panel"
-            aria-label="Language filter"
-            title="Language"
           />
         </div>
         <Button

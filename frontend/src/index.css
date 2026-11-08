@@ -845,32 +845,9 @@ body {
   min-width: 0;
 }
 
+/* The picker itself is the shared ui/LangPicker; here it only needs a fixed square. */
 .search-dialog-lang.p-dropdown {
-  flex: none;
   width: var(--touch-target);
-  min-width: var(--touch-target);
-  justify-content: center;
-}
-.search-dialog-lang .p-dropdown-label {
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--app-accent);
-}
-.search-dialog-lang .p-dropdown-trigger {
-  display: none;
-}
-.search-lang-item {
-  display: inline-flex;
-  gap: var(--small-gap);
-}
-.search-lang-item strong {
-  min-width: 2.2rem;
-  font-family: var(--font-mono);
 }
 
 /* Phones: field on top, full-width Search button under it. 16px stops iOS focus zoom. */

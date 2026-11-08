@@ -55,15 +55,27 @@ function WaitingRow({
   item: ExpectedBook;
   onRemove: (id: number) => void;
 }) {
+  // Researched entries carry their edition in the source ("series_research:pl").
+  const edition = item.source?.startsWith('series_research:')
+    ? item.source.split(':')[1]?.toUpperCase()
+    : null;
   return (
     <li className="series-waiting-item">
       <div className="series-waiting-main">
-        <span className="series-waiting-title">{item.title}</span>
+        <span className="series-waiting-title" title={item.title}>
+          {item.title}
+        </span>
+        <span className="series-waiting-facts">
+          {edition && <span className="series-waiting-ed">{edition}</span>}
+          <span className={`series-waiting-date${item.expected_date ? '' : ' none'}`}>
+            <i className="pi pi-calendar" aria-hidden="true" />
+            {item.expected_date ?? 'no date'}
+          </span>
+          {item.volume && <span className="series-waiting-meta">vol. {item.volume}</span>}
+        </span>
         <span className="series-waiting-meta">
           {item.author}
           {item.series_name && ` · ${item.series_name}`}
-          {item.volume && ` · vol. ${item.volume}`}
-          {item.expected_date ? ` · ${item.expected_date}` : ' · no date'}
         </span>
       </div>
       <div className="series-waiting-actions">
@@ -104,6 +116,7 @@ export function Series() {
     setWatch,
     refresh,
     setLang,
+    addVolume,
     removeExpected,
     setFilter,
     dismissAlerts,
@@ -113,7 +126,6 @@ export function Series() {
   const [selected, setSelected] = useState<Book | null>(null);
   const [editing, setEditing] = useState<SeriesSummary | null>(null);
   const [refreshingKey, setRefreshingKey] = useState<string | null>(null);
-  const [showSeen, setShowSeen] = useState(false);
   const toast = useRef<Toast>(null);
   // Fields the UI agent stages on series.editDialog before calling its "save" action.
   const editDialogDraft = useRef<{
@@ -206,6 +218,20 @@ export function Series() {
       notifyError(err instanceof Error ? err.message : 'Lookup failed');
     } finally {
       setRefreshingKey(null);
+    }
+  };
+
+  const handleAddVolume = async (key: string, title: string, volume: number | null) => {
+    try {
+      await addVolume(key, title, volume);
+      toast.current?.show({
+        severity: 'success',
+        summary: 'Added to library',
+        detail: `${title} · Want to read`,
+        life: 2500,
+      });
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Could not add the book');
     }
   };
 
@@ -443,7 +469,6 @@ export function Series() {
   const unseenCount = alerts?.unseen_count ?? 0;
   const allAlerts = alerts ? [...alerts.new_volume, ...alerts.in_progress] : [];
   const unseenAlerts = allAlerts.filter((a) => !a.seen);
-  const seenAlerts = allAlerts.filter((a) => a.seen);
   const showBanner = unseenCount > 0;
 
   const dismissAll = () =>
@@ -523,44 +548,6 @@ export function Series() {
         </section>
       )}
 
-      {!showBanner && seenAlerts.length > 0 && (
-        <div className="series-alerts-earlier">
-          <Button
-            link
-            label={showSeen ? 'Hide earlier notifications' : 'Show earlier notifications'}
-            icon={showSeen ? 'pi pi-chevron-up' : 'pi pi-chevron-down'}
-            onClick={() => setShowSeen((v) => !v)}
-          />
-        </div>
-      )}
-
-      {showBanner && seenAlerts.length > 0 && (
-        <div className="series-alerts-earlier">
-          <Button
-            link
-            label={showSeen ? 'Hide earlier notifications' : `Show ${seenAlerts.length} earlier`}
-            icon={showSeen ? 'pi pi-chevron-up' : 'pi pi-chevron-down'}
-            onClick={() => setShowSeen((v) => !v)}
-          />
-        </div>
-      )}
-
-      {showSeen && seenAlerts.length > 0 && (
-        <section className="series-alerts series-alerts--seen" aria-label="Earlier notifications">
-          <ul className="series-alerts-list">
-            {seenAlerts.map((a) => (
-              <li key={a.alert_key}>
-                <i
-                  className={a.kind === 'new_volume' ? 'pi pi-sparkles' : 'pi pi-book'}
-                  aria-hidden="true"
-                />{' '}
-                {a.message}
-                {a.detail && <span className="series-alert-detail"> · {a.detail}</span>}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
 
       {error && <p style={{ color: 'var(--accent-red)' }}>{error}</p>}
 
@@ -599,6 +586,7 @@ export function Series() {
                     }
                     onRefresh={handleRefresh}
                     onSetLang={handleSetLang}
+              onAddVolume={handleAddVolume}
                     onEdit={openEdit}
                     refreshing={refreshingKey === s.series_key}
                   />
@@ -670,6 +658,7 @@ export function Series() {
                     }
                     onRefresh={handleRefresh}
                     onSetLang={handleSetLang}
+              onAddVolume={handleAddVolume}
                     onEdit={openEdit}
                     refreshing={refreshingKey === s.series_key}
                   />

@@ -294,6 +294,15 @@ export interface ReleaseEdition {
  * The editor-written, facts-only release summary for a watched series (wave 6).
  * One factual `headline` plus structured detail revealed under "Details".
  */
+export interface FoundVolume {
+  volume: number | null;
+  title: string;
+  status: 'released' | 'announced' | 'unknown';
+  date: string | null;
+  source_url: string | null;
+  added_book_id: number | null;
+}
+
 export interface ReleaseSummary {
   status: ReleaseStatus;
   headline: string;
@@ -305,6 +314,8 @@ export interface ReleaseSummary {
     pl?: ReleaseEdition | null;
     en?: ReleaseEdition | null;
   };
+  /** Volumes found that are not in the library (gaps + next), each addable as 'want'. */
+  found_volumes?: FoundVolume[];
   added_book_id: number | null;
   checked_at: string | null;
 }
@@ -373,6 +384,8 @@ export interface SeriesPreferences {
   sort: string | null;
   /** Default release-research language for newly watched series (wave 6; default 'pl'). */
   default_search_lang: SeriesSearchLang;
+  /** Found volumes: 'auto' adds them as Want to read; 'ask' shows an Add button. */
+  add_mode?: 'auto' | 'ask';
 }
 
 export interface ExpectedBook {

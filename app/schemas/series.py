@@ -75,6 +75,25 @@ class ReleaseEdition(BaseModel):
     source_url: str | None = None
 
 
+class FoundVolume(BaseModel):
+    """A volume the research found that is not in the library (a gap or the next one)."""
+
+    volume: float | None = None
+    title: str
+    status: str = "unknown"  # released | announced | unknown
+    date: str | None = None
+    source_url: str | None = None
+    # Set once it is in the library (auto-added or added from the card).
+    added_book_id: int | None = None
+
+
+class FoundVolumeAdd(BaseModel):
+    """Body of ``POST /api/series/{key}/volumes``: add one found volume as 'want'."""
+
+    title: str = Field(min_length=1, max_length=300)
+    volume: float | None = None
+
+
 class ReleaseSummary(BaseModel):
     """The clean, editor-written release summary for a watched series (wave 6).
 
@@ -92,6 +111,9 @@ class ReleaseSummary(BaseModel):
     expected_date: str | None = None
     details: list[ReleaseDetail] = Field(default_factory=list)
     editions: dict[str, ReleaseEdition] = Field(default_factory=dict)
+    # Every volume of the series the research found that the user does NOT own yet
+    # (gaps like a missing #1 and the next volume). Each can be added as 'want'.
+    found_volumes: list[FoundVolume] = Field(default_factory=list)
     added_book_id: int | None = None
     checked_at: str | None = None
 
@@ -289,11 +311,19 @@ class SeriesPreferences(BaseModel):
     sort: str | None = None
     # Default research language for a newly-watched series ('pl' | 'en' | 'both').
     default_search_lang: str = "pl"
+    # What to do when research finds a volume the user does not own:
+    # 'auto' = add it to the library as 'want'; 'ask' = show an Add button on the card.
+    add_mode: str = "auto"
 
     @field_validator("default_search_lang")
     @classmethod
     def valid_default_search_lang(cls, value: str) -> str:
         return value if value in SEARCH_LANGS else "pl"
+
+    @field_validator("add_mode")
+    @classmethod
+    def valid_add_mode(cls, value: str) -> str:
+        return value if value in ("auto", "ask") else "auto"
 
 
 class SeriesRefresh(BaseModel):

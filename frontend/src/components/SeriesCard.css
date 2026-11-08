@@ -149,6 +149,7 @@
 
 .series-card-lang {
   flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .series-card-next {

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import TYPE_CHECKING, Any
 
 from app.config import Settings, get_settings
@@ -88,6 +89,9 @@ _RESEARCHER_PROMPT = (
     "- Report the REAL book title of the next volume, not the series name.\n"
     "- Always note the source URL you took each fact from.\n"
     "- Keep tool calls minimal; you have a strict call budget.\n"
+    "Also note the real title, number and release status of every MISSING volume (a "
+    "number lower than the highest owned that is not in the owned list), if the pages "
+    "you read list them.\n"
     "When done, write a short plain-text brief of what you found for each requested "
     "language: the next volume's real title, its volume number, any release/announcement "
     "date (or that none was found), whether it is released / announced / being translated / "
@@ -114,6 +118,10 @@ _EDITOR_PROMPT = (
     "check (no 'Nie znaleziono…', 'Nie sprawdzono…').\n"
     "- editions: per requested language ('pl' and/or 'en') with status, title, date, "
     "source_url.\n"
+    "- found_volumes: EVERY volume of this series the brief names with a real title that "
+    "is NOT in the owned list (missing earlier volumes AND the next one), each with volume "
+    "number, real title (in the searched edition's language when known), status "
+    "(released / announced / unknown), date and source_url. Empty list if none.\n"
     "If the brief found nothing concrete, use status 'no_news' or 'unknown', a factual "
     "Polish headline saying so, and null title/date. Return ONLY the structured summary."
 )
@@ -169,6 +177,9 @@ def _build_prompt(
     owned_str = ", ".join(str(v) for v in owned_sorted) if owned_sorted else "none recorded"
     other = ", ".join(a for a in (aliases or []) if a) or "none"
     nxt = _next_number(owned)
+    whole = {int(v) for v in owned if float(v).is_integer()}
+    missing = [n for n in range(1, max(whole)) if n not in whole] if whole else []
+    missing_str = ", ".join(str(n) for n in missing) if missing else "none"
     lang_label = {"pl": "Polish", "en": "original/English"}
     langs_str = ", ".join(lang_label.get(language, language) for language in langs)
     text = (
@@ -177,6 +188,9 @@ def _build_prompt(
         f"Author: {author or 'unknown'}\n"
         f"Owned volume numbers: {owned_str}\n"
         f"Highest owned: {highest}\n"
+        f"MISSING volume numbers (not owned, lower than the highest): {missing_str}\n"
+        "For every missing number find its real title and release status too; each one "
+        "the user does not own MUST appear in found_volumes.\n"
         f"Next volume to find: {nxt if nxt else 'unknown'}\n"
         f"LANGUAGE(S) to search (ONLY these): {langs_str}\n\n"
         "Find the next volume after the highest owned one, in the requested language(s) "
@@ -241,7 +255,13 @@ def _clean_title(title: str | None, series: str, aliases: list[str]) -> str | No
     """
     if not title:
         return None
-    t = title.strip()
+    # Drop editor notes in brackets: "Ritual of Ruin (Polish title not found)".
+    t = re.sub(
+        r"\s*[\(\[][^)\]]*(not found|unknown|nie znalezion|nieznan|brak|niepotwierdz)[^)\]]*[\)\]]",
+        "",
+        title,
+        flags=re.IGNORECASE,
+    ).strip()
     if not t:
         return None
     from app.services.series import series_key
@@ -280,6 +300,35 @@ def _clamp_summary(summary: ReleaseSummary, series: str, aliases: list[str]) -> 
         if edition.status is not None and edition.status not in _STATUS_VALUES:
             edition.status = "unknown"
         edition.title = _clean_title(edition.title, series, aliases)
+    # Found volumes: real titles only, valid status, one row per volume number.
+    found = []
+    seen: set[object] = set()
+    for fv in summary.found_volumes:
+        title = _clean_title(fv.title, series, aliases)
+        if not title:
+            continue
+        key = fv.volume if fv.volume is not None else title.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        fv.title = title
+        if fv.status not in ("released", "announced"):
+            fv.status = "unknown"
+        found.append(fv)
+    # The next volume always appears in the list when the editor named it.
+    if summary.next_title and summary.next_volume not in seen:
+        from app.schemas.series import FoundVolume
+
+        nxt_status = summary.status if summary.status in ("released", "announced") else "unknown"
+        found.append(
+            FoundVolume(
+                volume=summary.next_volume,
+                title=summary.next_title,
+                status=nxt_status,
+                date=summary.expected_date,
+            )
+        )
+    summary.found_volumes = found
     return summary
 
 

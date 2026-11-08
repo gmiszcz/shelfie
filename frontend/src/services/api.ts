@@ -329,6 +329,13 @@ export const api = {
       body: JSON.stringify(searchLang ? { search_lang: searchLang } : {}),
     }),
 
+  /** Add one found series volume to the library as Want to read (card Add button). */
+  addSeriesVolume: (key: string, title: string, volume: number | null) =>
+    request<SeriesSummary>(`/series/${encodeURIComponent(key)}/volumes`, {
+      method: 'POST',
+      body: JSON.stringify({ title, volume }),
+    }),
+
   checkSeries: () => request<{ checked: number; updated: number; series: string[] }>(
     '/series/check',
     { method: 'POST' },

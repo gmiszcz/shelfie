@@ -417,11 +417,13 @@ def test_auto_add_google_429_keeps_waiting_entry(
     _patch_google(monkeypatch, err)
     _run_research(db_file, key, _editor_summary(status="released"))
 
-    # No book added; one clean waiting-list entry kept.
-    assert not [b for b in client.get("/api/books").json() if b["title"] == "Ritual of Ruin"]
-    expected = client.get("/api/series/expected").json()
-    assert len(expected) == 1
-    assert expected[0]["title"] == "Ritual of Ruin"
+    # Google is out (429, no retry): the book is still added from the title as 'want'
+    # (no cover/metadata), and it is not also left on the waiting list.
+    added = [b for b in client.get("/api/books").json() if b["title"] == "Ritual of Ruin"]
+    assert len(added) == 1
+    assert added[0]["status"] == "want"
+    assert added[0]["google_volume_id"] is None
+    assert client.get("/api/series/expected").json() == []
 
 
 def test_auto_add_not_added_twice(
@@ -567,3 +569,77 @@ def test_migration_adds_columns_and_keeps_data(tmp_path: Path) -> None:
             await conn.close()
 
     asyncio.run(check())
+
+
+def test_found_missing_volume_auto_added(
+    client: TestClient, db_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A gap (#1 missing, own #2 and #3) found by research is added as 'want' (auto mode)."""
+    for vol in ("2", "3"):
+        _add(
+            client,
+            title=f"Gap {vol}",
+            series="GapSeries",
+            volume=vol,
+            status="finished",
+            finished_on="2024-01-01",
+        )
+    key = client.get("/api/series").json()[0]["series_key"]
+    client.patch(f"/api/series/{key}", json={"author": "Kel Kade"})
+    _patch_google(monkeypatch, [])  # Google has nothing -> added from the title
+
+    from app.schemas.series import FoundVolume
+
+    summary = _editor_summary(status="no_news")
+    summary.next_title = None
+    summary.next_volume = None
+    summary.found_volumes = [
+        FoundVolume(volume=1, title="Cmentarz grozy", status="released", date="2023"),
+        FoundVolume(volume=2, title="Gap 2", status="released"),  # owned -> dropped
+    ]
+    _run_research(db_file, key, summary)
+
+    books = client.get("/api/books").json()
+    added = [b for b in books if b["title"] == "Cmentarz grozy"]
+    assert len(added) == 1
+    assert added[0]["status"] == "want"
+    assert str(added[0]["volume"]) == "1"
+    rs = client.get(f"/api/series/{key}").json()["release_summary"]
+    assert [fv["volume"] for fv in rs["found_volumes"]] == [1.0]
+    assert rs["found_volumes"][0]["added_book_id"] == added[0]["id"]
+
+
+def test_ask_mode_does_not_add_until_clicked(
+    client: TestClient, db_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _add(
+        client,
+        title="Ask 2",
+        series="AskSeries",
+        volume="2",
+        status="finished",
+        finished_on="2024-01-01",
+    )
+    key = client.get("/api/series").json()[0]["series_key"]
+    resp = client.put("/api/preferences/series", json={"filter": "all", "add_mode": "ask"})
+    assert resp.json()["add_mode"] == "ask"
+    _patch_google(monkeypatch, [])
+
+    from app.schemas.series import FoundVolume
+
+    summary = _editor_summary(status="no_news")
+    summary.next_title = None
+    summary.next_volume = None
+    summary.found_volumes = [FoundVolume(volume=1, title="Ask One", status="released")]
+    _run_research(db_file, key, summary)
+
+    assert not [b for b in client.get("/api/books").json() if b["title"] == "Ask One"]
+    rs = client.get(f"/api/series/{key}").json()["release_summary"]
+    assert rs["found_volumes"][0]["added_book_id"] is None
+
+    # The card's Add button.
+    resp = client.post(f"/api/series/{key}/volumes", json={"title": "Ask One", "volume": 1})
+    assert resp.status_code == 200
+    added = [b for b in client.get("/api/books").json() if b["title"] == "Ask One"]
+    assert len(added) == 1 and added[0]["status"] == "want"
+    assert resp.json()["release_summary"]["found_volumes"][0]["added_book_id"] == added[0]["id"]

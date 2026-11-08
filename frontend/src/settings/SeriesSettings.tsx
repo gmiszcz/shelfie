@@ -3,7 +3,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAgentAnchor } from '../agent-ui';
 import { api } from '../services/api';
 import type { SeriesPreferences, SeriesSearchLang } from '../types';
-import { LangSegmented } from '../ui';
+import { LangPicker, SERIES_LANG_OPTIONS, type LangOption } from '../ui';
+
+const ADD_MODE_OPTIONS: readonly LangOption<'auto' | 'ask'>[] = [
+  { value: 'auto', code: 'AUTO', label: 'Add as Want to read' },
+  { value: 'ask', code: 'ASK', label: 'Ask me (button on the card)' },
+];
 
 /**
  * The "Series search" settings sub-screen (wave 6). Lets the user pick the default
@@ -15,6 +20,7 @@ import { LangSegmented } from '../ui';
  */
 export function SeriesSettings() {
   const [lang, setLang] = useState<SeriesSearchLang>('pl');
+  const [addMode, setAddMode] = useState<'auto' | 'ask'>('auto');
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,6 +32,7 @@ export function SeriesSettings() {
       .then((prefs) => {
         if (!cancelled) {
           setLang(prefs.default_search_lang ?? 'pl');
+          setAddMode(prefs.add_mode ?? 'auto');
         }
       })
       .catch(() => undefined)
@@ -41,6 +48,32 @@ export function SeriesSettings() {
 
   // Save the default language. The series preferences PUT needs the whole object; we
   // read the current prefs first so we never clobber the active filter/sort.
+  const savePrefs = useCallback(async (patch: Partial<SeriesPreferences>) => {
+    setSaving(true);
+    setError(null);
+    try {
+      let current: SeriesPreferences;
+      try {
+        current = await api.getSeriesPreferences();
+      } catch {
+        current = { filter: 'all', sort: null, default_search_lang: 'pl', add_mode: 'auto' };
+      }
+      await api.putSeriesPreferences({ ...current, ...patch });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save');
+    } finally {
+      setSaving(false);
+    }
+  }, []);
+
+  const saveAddMode = useCallback(
+    (next: 'auto' | 'ask') => {
+      setAddMode(next);
+      void savePrefs({ add_mode: next });
+    },
+    [savePrefs],
+  );
+
   const save = useCallback(async (next: SeriesSearchLang) => {
     setLang(next);
     setSaving(true);
@@ -50,7 +83,7 @@ export function SeriesSettings() {
       try {
         current = await api.getSeriesPreferences();
       } catch {
-        current = { filter: 'all', sort: null, default_search_lang: 'pl' };
+        current = { filter: 'all', sort: null, default_search_lang: 'pl', add_mode: 'auto' };
       }
       await api.putSeriesPreferences({ ...current, default_search_lang: next });
     } catch (err) {
@@ -89,13 +122,28 @@ export function SeriesSettings() {
       <div className="settings-options">
         <div className="settings-option settings-series-lang">
           <span>Default search language</span>
-          <LangSegmented
+          <LangPicker
             value={lang}
+            options={SERIES_LANG_OPTIONS}
             onChange={(next) => void save(next)}
             ariaLabel="Default series search language"
             disabled={!loaded || saving}
           />
         </div>
+        <div className="settings-option settings-series-lang">
+          <span>Found volumes</span>
+          <LangPicker
+            value={addMode}
+            options={ADD_MODE_OPTIONS}
+            onChange={saveAddMode}
+            ariaLabel="What to do with found volumes"
+            disabled={!loaded || saving}
+          />
+        </div>
+        <p className="settings-hint">
+          AUTO adds a released or announced volume you do not own as Want to read. ASK shows a
+          Want to read button on the series card instead.
+        </p>
       </div>
       {error && <p className="settings-hint" style={{ color: 'var(--accent-red)' }}>{error}</p>}
     </div>

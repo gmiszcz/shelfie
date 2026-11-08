@@ -23,6 +23,8 @@ export interface UseSeries {
   refresh: (key: string, searchLang?: SeriesSearchLang) => Promise<void>;
   /** Persist a new per-series search language (PATCH search_lang). */
   setLang: (key: string, lang: SeriesSearchLang) => Promise<void>;
+  /** Add a found volume to the library as Want to read. */
+  addVolume: (key: string, title: string, volume: number | null) => Promise<void>;
   removeExpected: (id: number) => Promise<void>;
   /** Set the active filter and persist it to the per-user prefs table. */
   setFilter: (filter: SeriesFilterId) => void;
@@ -65,6 +67,7 @@ export function useSeries(): UseSeries {
 
   // The stored default search language, kept so a filter write never clobbers it.
   const defaultSearchLang = useRef<SeriesSearchLang>('pl');
+  const addMode = useRef<'auto' | 'ask'>('auto');
 
   // Restore the active filter from the per-user preferences table (any device).
   useEffect(() => {
@@ -75,6 +78,7 @@ export function useSeries(): UseSeries {
         if (!cancelled) {
           setFilterState(prefs.filter);
           defaultSearchLang.current = prefs.default_search_lang ?? 'pl';
+          addMode.current = prefs.add_mode ?? 'auto';
         }
       })
       .catch(() => undefined)
@@ -103,6 +107,7 @@ export function useSeries(): UseSeries {
             filter: next,
             sort: null,
             default_search_lang: defaultSearchLang.current,
+            add_mode: addMode.current,
           })
           .catch(() => undefined);
       }, 250);
@@ -147,6 +152,13 @@ export function useSeries(): UseSeries {
   const setLang = useCallback(async (key: string, lang: SeriesSearchLang) => {
     const updated = await api.updateSeries(key, { search_lang: lang });
     setSeries((prev) => prev.map((s) => (s.series_key === key ? updated : s)));
+  }, []);
+
+  const addVolume = useCallback(async (key: string, title: string, volume: number | null) => {
+    const updated = await api.addSeriesVolume(key, title, volume);
+    setSeries((prev) => prev.map((s) => (s.series_key === key ? updated : s)));
+    // The waiting list may have lost its entry for this book.
+    setExpected(await api.listExpected());
   }, []);
 
   const removeExpected = useCallback(async (id: number) => {
@@ -194,6 +206,7 @@ export function useSeries(): UseSeries {
     setWatch,
     refresh,
     setLang,
+    addVolume,
     removeExpected,
     setFilter,
     dismissAlerts,

@@ -10,6 +10,7 @@ from app.schemas.series import (
     AlertsSeenRequest,
     ExpectedBook,
     ExpectedBookCreate,
+    FoundVolumeAdd,
     SeriesBookAdd,
     SeriesBookVolume,
     SeriesCheckResult,
@@ -235,4 +236,25 @@ async def refresh_series(
         settings=settings,
         user_data=get_current_user_data(),
     )
+    return summary
+
+
+@router.post("/{series_key}/volumes", response_model=SeriesSummary)
+async def add_found_volume(
+    series_key: str,
+    data: FoundVolumeAdd,
+    user_id: CurrentUser,
+    conn: DbConn,
+    settings: AppSettings,
+) -> SeriesSummary:
+    """Add one volume the research found (a gap or the next one) as 'want to read'.
+
+    One Google Books query (cached, inside the call budget) fills the metadata; without a
+    usable hit the book is added from the title. Used by the card's Add button.
+    """
+    summary = await service.add_found_volume(
+        conn, user_id, series_key, data.title.strip(), data.volume, settings=settings
+    )
+    if summary is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Series not found")
     return summary

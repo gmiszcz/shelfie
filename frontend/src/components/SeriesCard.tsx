@@ -3,7 +3,7 @@ import { InputSwitch } from 'primereact/inputswitch';
 import { Tag } from 'primereact/tag';
 
 import type { OwnedVolume, SeriesSearchLang, SeriesSummary } from '../types';
-import { BookCover, LangSegmented, ProgressBar } from '../ui';
+import { BookCover, LangPicker, ProgressBar, SERIES_LANG_OPTIONS } from '../ui';
 
 import { SeriesReleaseWatch } from './SeriesReleaseWatch';
 import './SeriesCard.css';
@@ -17,6 +17,8 @@ interface Props {
   onEdit: (key: string) => void;
   /** Persist a new search language for this series (PATCH search_lang). */
   onSetLang: (key: string, lang: SeriesSearchLang) => void;
+  /** Add a volume the research found as Want to read. */
+  onAddVolume?: (key: string, title: string, volume: number | null) => Promise<void>;
   refreshing: boolean;
 }
 
@@ -40,6 +42,7 @@ export function SeriesCard({
   onRefresh,
   onEdit,
   onSetLang,
+  onAddVolume,
   refreshing,
 }: Props) {
   const totalLabel = series.total_known ?? series.owned_count;
@@ -117,16 +120,17 @@ export function SeriesCard({
 
       <footer className="series-card-foot">
         <div className="series-card-watch-row">
-          <label className="series-card-watch">
+          <label className="series-card-watch" title="Watch for new volumes">
             <InputSwitch
               checked={series.watch}
               onChange={(e) => onToggleWatch(series.series_key, !!e.value)}
               aria-label={`Watch ${series.name} for new volumes`}
             />
-            <span>Watch for new volumes</span>
+            <span>New volumes</span>
           </label>
-          <LangSegmented
+          <LangPicker
             value={lang}
+            options={SERIES_LANG_OPTIONS}
             onChange={(next) => onSetLang(series.series_key, next)}
             ariaLabel={`Search language for ${series.name}`}
             className="series-card-lang"
@@ -140,6 +144,11 @@ export function SeriesCard({
             summary={series.release_summary}
             checking={series.checking}
             onOpenBook={onOpenVolume}
+            onAddVolume={
+              onAddVolume
+                ? (title, volume) => onAddVolume(series.series_key, title, volume)
+                : undefined
+            }
           />
         )}
 

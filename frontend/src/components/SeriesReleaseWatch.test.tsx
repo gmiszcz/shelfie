@@ -123,7 +123,7 @@ describe('SeriesReleaseWatch', () => {
         onOpenBook={noop}
       />,
     );
-    expect(screen.getByText('Not checked yet')).toBeTruthy();
+    expect(screen.getByText(/No summary yet/)).toBeTruthy();
   });
 
   it('shows a checking spinner when research is in flight', () => {
