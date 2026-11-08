@@ -13,6 +13,7 @@ from app.schemas.series import (
     ExpectedBookCreate,
     KnownVolume,
     NextExpected,
+    ReleaseSummary,
     SeriesInfo,
 )
 
@@ -36,6 +37,12 @@ def _row_to_info(row: aiosqlite.Row) -> SeriesInfo:
         else None
     )
     checking = bool(row["checking"]) if "checking" in keys else False
+    search_lang = row["search_lang"] if "search_lang" in keys and row["search_lang"] else "pl"
+    summary_raw = (
+        json.loads(row["release_summary"])
+        if "release_summary" in keys and row["release_summary"]
+        else None
+    )
     return SeriesInfo(
         series_key=row["series_key"],
         display_name=row["display_name"] or "",
@@ -47,6 +54,8 @@ def _row_to_info(row: aiosqlite.Row) -> SeriesInfo:
         next_expected=NextExpected.model_validate(next_raw) if next_raw else None,
         next_expected_pl=NextExpected.model_validate(pl_raw) if pl_raw else None,
         next_expected_en=NextExpected.model_validate(en_raw) if en_raw else None,
+        search_lang=search_lang,
+        release_summary=ReleaseSummary.model_validate(summary_raw) if summary_raw else None,
         checking=checking,
         notes=row["notes"],
         last_checked=row["last_checked"],
@@ -92,14 +101,20 @@ async def upsert_info(
         if info.next_expected_en
         else None
     )
+    release_summary = (
+        json.dumps(info.release_summary.model_dump(), ensure_ascii=False)
+        if info.release_summary
+        else None
+    )
+    search_lang = info.search_lang if info.search_lang in ("pl", "en", "both") else "pl"
     last_checked = _now() if touch_checked else info.last_checked
     await conn.execute(
         """
         INSERT INTO series_info
             (user_id, series_key, display_name, author, aliases, known_volumes,
              total_known, watch, next_expected, next_expected_pl, next_expected_en,
-             checking, notes, last_checked, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+             search_lang, release_summary, checking, notes, last_checked, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
         ON CONFLICT(user_id, series_key) DO UPDATE SET
             display_name = excluded.display_name,
             author = excluded.author,
@@ -110,6 +125,8 @@ async def upsert_info(
             next_expected = excluded.next_expected,
             next_expected_pl = excluded.next_expected_pl,
             next_expected_en = excluded.next_expected_en,
+            search_lang = excluded.search_lang,
+            release_summary = excluded.release_summary,
             checking = excluded.checking,
             notes = excluded.notes,
             last_checked = excluded.last_checked,
@@ -127,6 +144,8 @@ async def upsert_info(
             next_expected,
             next_pl,
             next_en,
+            search_lang,
+            release_summary,
             int(info.checking),
             info.notes,
             last_checked,
