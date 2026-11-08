@@ -16,6 +16,10 @@ primary_region = "fra"
   COOKIE_SECURE = "true"
   REGISTRATION_ENABLED = "false"
   GOOGLE_BOOKS_MAX_CALLS = "20"
+  # Fly is not EC2: without this, boto3 probes the EC2 metadata service (IMDS) for
+  # credentials on every new client and waits ~2 s for it to time out. Measured: each
+  # agent turn went from ~3.4 s to ~1.4 s. Auth uses AWS_BEARER_TOKEN_BEDROCK / static keys.
+  AWS_EC2_METADATA_DISABLED = "true"
 
 # Persistent data: auth.sqlite, users/<id>/ (library, books.json, covers), caches.
 [mounts]

@@ -55,3 +55,21 @@ the last check is older than 24 h (see series-tracking.md). The laptop Kiro Crew
   `FLY_NO_UPDATE_CHECK=1`).
 - SPA routes (`/setup?token=...`) fall back to `index.html` (`SpaStaticFiles` in `app/main.py`).
 - The login throttle uses `Fly-Client-IP`, then the last `X-Forwarded-For` hop.
+
+## Agent speed on Fly (measured 2026-11-08)
+
+`E:\WebDev\shelfie-wt\bench_agents.py`: one `/api/agui/run` turn (7 tools, small state) and
+one library-agent question, time to first byte (TTFB) / total, seconds.
+
+| Where | UI turn warm | Library warm |
+|---|---|---|
+| laptop | 0.02 / 1.4 | 0.27 / 3.2 |
+| Fly 512 MB | 2.05 / 3.4 | 2.16 / 5.0 |
+| Fly 2 CPU / 1 GB | 2.05 / 3.5 | 2.16 / 6.5 |
+| Fly 2 CPU / 1 GB + `AWS_EC2_METADATA_DISABLED` | 0.05 / 1.6 | 0.15 / 3.2 |
+| Fly 512 MB + `AWS_EC2_METADATA_DISABLED` | 0.05 / 1.4 | 0.16 / 3.0 |
+
+Cause: a constant ~2 s before the first byte on every request, independent of CPU/RAM.
+boto3 builds a new client per request and, finding no AWS credentials file on Fly, probed the
+EC2 metadata service (IMDS) until it timed out. `AWS_EC2_METADATA_DISABLED=true` (in
+`fly.toml [env]`) removes it. A bigger machine gives nothing; Fly stays on 512 MB.
