@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import subprocess
+import subprocess  # nosec B404 - runs our own script with a fixed argv
 import sys
 import time
 import unicodedata
@@ -166,7 +166,7 @@ def main() -> None:
         found += 1
         print(f"OK   {label}  ->  {hit[1]}")
         if args.apply:
-            res = subprocess.run(
+            res = subprocess.run(  # nosec B603 - fixed argv, no shell
                 [
                     sys.executable,
                     "-m",

@@ -279,7 +279,8 @@ async def research_series_releases(
     if own_conn:
         data = user_data or get_current_user_data()
         conn = await connect(data.database_file)
-    assert conn is not None
+    if conn is None:  # unreachable; narrows the type without a bandit-flagged assert
+        raise RuntimeError("no database connection")
     try:
         summary = await get_series(conn, user_id, series_key)
         if summary is None:
@@ -288,12 +289,13 @@ async def research_series_releases(
         owned = [o.volume for o in summary.owned_volumes if o.volume is not None]
 
         existing_info = await repo.get_info(conn, user_id, key)
-        effective_lang = (
+        effective_lang: str = (
             search_lang
-            if search_lang in ("pl", "en", "both")
+            if search_lang is not None and search_lang in ("pl", "en", "both")
             else (existing_info.search_lang if existing_info else "pl")
         )
-        assert effective_lang in ("pl", "en", "both")
+        if effective_lang not in ("pl", "en", "both"):
+            effective_lang = "pl"
 
         if research_fn is None:
             from app.agent.series_research import research_next_volumes
