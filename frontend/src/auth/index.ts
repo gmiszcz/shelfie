@@ -1,4 +1,4 @@
-export { AuthProvider, useAuth } from './AuthProvider';
+export { AuthProvider, AuthContext, useAuth, useOptionalAuthUser } from './AuthProvider';
 export { AuthGate } from './AuthGate';
 export { UserMenu } from './UserMenu';
 export { UsersPage } from './UsersPage';

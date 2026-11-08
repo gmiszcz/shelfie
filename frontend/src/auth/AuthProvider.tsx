@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import {
   createContext,
   useCallback,
@@ -9,6 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 
+import { clearPersistedCache } from '../queries';
 import { ApiError, api, onUnauthorized } from '../services/api';
 import type { AuthUser } from './authTypes';
 
@@ -32,12 +34,24 @@ interface AuthContextValue {
   setUser: (user: AuthUser) => void;
 }
 
-const AuthContext = createContext<AuthContextValue | null>(null);
+export const AuthContext = createContext<AuthContextValue | null>(null);
+
+/**
+ * The current user without throwing when there is no AuthProvider above. Query hooks use
+ * this so a component can be unit-tested with just a QueryClient (no auth stack) — it then
+ * reads the fallback test id. In the real app the provider is always present.
+ */
+export function useOptionalAuthUser(): AuthUser | null {
+  return useContext(AuthContext)?.user ?? null;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [user, setUserState] = useState<AuthUser | null>(null);
   const mounted = useRef(true);
+  const queryClient = useQueryClient();
+  // The id the cache currently belongs to, so a switch to a DIFFERENT person wipes it.
+  const cacheOwner = useRef<number | null>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -45,6 +59,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mounted.current = false;
     };
   }, []);
+
+  /**
+   * Drop every cached query AND the persisted IndexedDB copy. Called on logout and when
+   * the logged-in person changes, so one user's library is never shown to another even
+   * for an instant (the query keys are already per-user; this is the belt-and-braces wipe
+   * the spec requires).
+   */
+  const wipeCache = useCallback(async () => {
+    queryClient.cancelQueries();
+    queryClient.clear();
+    await clearPersistedCache();
+  }, [queryClient]);
+
+  // Whenever the logged-in user changes to a different id (or to nobody), wipe the cache
+  // so the previous person's persisted data can never render for the new one.
+  useEffect(() => {
+    const id = user?.id ?? null;
+    if (cacheOwner.current !== null && cacheOwner.current !== id) {
+      void wipeCache();
+    }
+    cacheOwner.current = id;
+  }, [user?.id, wipeCache]);
 
   // Load "who am I" once at startup. A 401 is the normal "not logged in" answer
   // (the probe opts out of the global handler), so it resolves to anonymous.
@@ -108,9 +144,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     }
+    // Clear the (persisted) cache so the next person to log in on this device starts clean.
+    await wipeCache();
     setUserState(null);
     setStatus('anonymous');
-  }, []);
+  }, [wipeCache]);
 
   const changePassword = useCallback(
     async (currentPassword: string, newPassword: string) => {

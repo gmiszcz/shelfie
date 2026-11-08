@@ -2,7 +2,11 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useSeries } from './useSeries';
+import { QueryWrapper } from '../queries/testUtils';
 import type { SeriesAlertsResponse } from '../types';
+
+/** Render useSeries inside a fresh QueryClient (its data now lives in the query cache). */
+const renderUseSeries = () => renderHook(() => useSeries(), { wrapper: QueryWrapper });
 
 const listSeries = vi.fn();
 const listExpected = vi.fn();
@@ -72,34 +76,37 @@ beforeEach(() => {
 
 describe('useSeries alerts', () => {
   it('exposes the badge as unseen_count from the server', async () => {
-    const { result } = renderHook(() => useSeries());
+    const { result } = renderUseSeries();
     await waitFor(() => expect(result.current.alerts?.unseen_count).toBe(2));
   });
 
   it('dismiss-all calls the seen endpoint and drops the badge to 0', async () => {
-    const { result } = renderHook(() => useSeries());
+    const { result } = renderUseSeries();
     await waitFor(() => expect(result.current.alerts?.unseen_count).toBe(2));
+    // After the server marks everything seen, a later GET also reports all-seen (server truth),
+    // so a background revalidation cannot resurrect the badge.
+    seriesAlerts.mockResolvedValue(alertResponse([KEY_NV, KEY_IP]));
     await act(async () => {
       await result.current.dismissAlerts({ all: true });
     });
     expect(markAlertsSeen).toHaveBeenCalledWith({ all: true });
-    expect(result.current.alerts?.unseen_count).toBe(0);
+    await waitFor(() => expect(result.current.alerts?.unseen_count).toBe(0));
   });
 
   it('seen state survives a remount because it comes from the server', async () => {
     // Server already has both alerts seen.
     seriesAlerts.mockResolvedValue(alertResponse([KEY_NV, KEY_IP]));
-    const first = renderHook(() => useSeries());
+    const first = renderUseSeries();
     await waitFor(() => expect(first.result.current.alerts?.unseen_count).toBe(0));
     first.unmount();
     // A fresh mount reads the same seen state (badge still 0), not a stale local value.
-    const second = renderHook(() => useSeries());
+    const second = renderUseSeries();
     await waitFor(() => expect(second.result.current.alerts?.unseen_count).toBe(0));
   });
 
   it('rolls back the badge when the dismiss request fails', async () => {
     markAlertsSeen.mockRejectedValue(new Error('network'));
-    const { result } = renderHook(() => useSeries());
+    const { result } = renderUseSeries();
     await waitFor(() => expect(result.current.alerts?.unseen_count).toBe(2));
     await act(async () => {
       await expect(result.current.dismissAlerts({ all: true })).rejects.toThrow('network');
@@ -112,13 +119,13 @@ describe('useSeries alerts', () => {
 describe('useSeries preferences', () => {
   it('restores the active filter from the preferences endpoint', async () => {
     getSeriesPreferences.mockResolvedValue({ filter: 'watching', sort: null });
-    const { result } = renderHook(() => useSeries());
+    const { result } = renderUseSeries();
     await waitFor(() => expect(result.current.filter).toBe('watching'));
   });
 
   it('persists a filter change to the preferences endpoint', async () => {
     vi.useFakeTimers();
-    const { result } = renderHook(() => useSeries());
+    const { result } = renderUseSeries();
     await vi.waitFor(() => expect(result.current.prefsLoaded).toBe(true));
     act(() => {
       result.current.setFilter('complete');

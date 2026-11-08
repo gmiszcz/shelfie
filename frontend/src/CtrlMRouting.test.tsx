@@ -61,6 +61,12 @@ vi.mock('./services/api', () => ({
     })),
     recomputeRatings: vi.fn(async () => ({ rated_books: 0, comparisons: 0 })),
     nextPair: vi.fn(async () => null),
+    nextPairs: vi.fn(async () => []),
+    listSeries: vi.fn(async () => []),
+    listExpected: vi.fn(async () => []),
+    seriesAlerts: vi.fn(async () => ({ count: 0, unseen_count: 0, in_progress: [], new_volume: [] })),
+    getSeriesPreferences: vi.fn(async () => ({ filter: null, sort: null })),
+    putSeriesPreferences: vi.fn(async () => undefined),
     chat: vi.fn(),
     resetChat: vi.fn(async () => undefined),
   },
@@ -70,13 +76,17 @@ vi.mock('./services/api', () => ({
 import App from './App';
 // eslint-disable-next-line import/first
 import { AuthProvider } from './auth';
+// eslint-disable-next-line import/first
+import { QueryWrapper } from './queries/testUtils';
 
 /** Render the app wrapped in the auth provider (authenticated via the api mock). */
 function renderApp() {
   return render(
-    <AuthProvider>
-      <App />
-    </AuthProvider>,
+    <QueryWrapper>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </QueryWrapper>,
   );
 }
 

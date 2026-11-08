@@ -6,11 +6,11 @@ import { Rating } from 'primereact/rating';
 import { SelectButton } from 'primereact/selectbutton';
 import { Skeleton } from 'primereact/skeleton';
 import { Tag } from 'primereact/tag';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { PlotChart } from '../components/PlotChart';
 import { formatAuthors } from '../format';
-import { api } from '../services/api';
+import { useStatsQuery } from '../queries';
 import { useAgentAnchor } from '../agent-ui';
 import {
   barOption,
@@ -21,7 +21,7 @@ import {
   type PresetRange,
   type StatsMetric,
 } from '../statsView';
-import type { Book, GroupBy, StatsResponse } from '../types';
+import type { Book, GroupBy } from '../types';
 import { BookCover, Panel, SearchInput, SectionLabel, StatCard } from '../ui';
 
 import './Stats.css';
@@ -80,10 +80,6 @@ export function Stats() {
   const [groupBy, setGroupBy] = useState<GroupBy>('month');
   const [metric, setMetric] = useState<StatsMetric>('books');
   const [tableSearch, setTableSearch] = useState('');
-
-  const [data, setData] = useState<StatsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   // Theme key: recompute chart/spark colors when the theme toggles.
   const [themeKey, setThemeKey] = useState(0);
@@ -165,23 +161,15 @@ export function Stats() {
     set: (v) => setTableSearch(typeof v === 'string' ? v : String(v ?? '')),
   });
 
-  const fetchStats = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setData(await api.stats(groupBy, range.from, range.to));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load statistics');
-      setData(null);
-    } finally {
-      setLoading(false);
-    }
-    // Refetch only when the range or grouping changes — NOT on a metric switch.
-  }, [groupBy, range.from, range.to]);
-
-  useEffect(() => {
-    void fetchStats();
-  }, [fetchStats]);
+  // Stats come from the shared, persisted cache, keyed by (groupBy, from, to). A range
+  // already seen this session is instant; switching the metric never refetches (the metric
+  // is not part of the key). While a new range loads, the previous chart stays on screen
+  // (placeholderData in the query), so there is no flash to empty. Leaving and returning to
+  // the Stats tab within the fresh window reuses the cache with no network call.
+  const statsQuery = useStatsQuery(groupBy, range);
+  const data = statsQuery.data ?? null;
+  const loading = statsQuery.isPending;
+  const error = statsQuery.error ? statsQuery.error.message : null;
 
   const chartOption = useMemo(() => {
     if (!data) return null;
