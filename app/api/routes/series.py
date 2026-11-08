@@ -15,6 +15,7 @@ from app.schemas.series import (
     SeriesCheckResult,
     SeriesMerge,
     SeriesPatch,
+    SeriesRefresh,
     SeriesRename,
     SeriesSummary,
 )
@@ -103,9 +104,10 @@ async def patch_series(
     ``aliases``, ``author``, ``total_volumes``, ``notes``. To rename the series on every
     member book use ``POST /{series_key}/rename`` instead.
 
+    Also accepts ``search_lang`` ('pl'|'en'|'both') to set the series' research language.
     Turning ``watch`` ON schedules a web release-research run as a background task and
     returns at once with ``checking=true``; the UI polls ``GET /{series_key}`` until the
-    result lands. Never calls Google Books.
+    result lands. The research may run ONE Google Books lookup to auto-add a released volume.
     """
     summary = await service.update_series(
         conn,
@@ -117,6 +119,7 @@ async def patch_series(
         total_volumes=data.total_volumes,
         notes=data.notes,
         watch=data.watch,
+        search_lang=data.search_lang,
     )
     if summary is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Series not found")
@@ -207,13 +210,19 @@ async def refresh_series(
     conn: DbConn,
     background: BackgroundTasks,
     settings: AppSettings,
+    data: SeriesRefresh | None = None,
 ) -> SeriesSummary:
     """Re-run the web release-research step for one series.
 
-    Schedules the research as a background task and returns at once with ``checking=true``;
-    the UI polls ``GET /{series_key}`` for the result. Same step the watch toggle and
-    ``POST /series/check`` use. Never calls Google Books.
+    Accepts an optional body ``{"search_lang": "pl"|"en"|"both"}`` — a one-off language
+    override that is also saved to the series. Schedules the research as a background task
+    and returns at once with ``checking=true``; the UI polls ``GET /{series_key}`` for the
+    result. Same step the watch toggle and ``POST /series/check`` use. May run ONE Google
+    Books lookup to auto-add a released/announced volume.
     """
+    search_lang = data.search_lang if data is not None else None
+    if search_lang is not None:
+        await service.update_series(conn, user_id, series_key, search_lang=search_lang)
     await service.mark_checking(conn, user_id, series_key, checking=True)
     summary = await service.get_series(conn, user_id, series_key)
     if summary is None:
@@ -222,6 +231,7 @@ async def refresh_series(
         service.research_series_releases,
         user_id,
         summary.series_key,
+        search_lang=search_lang,
         settings=settings,
         user_data=get_current_user_data(),
     )

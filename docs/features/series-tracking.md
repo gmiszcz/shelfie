@@ -357,3 +357,71 @@ background task:
 
 Books added by hand to the waiting list are not re-checked; only watched series are.
 Tests: `tests/test_series_autocheck.py`.
+
+
+## Release research rework (wave 6 — 2026-11-08)
+
+The watched-series release info is now one clean, facts-only summary instead of raw links
+and "date unknown" waiting-list garbage.
+
+### Search language
+
+`series_info` gains `search_lang` (`'pl' | 'en' | 'both'`, default `'pl'`) and
+`SeriesPreferences` gains `default_search_lang` (default `'pl'`). A newly-watched series
+with no explicit language takes the user's default. The research searches ONLY the
+requested language(s): `pl` hits Polish publishers (e.g. Fabryka Słów for Kroniki Mroku),
+lubimyczytac.pl and empik.com; `en` hits the author's site, Goodreads and Amazon.
+
+- `PATCH /api/series/{key}` accepts `"search_lang"`.
+- `POST /api/series/{key}/refresh` accepts an optional body `{"search_lang": "both"}` — a
+  one-off override that is also saved to the series.
+- `GET/PUT /api/series/preferences` carry `default_search_lang`.
+
+### Two-agent research → `release_summary`
+
+`app/agent/series_research.py` now runs two agents in sequence (same Bedrock wiring,
+`_build_model`): a **RESEARCHER** (existing `web_search` / `fetch_url` tools, shared
+`CallBudget`) searches the requested language(s) and writes a plain-text brief, then an
+**EDITOR** turns it into a strict `release_summary` JSON stored on `series_info` and
+exposed on `SeriesSummary`:
+
+```json
+{
+  "status": "released | announced | in_translation | no_news | unknown",
+  "headline": "ONE factual Polish sentence (Google-AI-answer style)",
+  "next_title": "Ritual of Ruin",         // real title, never "<series> (… tom 7)"
+  "next_volume": 7,
+  "expected_date": "2026",                 // free text or ISO; never invented
+  "details": [{"text": "Polish bullet", "source_url": "https://…"}],
+  "editions": {"pl": {"status": "…", "title": "…", "date": null, "source_url": "…"}},
+  "added_book_id": 312,
+  "checked_at": "ISO-8601"
+}
+```
+
+`next_expected_pl` / `next_expected_en` are still filled for compatibility. A defensive
+clamp rejects a mangled `next_title` that is really the series name (+ a volume tag) and
+never lets an invented date survive a status with no real title.
+
+### Waiting list & auto-add
+
+- A waiting-list entry (source `series_research`) is created ONLY when the summary has a
+  real `next_title`. Every previously-researched entry — including the old wave-5
+  `series_research:pl` / `:en` garbage — is deleted on each run. Manual entries are untouched.
+- When the researched edition is `released` or `announced` and no owned book has that
+  volume, the step runs ONE Google Books search (`title + author`, via the existing cached,
+  budgeted `GoogleBooksClient` — stops on 429/budget, no retries, no variant queries).
+  A hit is accepted only when all significant title words match and the author surname is
+  close (small edit distance). On success the book is added to the library with status
+  `want`, `series` and `volume` set (through the book service so `books.json` stays in
+  sync); `release_summary.added_book_id` is set and the matching waiting-list entry removed.
+  Never adds twice. On no hit, one clean waiting-list entry is kept instead.
+
+### Migration
+
+`series_info` additively gains `search_lang` and `release_summary` (idempotent `_migrate`);
+all existing rows keep their data and default to `search_lang='pl'`.
+
+Tests: `tests/test_series_research.py` (lang filter, editor parsing/validation, garbage
+title rejected, auto-add happy / skipped-when-owned / 429-keeps-waiting / not-twice,
+migration keeps data).

@@ -19,7 +19,7 @@ from app.integrations.google_books import GoogleBooksClient
 from app.repositories import books as books_repo
 from app.repositories import prefs as prefs_repo
 from app.repositories import series as repo
-from app.schemas.books import Book, BookUpdate
+from app.schemas.books import Book, BookCreate, BookUpdate, ReadingStatus
 from app.schemas.series import (
     AlertsResponse,
     ExpectedBook,
@@ -99,7 +99,8 @@ async def set_watch(
     summary = await get_series(conn, user_id, series_key)
     if summary is None:
         return None
-    info = await repo.get_info(conn, user_id, summary.series_key) or SeriesInfo(
+    existing = await repo.get_info(conn, user_id, summary.series_key)
+    info = existing or SeriesInfo(
         series_key=summary.series_key,
         display_name=summary.name,
         author=summary.author,
@@ -107,8 +108,12 @@ async def set_watch(
     info.watch = watch
     # Turning watch ON schedules a web release-research run; flag it so the UI can show a
     # "Checking new volumes…" spinner while the background task runs. The caller (the route)
-    # kicks off research_series_releases() after this returns.
+    # kicks off research_series_releases() after this returns. A newly-watched series with
+    # no explicit language takes the user's default search language.
     info.checking = watch
+    if watch and (existing is None or not existing.search_lang):
+        prefs = await get_series_preferences(conn, user_id)
+        info.search_lang = prefs.default_search_lang
     await repo.upsert_info(conn, user_id, info)
     return await get_series(conn, user_id, summary.series_key)
 
@@ -131,17 +136,21 @@ async def refresh_series(
     user_id: int,
     series_key: str,
     *,
+    search_lang: str | None = None,
     settings: Settings | None = None,
 ) -> SeriesSummary | None:
     """Run the web release-research step for one series now and store the result.
 
-    This is the same step the watch toggle and ``POST /api/series/check`` use. It never
-    calls Google Books — see :mod:`app.agent.series_research`.
+    This is the same step the watch toggle and ``POST /api/series/check`` use. An optional
+    ``search_lang`` is a one-off override that is also saved to the series. The research
+    may call Google Books ONCE for an auto-add — see :mod:`app.agent.series_research`.
     """
     summary = await get_series(conn, user_id, series_key)
     if summary is None:
         return None
-    await research_series_releases(user_id, summary.series_key, settings=settings, conn=conn)
+    await research_series_releases(
+        user_id, summary.series_key, search_lang=search_lang, settings=settings, conn=conn
+    )
     return await get_series(conn, user_id, summary.series_key)
 
 
@@ -218,7 +227,7 @@ async def check_watched_series(
         checked=checked,
         updated=len(updated_names),
         series=updated_names,
-        notes="Source: web release research (Polish + original editions). Google Books not used.",
+        notes="Source: web release research. Google Books used only to auto-add a released volume.",
     )
 
 
@@ -246,6 +255,7 @@ async def research_series_releases(
     user_id: int,
     series_key: str,
     *,
+    search_lang: str | None = None,
     settings: Settings | None = None,
     conn: aiosqlite.Connection | None = None,
     research_fn: Any | None = None,
@@ -277,6 +287,14 @@ async def research_series_releases(
         key = summary.series_key
         owned = [o.volume for o in summary.owned_volumes if o.volume is not None]
 
+        existing_info = await repo.get_info(conn, user_id, key)
+        effective_lang = (
+            search_lang
+            if search_lang in ("pl", "en", "both")
+            else (existing_info.search_lang if existing_info else "pl")
+        )
+        assert effective_lang in ("pl", "en", "both")
+
         if research_fn is None:
             from app.agent.series_research import research_next_volumes
 
@@ -284,8 +302,11 @@ async def research_series_releases(
 
             async def _research(name: str, author: str, owned_: list[float]) -> Any:
                 # Pass the other-language names (e.g. "Kroniki Mroku" for "King's Dark
-                # Tidings") so the Polish edition is searched under its Polish title.
-                return await research_next_volumes(name, author, owned_, aliases=aliases)
+                # Tidings") so the Polish edition is searched under its Polish title, and the
+                # per-series search language so only the requested edition is researched.
+                return await research_next_volumes(
+                    name, author, owned_, search_lang=effective_lang, aliases=aliases
+                )
 
             research_fn = _research
 
@@ -295,12 +316,14 @@ async def research_series_releases(
             logger.warning("release research raised for %s", summary.name, exc_info=True)
             result = None
 
-        info = await repo.get_info(conn, user_id, key) or SeriesInfo(
+        info = existing_info or SeriesInfo(
             series_key=key, display_name=summary.name, author=summary.author
         )
         info.display_name = summary.name
         info.author = summary.author or info.author
+        info.search_lang = effective_lang
 
+        release_summary = result.summary if result else None
         pl = _next_expected_from_edition(result.pl) if result else None
         en = _next_expected_from_edition(result.en) if result else None
         info.next_expected_pl = pl
@@ -314,12 +337,20 @@ async def research_series_releases(
         highest = _highest_owned(summary)
         if (pl and pl.status != "unknown") or (en and en.status != "unknown"):
             info.total_known = max(info.total_known or 0, highest + 1)
+
+        # Auto-add: when the researched edition is released/announced and we have a real
+        # next title that the user does not already own, try ONE Google Books lookup and
+        # add the book to the library (status 'want'). Mutates release_summary.added_book_id
+        # and removes the matching waiting-list entry. Never adds twice.
+        if release_summary is not None:
+            await _maybe_auto_add(conn, user_id, summary, release_summary, settings=settings)
+        info.release_summary = release_summary
         info.checking = False
         await repo.upsert_info(conn, user_id, info, touch_checked=True)
 
-        # Upsert one waiting-list entry per language (keep manual entries untouched).
-        await _sync_waiting_entry(conn, user_id, key, summary.name, summary.author, "pl", pl)
-        await _sync_waiting_entry(conn, user_id, key, summary.name, summary.author, "en", en)
+        # Waiting list: one clean entry only when a real next_title exists, and delete any
+        # old garbage researched entries that never had a real title.
+        await _sync_waiting_list(conn, user_id, key, summary.name, summary.author, release_summary)
 
         return await get_series(conn, user_id, key)
     finally:
@@ -327,62 +358,218 @@ async def research_series_releases(
             await conn.close()
 
 
-async def _sync_waiting_entry(
+def _owns_volume(summary: SeriesSummary, volume: float | None) -> bool:
+    """True when the library already holds this series volume number."""
+    if volume is None:
+        return False
+    return any(
+        o.volume is not None and float(o.volume) == float(volume) for o in summary.owned_volumes
+    )
+
+
+async def _researched_waiting_entries(
+    conn: aiosqlite.Connection, user_id: int, series_key: str
+) -> list[ExpectedBook]:
+    """Waiting-list entries this research step owns (source prefix ``series_research``)."""
+    return [
+        e
+        for e in await repo.find_expected_by_series(conn, user_id, series_key)
+        if (e.source or "").startswith("series_research")
+    ]
+
+
+async def _sync_waiting_list(
     conn: aiosqlite.Connection,
     user_id: int,
     series_key: str,
     series_name: str,
     author: str,
-    lang: str,
-    nxt: NextExpected | None,
+    summary: Any | None,
 ) -> None:
-    """Upsert the waiting-list entry for one language's next-expected volume.
+    """Keep exactly one clean waiting-list entry for a series, only with a real title.
 
-    Identified by ``source == f"series_research:{lang}"`` so re-running updates the same
-    row and manual entries (source 'agent'/'user') are never touched. A ``None`` / titleless
-    result removes a previously-researched entry for that language.
+    Deletes all previously-researched entries (source prefix ``series_research``) for this
+    series — including the old wave-5 ``series_research:pl``/``:en`` garbage that had no
+    real title — then, when the editor summary carries a real ``next_title`` AND the book
+    was not auto-added (``added_book_id`` unset), creates one clean entry. Manual entries
+    (source 'agent'/'user') are never touched.
     """
-    source = f"series_research:{lang}"
-    existing = [
-        e
-        for e in await repo.find_expected_by_series(conn, user_id, series_key)
-        if (e.source or "") == source
-    ]
-    if nxt is None or not nxt.title:
-        for entry in existing:
-            await repo.delete_expected(conn, user_id, entry.id)
+    for entry in await _researched_waiting_entries(conn, user_id, series_key):
+        await repo.delete_expected(conn, user_id, entry.id)
+
+    if summary is None or not summary.next_title:
         return
-    label = "PL" if lang == "pl" else "EN"
-    payload = {
-        "title": nxt.title,
-        "author": author,
-        "series_name": series_name,
-        "expected_date": nxt.date,
-        "source_url": nxt.source_url,
-        "source": source,
-        "confidence": nxt.confidence,
-        "notes": f"{label} edition · {nxt.status or 'unknown'}",
-    }
-    if existing:
-        await repo.update_expected(conn, user_id, existing[0].id, payload)
-        for extra in existing[1:]:
-            await repo.delete_expected(conn, user_id, extra.id)
-    else:
-        await repo.add_expected(
-            conn,
-            user_id,
-            ExpectedBookCreate(
-                title=nxt.title,
-                author=author,
-                series_name=series_name,
-                expected_date=nxt.date,
-                source_url=nxt.source_url,
-                source=source,
-                confidence=nxt.confidence,
-                notes=f"{label} edition · {nxt.status or 'unknown'}",
-            ),
-            series_key=series_key,
+    # Auto-added already -> it lives in the library, not the waiting list.
+    if summary.added_book_id is not None:
+        return
+
+    volume = None
+    if summary.next_volume is not None:
+        volume = (
+            str(int(summary.next_volume))
+            if float(summary.next_volume).is_integer()
+            else str(summary.next_volume)
         )
+    source_url = None
+    if summary.details:
+        source_url = next((d.source_url for d in summary.details if d.source_url), None)
+    await repo.add_expected(
+        conn,
+        user_id,
+        ExpectedBookCreate(
+            title=summary.next_title,
+            author=author,
+            series_name=series_name,
+            volume=volume,
+            expected_date=summary.expected_date,
+            source_url=source_url,
+            source="series_research",
+            notes=summary.headline or None,
+        ),
+        series_key=series_key,
+    )
+
+
+def _title_words_match(wanted: str, found: str) -> bool:
+    """All significant words of ``wanted`` appear in ``found`` (order-free)."""
+    from app.services.series import series_key as _key
+
+    stop = {"the", "a", "an", "of", "and", "to", "in"}
+    want_words = {w for w in _key(wanted).split() if w and w not in stop}
+    found_words = set(_key(found).split())
+    if not want_words:
+        return False
+    return want_words.issubset(found_words)
+
+
+def _surname_close(author: str, candidate_authors: list[str]) -> bool:
+    """True when the author's surname closely matches one of the candidate authors.
+
+    Accepts a small edit distance on the surname (handles e.g. Machanienko / Mahanenko).
+    An empty expected author accepts any candidate.
+    """
+    from app.services.series import series_key as _key
+
+    if not author:
+        return True
+
+    def _surname(name: str) -> str:
+        parts = _key(name).split()
+        return parts[-1] if parts else ""
+
+    def _close(a: str, b: str) -> bool:
+        if not a or not b:
+            return False
+        if a == b or a in b or b in a:
+            return True
+        # Levenshtein distance <= 2 for short surnames.
+        la, lb = len(a), len(b)
+        if abs(la - lb) > 2:
+            return False
+        prev = list(range(lb + 1))
+        for i, ca in enumerate(a, 1):
+            cur = [i]
+            for j, cb in enumerate(b, 1):
+                cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+            prev = cur
+        return prev[lb] <= 2
+
+    want = _surname(author)
+    return any(_close(want, _surname(c)) for c in candidate_authors)
+
+
+async def _maybe_auto_add(
+    conn: aiosqlite.Connection,
+    user_id: int,
+    summary: SeriesSummary,
+    release: Any,
+    *,
+    settings: Settings | None = None,
+) -> None:
+    """Auto-add the next volume to the library when it is out and not already owned.
+
+    Runs at most ONE Google Books search (title + author) through the shared
+    :class:`GoogleBooksClient` (disk cache + ``GOOGLE_BOOKS_MAX_CALLS`` budget). Stops on a
+    429 / budget with no retries and no variant queries. Accepts the single best hit only
+    when its significant title words match and the author surname is close. On success the
+    book is added via the book service (so books.json stays in sync), with status 'want',
+    the series name and the next volume; ``release.added_book_id`` is set. Never adds twice.
+    """
+    from app.services import books as books_service
+
+    if release is None or not release.next_title:
+        return
+    if release.status not in ("released", "announced"):
+        return
+    if release.added_book_id is not None:
+        return
+    if _owns_volume(summary, release.next_volume):
+        return
+
+    settings = settings or get_settings()
+    google = _client(settings)
+    query = f"{release.next_title} {summary.author}".strip()
+    try:
+        _total, items = await google.search(query, max_results=5)
+    except Exception:  # noqa: BLE001 - 429/budget/transport: keep the waiting-list entry
+        logger.info("auto-add Google Books lookup skipped for %r", query, exc_info=True)
+        return
+
+    hit = None
+    for item in items:
+        if _title_words_match(release.next_title, item.title) and _surname_close(
+            summary.author, list(item.authors or [])
+        ):
+            hit = item
+            break
+    if hit is None:
+        return
+
+    volume = None
+    if release.next_volume is not None:
+        volume = (
+            str(int(release.next_volume))
+            if float(release.next_volume).is_integer()
+            else str(release.next_volume)
+        )
+    create = BookCreate(
+        google_volume_id=hit.google_volume_id,
+        title=hit.title,
+        subtitle=hit.subtitle,
+        authors=list(hit.authors or []) or ([summary.author] if summary.author else []),
+        publisher=hit.publisher,
+        published_date=hit.published_date,
+        description=hit.description,
+        page_count=hit.page_count,
+        categories=list(hit.categories or []),
+        language=hit.language,
+        isbn_10=hit.isbn_10,
+        isbn_13=hit.isbn_13,
+        cover_url=hit.cover_url,
+        series=summary.name,
+        volume=volume,
+        status=ReadingStatus.want,
+        metadata_source="series_research",
+    )
+    try:
+        book = await books_service.add_book(conn, user_id, create)
+    except books_service.DuplicateBookError:
+        return
+    # Mirror the new book's series/volume into books.json (add_book does not, so the two
+    # stores stay in sync for this auto-added entry).
+    books_json.sync_book_series(
+        {
+            "google_volume_id": book.google_volume_id,
+            "isbn_13": book.isbn_13,
+            "isbn_10": book.isbn_10,
+            "external_id": book.external_id,
+            "title": book.title,
+            "authors": list(book.authors or []),
+        },
+        series=summary.name,
+        volume=volume,
+    )
+    release.added_book_id = book.id
 
 
 def _alert_key(kind: str, series_key: str, *parts: str | None) -> str:
@@ -517,7 +704,13 @@ async def get_series_preferences(conn: aiosqlite.Connection, user_id: int) -> Se
     raw_filter = str(stored.get("filter", "all"))
     active = raw_filter if raw_filter in SERIES_FILTERS else "all"
     sort = stored.get("sort")
-    return SeriesPreferences(filter=active, sort=sort if isinstance(sort, str) else None)
+    raw_lang = str(stored.get("default_search_lang", "pl"))
+    lang = raw_lang if raw_lang in ("pl", "en", "both") else "pl"
+    return SeriesPreferences(
+        filter=active,
+        sort=sort if isinstance(sort, str) else None,
+        default_search_lang=lang,
+    )
 
 
 async def set_series_preferences(
@@ -525,11 +718,12 @@ async def set_series_preferences(
 ) -> SeriesPreferences:
     """Persist the user's Series-tab preferences (validated filter id)."""
     active = prefs.filter if prefs.filter in SERIES_FILTERS else "all"
-    value: dict[str, Any] = {"filter": active}
+    lang = prefs.default_search_lang if prefs.default_search_lang in ("pl", "en", "both") else "pl"
+    value: dict[str, Any] = {"filter": active, "default_search_lang": lang}
     if prefs.sort:
         value["sort"] = prefs.sort
     await prefs_repo.set_pref(conn, user_id, _SERIES_PREF_KEY, value)
-    return SeriesPreferences(filter=active, sort=prefs.sort)
+    return SeriesPreferences(filter=active, sort=prefs.sort, default_search_lang=lang)
 
 
 # --- series editing (wave 5) -------------------------------------------------------------
@@ -580,9 +774,11 @@ async def update_series(
     total_volumes: int | None = None,
     notes: str | None = None,
     watch: bool | None = None,
+    search_lang: str | None = None,
 ) -> SeriesSummary | None:
     """Edit a series' cached metadata (name shown on the card, aliases, author, total,
-    notes, watch flag). Only the arguments that are not ``None`` are applied.
+    notes, watch flag, search language). Only the arguments that are not ``None`` are
+    applied.
 
     This edits the ``series_info`` row only; it does NOT rename the series on the member
     books (use :func:`rename_series` for that). ``display_name`` here changes the name the
@@ -606,12 +802,18 @@ async def update_series(
         info.total_known = total_volumes
     if notes is not None:
         info.notes = notes.strip() or None
+    if search_lang is not None and search_lang in ("pl", "en", "both"):
+        info.search_lang = search_lang
     if watch is not None:
         info.watch = watch
         # Turning watch ON schedules a background research run (the route adds the task);
-        # flag it so the card shows the "Checking new volumes…" spinner while it runs.
+        # flag it so the card shows the "Checking new volumes…" spinner while it runs. A
+        # newly-watched series with no explicit language takes the user's default.
         if watch:
             info.checking = True
+            if search_lang is None and (existing is None or not existing.search_lang):
+                prefs = await get_series_preferences(conn, user_id)
+                info.search_lang = prefs.default_search_lang
     await repo.upsert_info(conn, user_id, info)
     return await get_series(conn, user_id, info.series_key)
 

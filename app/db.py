@@ -116,6 +116,8 @@ CREATE TABLE IF NOT EXISTS series_info (
     next_expected TEXT,
     next_expected_pl TEXT,
     next_expected_en TEXT,
+    search_lang   TEXT NOT NULL DEFAULT 'pl',
+    release_summary TEXT,
     checking      INTEGER NOT NULL DEFAULT 0,
     notes         TEXT,
     last_checked  TEXT,
@@ -197,6 +199,9 @@ async def _migrate(conn: aiosqlite.Connection) -> None:
         ("next_expected_pl", "TEXT"),
         ("next_expected_en", "TEXT"),
         ("checking", "INTEGER NOT NULL DEFAULT 0"),
+        # wave 6: per-series search language and the editor's clean release summary (JSON).
+        ("search_lang", "TEXT NOT NULL DEFAULT 'pl'"),
+        ("release_summary", "TEXT"),
     ):
         if series_cols and name not in series_cols:
             await conn.execute(f"ALTER TABLE series_info ADD COLUMN {name} {decl}")

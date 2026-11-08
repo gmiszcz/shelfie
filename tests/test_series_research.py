@@ -1,17 +1,26 @@
-"""Tests for the release-research step: the strands agent (mocked model) and the
-service that stores its result into series_info + expected_books (mocked research_fn)."""
+"""Tests for the wave-6 release-research rework.
+
+Covers the two-agent research step (RESEARCHER + EDITOR, mocked model), the editor output
+parsing/validation and garbage-title rejection, the service that stores the clean
+ReleaseSummary into series_info, the language filter, the Google Books auto-add (mocked:
+happy path, skipped when owned, 429 keeps a clean waiting-list entry) and the additive
+migration. Zero live Bedrock / web / Google calls.
+"""
 
 from __future__ import annotations
 
 import asyncio
 from pathlib import Path
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from app.agent import series_research
-from app.agent.series_research import EditionResult, ResearchResult
+from app.agent.series_research import ResearchResult, research_next_volumes, seed_queries
 from app.db import SINGLE_USER_ID, connect
+from app.schemas.books import VolumeSearchResult
+from app.schemas.series import ReleaseDetail, ReleaseEdition, ReleaseSummary
 from app.services import series_service
 
 
@@ -19,65 +28,154 @@ class _FakeModel:
     """Stands in for a strands Bedrock model; the Agent is built but never used here."""
 
 
-def test_research_agent_clamps_unknown_date(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A result the model returns with status unknown must never keep a date."""
-
-    class _FakeAgent:
-        def __init__(self, *args: object, **kwargs: object) -> None:
-            pass
-
-        async def invoke_async(self, prompt):  # noqa: ANN001
-            return None
-
-        async def structured_output_async(self, model, prompt):  # noqa: ANN001
-            return ResearchResult(
-                pl=EditionResult(title="x", date="2027-01-01", status="unknown"),
-                en=EditionResult(
-                    title="Ritual of Ruin",
-                    date="2025-11-11",
-                    status="released",
-                    source_url="https://kelkade.com",
-                    confidence="high",
-                ),
+def _editor_summary(**over: object) -> ReleaseSummary:
+    base = dict(
+        status="in_translation",
+        headline="Fabryka Słów nie podała jeszcze daty 7. tomu (Ritual of Ruin); tłumaczenie trwa.",
+        next_title="Ritual of Ruin",
+        next_volume=7.0,
+        expected_date="2026",
+        details=[ReleaseDetail(text="Tłumaczenie w toku.", source_url="https://fabryka.pl/x")],
+        editions={
+            "pl": ReleaseEdition(
+                status="in_translation", title="Ritual of Ruin", source_url="https://fabryka.pl/x"
             )
-
-    monkeypatch.setattr("strands.Agent", _FakeAgent)
-    result = asyncio.run(
-        series_research.research_next_volumes(
-            "Shroud",
-            "K",
-            [1, 2, 3],
-            model=_FakeModel(),  # type: ignore[arg-type]
-        )
+        },
     )
-    # PL unknown -> date cleared; EN released kept verbatim.
-    assert result.pl.status == "unknown" and result.pl.date is None
-    assert result.en.status == "released" and result.en.date == "2025-11-11"
-    assert result.en.source_url == "https://kelkade.com"
+    base.update(over)
+    return ReleaseSummary(**base)
 
 
-def test_research_agent_failure_yields_all_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
-    class _BoomAgent:
+def _patch_agents(
+    monkeypatch: pytest.MonkeyPatch, *, editor_summary: ReleaseSummary, boom: bool = False
+) -> list[str]:
+    """Patch strands.Agent with a researcher (invoke_async) + editor (structured_output)."""
+    calls: list[str] = []
+
+    class _Agent:
         def __init__(self, *args: object, **kwargs: object) -> None:
-            pass
+            self._has_tools = bool(kwargs.get("tools"))
 
         async def invoke_async(self, prompt):  # noqa: ANN001
-            raise RuntimeError("NoCredentials")
+            calls.append("research")
+            if boom:
+                raise RuntimeError("NoCredentials")
+            return "brief: found Ritual of Ruin, vol 7, translation in progress"
 
         async def structured_output_async(self, model, prompt):  # noqa: ANN001
-            raise RuntimeError("NoCredentials")
+            calls.append("edit")
+            if boom:
+                raise RuntimeError("NoCredentials")
+            return editor_summary
 
-    monkeypatch.setattr("strands.Agent", _BoomAgent)
+    monkeypatch.setattr("strands.Agent", _Agent)
+    return calls
+
+
+# --- agent-level: language filter, parsing, clamp -----------------------------------------
+
+
+def test_seed_queries_respect_language() -> None:
+    pl_only = seed_queries("King's Dark Tidings", "Kel Kade", [6], ["Kroniki Mroku"], ["pl"])
+    assert all("Kroniki" in q or "premiera" in q for q in pl_only)
+    assert not any("book" in q and "release" in q for q in pl_only)
+
+    en_only = seed_queries("King's Dark Tidings", "Kel Kade", [6], ["Kroniki Mroku"], ["en"])
+    assert any("release date" in q for q in en_only)
+
+    both = seed_queries("King's Dark Tidings", "Kel Kade", [6], ["Kroniki Mroku"], ["pl", "en"])
+    assert len(both) == 2
+
+
+def test_research_only_searches_requested_language(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With search_lang='pl' the seed searches must not hit English retailer queries."""
+    seen: list[str] = []
+
+    def fake_search(query, *, budget=None):  # noqa: ANN001
+        seen.append(query)
+        return []
+
+    monkeypatch.setattr(series_research.web_research, "web_search", fake_search)
+    _patch_agents(monkeypatch, editor_summary=_editor_summary())
+    asyncio.run(
+        research_next_volumes(
+            "King's Dark Tidings",
+            "Kel Kade",
+            [6],
+            search_lang="pl",
+            model=_FakeModel(),  # type: ignore[arg-type]
+            aliases=["Kroniki Mroku"],
+        )
+    )
+    assert seen, "seed search should have run"
+    assert not any("release date" in q for q in seen)
+
+
+def test_editor_output_parsed_and_projected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(series_research.web_research, "web_search", lambda q, **k: [])
+    _patch_agents(monkeypatch, editor_summary=_editor_summary())
     result = asyncio.run(
-        series_research.research_next_volumes(
-            "Shroud",
-            "K",
-            [1],
+        research_next_volumes(
+            "King's Dark Tidings",
+            "Kel Kade",
+            [6],
+            search_lang="pl",
             model=_FakeModel(),  # type: ignore[arg-type]
         )
     )
+    assert result.summary.status == "in_translation"
+    assert result.summary.next_title == "Ritual of Ruin"
+    assert result.summary.next_volume == 7.0
+    assert result.summary.checked_at
+    # Legacy per-edition projection is filled for compatibility.
+    assert result.pl.title == "Ritual of Ruin"
+
+
+def test_editor_invalid_status_clamped(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(series_research.web_research, "web_search", lambda q, **k: [])
+    _patch_agents(monkeypatch, editor_summary=_editor_summary(status="totally-made-up"))
+    result = asyncio.run(
+        research_next_volumes("S", "A", [1], model=_FakeModel())  # type: ignore[arg-type]
+    )
+    assert result.summary.status == "unknown"
+
+
+def test_garbage_next_title_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A series-tagged title like the series name + 'tom 7' must be dropped."""
+    monkeypatch.setattr(series_research.web_research, "web_search", lambda q, **k: [])
+    _patch_agents(
+        monkeypatch,
+        editor_summary=_editor_summary(
+            next_title="King's Dark Tidings (Kroniki mroku tom 7)",
+            status="no_news",
+            expected_date="unknown",
+        ),
+    )
+    result = asyncio.run(
+        research_next_volumes(
+            "King's Dark Tidings",
+            "Kel Kade",
+            [6],
+            model=_FakeModel(),  # type: ignore[arg-type]
+            aliases=["Kroniki Mroku"],
+        )
+    )
+    assert result.summary.next_title is None
+    assert result.summary.expected_date is None
+
+
+def test_research_failure_yields_all_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(series_research.web_research, "web_search", lambda q, **k: [])
+    _patch_agents(monkeypatch, editor_summary=_editor_summary(), boom=True)
+    result = asyncio.run(
+        research_next_volumes("S", "A", [1], model=_FakeModel())  # type: ignore[arg-type]
+    )
+    assert result.summary.status == "unknown"
+    assert result.summary.headline == ""
     assert result.pl.status == "unknown"
-    assert result.en.status == "unknown"
+
+
+# --- service-level helpers ----------------------------------------------------------------
 
 
 def _add(client: TestClient, **fields: object) -> int:
@@ -87,30 +185,13 @@ def _add(client: TestClient, **fields: object) -> int:
     return resp.json()["id"]
 
 
-def test_research_service_stores_both_editions_and_bumps_total(
-    client: TestClient, db_file: Path
+def _run_research(
+    db_file: Path, key: str, summary: ReleaseSummary, *, user_data: object | None = None
 ) -> None:
-    _add(
-        client,
-        title="SoP 6",
-        series="Shroud of Prophecy",
-        volume="6",
-        status="finished",
-        finished_on="2024-01-01",
-    )
-    key = client.get("/api/series").json()[0]["series_key"]
+    from app.userdata import UserData, using_user_data
 
     async def fake_research(name, author, owned):  # noqa: ANN001
-        return ResearchResult(
-            pl=EditionResult(title=None, date=None, status="unknown"),
-            en=EditionResult(
-                title="Ritual of Ruin",
-                date="2025-11-11",
-                status="released",
-                source_url="https://kelkade.com",
-                confidence="high",
-            ),
-        )
+        return ResearchResult(summary=summary)
 
     async def run() -> None:
         conn = await connect(db_file)
@@ -121,37 +202,102 @@ def test_research_service_stores_both_editions_and_bumps_total(
         finally:
             await conn.close()
 
-    asyncio.run(run())
-
-    summary = client.get(f"/api/series/{key}").json()
-    assert summary["checking"] is False
-    assert summary["next_expected_en"]["title"] == "Ritual of Ruin"
-    assert summary["next_expected_en"]["date"] == "2025-11-11"
-    # An all-unknown PL edition is stored as null (nothing found) — the card shows
-    # "PL — not announced".
-    assert summary["next_expected_pl"] is None
-    # A newer volume exists -> total_known bumped to at least highest-owned + 1 = 7.
-    assert (summary["total_known"] or 0) >= 7
-
-    # Waiting list got one entry per language with a language-tagged source.
-    expected = client.get("/api/series/expected").json()
-    sources = {e["source"] for e in expected}
-    assert "series_research:en" in sources
-    en = next(e for e in expected if e["source"] == "series_research:en")
-    assert en["title"] == "Ritual of Ruin"
+    # The real path runs inside a request / captured background task that has user context;
+    # mirror that so the books.json mirror (auto-add) can resolve the dataset path.
+    ud = user_data or UserData.for_user(db_file.parent.parent.parent, SINGLE_USER_ID)
+    with using_user_data(ud):  # type: ignore[arg-type]
+        asyncio.run(run())
 
 
-def test_research_keeps_manual_expected_entries(client: TestClient, db_file: Path) -> None:
+# --- service: stores clean summary, waiting list only with a real title -------------------
+
+
+def test_service_stores_release_summary(client: TestClient, db_file: Path) -> None:
     _add(
         client,
-        title="SoP 6b",
-        series="Keep Manual",
+        title="SoP 6",
+        series="Shroud",
         volume="6",
         status="finished",
         finished_on="2024-01-01",
     )
     key = client.get("/api/series").json()[0]["series_key"]
-    # A manual waiting-list entry (source 'agent') that must survive a research run.
+    _run_research(db_file, key, _editor_summary(status="announced"))
+
+    summary = client.get(f"/api/series/{key}").json()
+    assert summary["checking"] is False
+    rs = summary["release_summary"]
+    assert rs["status"] == "announced"
+    assert rs["next_title"] == "Ritual of Ruin"
+    assert rs["next_volume"] == 7
+    assert rs["headline"].startswith("Fabryka")
+
+
+def test_waiting_list_only_with_real_title(client: TestClient, db_file: Path) -> None:
+    _add(
+        client,
+        title="NN 1",
+        series="No News Series",
+        volume="1",
+        status="finished",
+        finished_on="2024-01-01",
+    )
+    key = client.get("/api/series").json()[0]["series_key"]
+    # A no-news summary without a real title -> no waiting-list entry.
+    _run_research(
+        db_file,
+        key,
+        _editor_summary(status="no_news", next_title=None, next_volume=None, expected_date=None),
+    )
+    assert client.get("/api/series/expected").json() == []
+
+    # Now a real title arrives (but not released/announced, so no auto-add) -> one entry.
+    _run_research(db_file, key, _editor_summary(status="in_translation"))
+    expected = client.get("/api/series/expected").json()
+    assert len(expected) == 1
+    assert expected[0]["title"] == "Ritual of Ruin"
+    assert expected[0]["source"] == "series_research"
+
+
+def test_garbage_waiting_entries_deleted(client: TestClient, db_file: Path) -> None:
+    _add(
+        client,
+        title="G 1",
+        series="Garbage Series",
+        volume="1",
+        status="finished",
+        finished_on="2024-01-01",
+    )
+    key = client.get("/api/series").json()[0]["series_key"]
+    # Seed an old wave-5 garbage researched entry (titleless-style, lang-tagged source).
+    client.post(
+        "/api/series/expected",
+        json={
+            "title": "Garbage Series (tom 2)",
+            "series_name": "Garbage Series",
+            "source": "series_research:pl",
+        },
+    )
+    # A research run that finds no real title must wipe the old researched entry.
+    _run_research(
+        db_file,
+        key,
+        _editor_summary(status="no_news", next_title=None, next_volume=None, expected_date=None),
+    )
+    titles = {e["title"] for e in client.get("/api/series/expected").json()}
+    assert "Garbage Series (tom 2)" not in titles
+
+
+def test_manual_waiting_entry_survives(client: TestClient, db_file: Path) -> None:
+    _add(
+        client,
+        title="KM 1",
+        series="Keep Manual",
+        volume="1",
+        status="finished",
+        finished_on="2024-01-01",
+    )
+    key = client.get("/api/series").json()[0]["series_key"]
     client.post(
         "/api/series/expected",
         json={
@@ -160,41 +306,264 @@ def test_research_keeps_manual_expected_entries(client: TestClient, db_file: Pat
             "source": "agent",
         },
     )
-
-    async def fake_research(name, author, owned):  # noqa: ANN001
-        return ResearchResult(
-            en=EditionResult(title="Found EN", date="2026-01-01", status="announced")
-        )
-
-    async def run() -> None:
-        conn = await connect(db_file)
-        try:
-            await series_service.research_series_releases(
-                SINGLE_USER_ID, key, conn=conn, research_fn=fake_research
-            )
-        finally:
-            await conn.close()
-
-    asyncio.run(run())
+    _run_research(db_file, key, _editor_summary(status="in_translation"))
     titles = {e["title"] for e in client.get("/api/series/expected").json()}
     assert "My manual pick" in titles
-    assert "Found EN" in titles
+    assert "Ritual of Ruin" in titles
 
 
-def test_patch_watch_on_sets_checking(client: TestClient) -> None:
-    """Turning watch on returns immediately with checking=true (research runs in the bg task)."""
+# --- service: Google Books auto-add -------------------------------------------------------
+
+
+def _patch_google(
+    monkeypatch: pytest.MonkeyPatch, result: list[VolumeSearchResult] | Exception
+) -> None:
+    """Patch series_service._client to a fake Google Books client returning ``result``."""
+
+    class _FakeGB:
+        async def search(self, query, max_results=20, lang=None):  # noqa: ANN001
+            if isinstance(result, Exception):
+                raise result
+            return len(result), list(result)
+
+    monkeypatch.setattr(series_service, "_client", lambda settings=None: _FakeGB())
+
+
+def test_auto_add_happy_path(
+    client: TestClient, db_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _add(
         client,
-        title="WChk",
-        series="Watch Check",
+        title="AA 6",
+        series="AutoAdd",
+        volume="6",
+        status="finished",
+        finished_on="2024-01-01",
+    )
+    key = client.get("/api/series").json()[0]["series_key"]
+
+    hit = VolumeSearchResult(
+        google_volume_id="vol-ritual",
+        title="Ritual of Ruin",
+        authors=["Kel Kade"],
+        isbn_13="9781000000007",
+    )
+    _patch_google(monkeypatch, [hit])
+    # Give the summary an author-matching series so the surname check passes.
+    client.patch(f"/api/series/{key}", json={"author": "Kel Kade"})
+    _run_research(db_file, key, _editor_summary(status="released"))
+
+    # Book added to the library with status want, series + volume set.
+    books = client.get("/api/books").json()
+    added = [b for b in books if b["title"] == "Ritual of Ruin"]
+    assert len(added) == 1
+    assert added[0]["status"] == "want"
+    assert added[0]["series"] == "AutoAdd"
+    assert str(added[0]["volume"]) == "7"
+    # release_summary.added_book_id set; no waiting-list entry (it is in the library now).
+    rs = client.get(f"/api/series/{key}").json()["release_summary"]
+    assert rs["added_book_id"] == added[0]["id"]
+    assert client.get("/api/series/expected").json() == []
+
+
+def test_auto_add_skipped_when_owned(
+    client: TestClient, db_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _add(
+        client,
+        title="Owned 6",
+        series="OwnSeries",
+        volume="6",
+        status="finished",
+        finished_on="2024-01-01",
+    )
+    # Already owns volume 7.
+    _add(client, title="Owned 7", series="OwnSeries", volume="7", status="want")
+    key = client.get("/api/series").json()[0]["series_key"]
+
+    called = {"n": 0}
+
+    class _FakeGB:
+        async def search(self, query, max_results=20, lang=None):  # noqa: ANN001
+            called["n"] += 1
+            return 0, []
+
+    monkeypatch.setattr(series_service, "_client", lambda settings=None: _FakeGB())
+    _run_research(db_file, key, _editor_summary(status="released"))
+    # Owns vol 7 already -> no Google call, no new book.
+    assert called["n"] == 0
+    rs = client.get(f"/api/series/{key}").json()["release_summary"]
+    assert rs["added_book_id"] is None
+
+
+def test_auto_add_google_429_keeps_waiting_entry(
+    client: TestClient, db_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _add(
+        client,
+        title="Q 6",
+        series="QuotaSeries",
+        volume="6",
+        status="finished",
+        finished_on="2024-01-01",
+    )
+    key = client.get("/api/series").json()[0]["series_key"]
+
+    err = httpx.HTTPStatusError(
+        "429",
+        request=httpx.Request("GET", "http://x"),
+        response=httpx.Response(429),
+    )
+    _patch_google(monkeypatch, err)
+    _run_research(db_file, key, _editor_summary(status="released"))
+
+    # No book added; one clean waiting-list entry kept.
+    assert not [b for b in client.get("/api/books").json() if b["title"] == "Ritual of Ruin"]
+    expected = client.get("/api/series/expected").json()
+    assert len(expected) == 1
+    assert expected[0]["title"] == "Ritual of Ruin"
+
+
+def test_auto_add_not_added_twice(
+    client: TestClient, db_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _add(
+        client,
+        title="Tw 6",
+        series="TwiceSeries",
+        volume="6",
+        status="finished",
+        finished_on="2024-01-01",
+    )
+    key = client.get("/api/series").json()[0]["series_key"]
+    hit = VolumeSearchResult(
+        google_volume_id="vol-twice",
+        title="Ritual of Ruin",
+        authors=["Kel Kade"],
+    )
+    _patch_google(monkeypatch, [hit])
+    client.patch(f"/api/series/{key}", json={"author": "Kel Kade"})
+    _run_research(db_file, key, _editor_summary(status="released"))
+    _run_research(db_file, key, _editor_summary(status="released"))
+    added = [b for b in client.get("/api/books").json() if b["title"] == "Ritual of Ruin"]
+    assert len(added) == 1
+
+
+# --- API: search_lang contract ------------------------------------------------------------
+
+
+def test_patch_accepts_search_lang(client: TestClient) -> None:
+    _add(
+        client,
+        title="L 1",
+        series="LangSeries",
         volume="1",
         status="finished",
         finished_on="2021-01-01",
     )
     key = client.get("/api/series").json()[0]["series_key"]
-    resp = client.patch(f"/api/series/{key}", json={"watch": True})
+    resp = client.patch(f"/api/series/{key}", json={"search_lang": "en"})
     assert resp.status_code == 200
-    assert resp.json()["watch"] is True
-    # The background task uses the real model in prod; in TestClient it runs after the
-    # response and (without AWS) yields all-unknown, clearing checking. We only assert the
-    # endpoint accepted the toggle and returned the watch flag; checking is transient.
+    assert resp.json()["search_lang"] == "en"
+
+
+def test_preferences_default_search_lang(client: TestClient) -> None:
+    # Default is 'pl'.
+    assert client.get("/api/preferences/series").json()["default_search_lang"] == "pl"
+    client.put("/api/preferences/series", json={"filter": "all", "default_search_lang": "both"})
+    assert client.get("/api/preferences/series").json()["default_search_lang"] == "both"
+
+
+def test_newly_watched_series_takes_default_lang(client: TestClient) -> None:
+    client.put("/api/preferences/series", json={"filter": "all", "default_search_lang": "en"})
+    _add(
+        client,
+        title="W 1",
+        series="WatchLang",
+        volume="1",
+        status="finished",
+        finished_on="2021-01-01",
+    )
+    key = client.get("/api/series").json()[0]["series_key"]
+    client.patch(f"/api/series/{key}", json={"watch": True})
+    assert client.get(f"/api/series/{key}").json()["search_lang"] == "en"
+
+
+def test_refresh_accepts_search_lang_override(client: TestClient) -> None:
+    _add(
+        client,
+        title="R 1",
+        series="RefreshLang",
+        volume="1",
+        status="finished",
+        finished_on="2021-01-01",
+    )
+    key = client.get("/api/series").json()[0]["series_key"]
+    resp = client.post(f"/api/series/{key}/refresh", json={"search_lang": "both"})
+    assert resp.status_code == 200
+    # The override is saved to the series.
+    assert client.get(f"/api/series/{key}").json()["search_lang"] == "both"
+
+
+# --- migration keeps data -----------------------------------------------------------------
+
+
+def test_migration_adds_columns_and_keeps_data(tmp_path: Path) -> None:
+    """An older series_info table (no search_lang/release_summary) migrates without loss."""
+    import aiosqlite
+
+    from app.db import init_db
+
+    db = tmp_path / "old.sqlite"
+
+    async def build_old() -> None:
+        # Create a minimal older schema missing the wave-6 columns, with one data row.
+        async with aiosqlite.connect(db) as conn:
+            await conn.executescript(
+                """
+                CREATE TABLE users (id INTEGER PRIMARY KEY, display_name TEXT);
+                CREATE TABLE series_info (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    series_key TEXT NOT NULL,
+                    display_name TEXT NOT NULL DEFAULT '',
+                    author TEXT NOT NULL DEFAULT '',
+                    aliases TEXT NOT NULL DEFAULT '[]',
+                    known_volumes TEXT NOT NULL DEFAULT '[]',
+                    total_known INTEGER,
+                    watch INTEGER NOT NULL DEFAULT 0,
+                    next_expected TEXT,
+                    notes TEXT,
+                    last_checked TEXT,
+                    created_at TEXT, updated_at TEXT,
+                    UNIQUE (user_id, series_key)
+                );
+                INSERT INTO users (id, display_name) VALUES (1, 'U');
+                INSERT INTO series_info (user_id, series_key, display_name, watch)
+                    VALUES (1, 'kept', 'Kept Series', 1);
+                """
+            )
+            await conn.commit()
+
+    asyncio.run(build_old())
+    # init_db runs the additive migration on the existing file.
+    asyncio.run(init_db(db))
+
+    async def check() -> None:
+        conn = await connect(db)
+        try:
+            cursor = await conn.execute("PRAGMA table_info(series_info)")
+            cols = {row[1] for row in await cursor.fetchall()}
+            assert "search_lang" in cols and "release_summary" in cols
+            cursor = await conn.execute(
+                "SELECT display_name, watch, search_lang FROM series_info WHERE series_key='kept'"
+            )
+            row = await cursor.fetchone()
+            assert row is not None
+            assert row[0] == "Kept Series"
+            assert row[1] == 1
+            assert row[2] == "pl"  # new column default applied
+        finally:
+            await conn.close()
+
+    asyncio.run(check())

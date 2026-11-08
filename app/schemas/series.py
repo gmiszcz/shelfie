@@ -9,7 +9,7 @@ books; only the lookup cache and the watch flag are persisted.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class KnownVolume(BaseModel):
@@ -54,6 +54,48 @@ class MissingVolume(BaseModel):
     source: str | None = None
 
 
+# The research language(s) a series is searched in. 'pl' (default) searches Polish
+# publisher/retailer sites, 'en' the author site / Goodreads / Amazon, 'both' searches both.
+SEARCH_LANGS = ("pl", "en", "both")
+
+
+class ReleaseDetail(BaseModel):
+    """One short factual bullet from the editor, each tied to the source it came from."""
+
+    text: str
+    source_url: str | None = None
+
+
+class ReleaseEdition(BaseModel):
+    """Per-language edition facts inside a :class:`ReleaseSummary`."""
+
+    status: str | None = None  # released | announced | in_translation | no_news | unknown
+    title: str | None = None
+    date: str | None = None
+    source_url: str | None = None
+
+
+class ReleaseSummary(BaseModel):
+    """The clean, editor-written release summary for a watched series (wave 6).
+
+    One factual Polish ``headline`` sentence (the style of Google's AI answer), a coarse
+    ``status``, the real next book ``next_title`` (never a mangled series-tagged string),
+    its ``next_volume`` and a free-text ``expected_date``. ``details`` are short Polish
+    bullets each with a source, ``editions`` carries per-language facts, ``added_book_id``
+    is set once the auto-add put the book in the library, and ``checked_at`` is the run time.
+    """
+
+    status: str = "unknown"  # released | announced | in_translation | no_news | unknown
+    headline: str = ""
+    next_title: str | None = None
+    next_volume: float | None = None
+    expected_date: str | None = None
+    details: list[ReleaseDetail] = Field(default_factory=list)
+    editions: dict[str, ReleaseEdition] = Field(default_factory=dict)
+    added_book_id: int | None = None
+    checked_at: str | None = None
+
+
 class SeriesInfo(BaseModel):
     """The cached lookup row for a series (``series_info`` table)."""
 
@@ -67,6 +109,8 @@ class SeriesInfo(BaseModel):
     next_expected: NextExpected | None = None
     next_expected_pl: NextExpected | None = None
     next_expected_en: NextExpected | None = None
+    search_lang: str = "pl"
+    release_summary: ReleaseSummary | None = None
     checking: bool = False
     notes: str | None = None
     last_checked: str | None = None
@@ -98,6 +142,8 @@ class SeriesSummary(BaseModel):
     next_expected: NextExpected | None = None
     next_expected_pl: NextExpected | None = None
     next_expected_en: NextExpected | None = None
+    search_lang: str = "pl"
+    release_summary: ReleaseSummary | None = None
     checking: bool = False
     last_checked: str | None = None
     notes: str | None = None
@@ -119,6 +165,17 @@ class SeriesPatch(BaseModel):
     author: str | None = Field(default=None, max_length=500)
     total_volumes: int | None = Field(default=None, ge=0, le=10_000)
     notes: str | None = None
+    # The research language for this series: 'pl' | 'en' | 'both'.
+    search_lang: str | None = None
+
+    @field_validator("search_lang")
+    @classmethod
+    def valid_search_lang(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if value not in SEARCH_LANGS:
+            raise ValueError(f"search_lang must be one of {SEARCH_LANGS}")
+        return value
 
 
 class WatchPatch(BaseModel):
@@ -230,6 +287,32 @@ class SeriesPreferences(BaseModel):
     # Optional sort choice (reserved; the UI may ignore it). Kept so the prefs endpoint
     # can carry it without a schema change.
     sort: str | None = None
+    # Default research language for a newly-watched series ('pl' | 'en' | 'both').
+    default_search_lang: str = "pl"
+
+    @field_validator("default_search_lang")
+    @classmethod
+    def valid_default_search_lang(cls, value: str) -> str:
+        return value if value in SEARCH_LANGS else "pl"
+
+
+class SeriesRefresh(BaseModel):
+    """Optional POST /api/series/{key}/refresh body: a one-off language override.
+
+    When ``search_lang`` is given it is applied to the series (saved) and used for this
+    research run; absent, the series' stored ``search_lang`` is used.
+    """
+
+    search_lang: str | None = None
+
+    @field_validator("search_lang")
+    @classmethod
+    def valid_search_lang(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if value not in SEARCH_LANGS:
+            raise ValueError(f"search_lang must be one of {SEARCH_LANGS}")
+        return value
 
 
 class SeriesCheckResult(BaseModel):
