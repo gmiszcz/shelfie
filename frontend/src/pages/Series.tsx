@@ -501,7 +501,7 @@ export function Series() {
           </span>
         </div>
 
-        <div className="series-toolbar-search">
+        <div className="series-toolbar-search" data-agent-anchor="series.search">
           <SearchInput
             value={query}
             onChange={setQuery}
@@ -571,7 +571,7 @@ export function Series() {
               Series you watch for new volumes, nearest known release first.
             </p>
           </div>
-          <div className="series-grid">
+          <div className="series-grid" data-agent-anchor="series.list">
             {watching.map((s) => {
               const waiting = expectedBySeries.get(s.series_key) ?? [];
               return (
@@ -645,7 +645,7 @@ export function Series() {
                 </h3>
                 <p className="series-section-hint">{section.hint}</p>
               </div>
-              <div className="series-grid">
+              <div className="series-grid" data-agent-anchor="series.list">
                 {items.map((s) => (
                   <SeriesCard
                     key={s.series_key}

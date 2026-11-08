@@ -469,7 +469,7 @@ export function Library() {
           <span className="library-count">{countLabel}</span>
         </div>
 
-        <div className="library-toolbar-search">
+        <div className="library-toolbar-search" data-agent-anchor="library.search">
           <SearchInput
             value={query}
             onChange={setQuery}
@@ -478,7 +478,7 @@ export function Library() {
           />
         </div>
 
-        <div className="library-toolbar-filter">
+        <div className="library-toolbar-filter" data-agent-anchor="library.starFilter">
           <StarFilter
             value={starBucket}
             onChange={(stars, bounds) => {
@@ -490,7 +490,7 @@ export function Library() {
       </div>
 
       {assistantFilter && (
-        <div className="library-filter-chip">
+        <div className="library-filter-chip" data-agent-anchor="library.filter">
           <Chip
             label={`Filtered by assistant · ${describeFilter(assistantFilter)}`}
             icon="pi pi-sparkles"
@@ -512,6 +512,7 @@ export function Library() {
         </div>
       ) : (
         <BookGrid
+          anchor="library.books"
           books={visibleBooks}
           loading={loading}
           onOpen={setSelected}

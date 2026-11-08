@@ -26,6 +26,8 @@
  */
 
 import type { Book, SeriesSummary } from '../types';
+import { emitAgentFx } from '../agent-ui/agentFx';
+import { describeAction } from './labels';
 import {
   describeUi,
   getAnchorState,
@@ -161,7 +163,9 @@ export function createTools(ctx: ToolContext): AgentTool[] {
       if (!id) {
         return { ok: false, error: 'id is required' };
       }
-      return setAnchor(id, args.value);
+      const result = await setAnchor(id, args.value);
+      if (result.ok) emitAgentFx({ kind: 'set', target: id, label: describeAction('set', args) });
+      return result;
     },
   };
 
@@ -190,7 +194,17 @@ export function createTools(ctx: ToolContext): AgentTool[] {
         rawArgs.args && typeof rawArgs.args === 'object'
           ? (rawArgs.args as Record<string, unknown>)
           : undefined;
-      return invokeAnchor(id, action, args);
+      const result = await invokeAnchor(id, action, args);
+      if (result.ok) {
+        // nav.tab + navigate is a tab switch: play the slide, not a glow.
+        const isNav = id === 'nav.tab' && action === 'navigate';
+        emitAgentFx({
+          kind: isNav ? 'navigate' : 'invoke',
+          target: isNav ? String(args?.tab ?? '') : id,
+          label: describeAction('invoke', rawArgs),
+        });
+      }
+      return result;
     },
   };
 
@@ -205,7 +219,9 @@ export function createTools(ctx: ToolContext): AgentTool[] {
       if (!tab) {
         return { ok: false, error: 'tab is required' };
       }
-      return registryNavigate(tab);
+      const result = await registryNavigate(tab);
+      if (result.ok) emitAgentFx({ kind: 'navigate', target: tab, label: describeAction('navigate', args) });
+      return result;
     },
   };
 

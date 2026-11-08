@@ -117,30 +117,20 @@ export function Ranking() {
   // Seed the compare category from the (cached) book list the first time it is available,
   // then load the first pair. Runs once per data arrival; `category === undefined` means
   // "not seeded yet". This replaces the old fetch-on-mount now that the list is cached.
+  // NOTE: no "active" cleanup flag here. With the persisted cache the list is available at
+  // once and the background refetch then changes `books`; a cleanup that cancelled the
+  // seed (or React StrictMode's double effect) left `pairInit` true forever, so Ranking
+  // hung on "Loading…". `seeded` makes this run exactly once; finishing is unconditional.
   const seeded = useRef(false);
   useEffect(() => {
     if (seeded.current || booksQuery.isPending) {
       return;
     }
     seeded.current = true;
-    let active = true;
-    (async () => {
-      try {
-        // Default category = the one with the most rated books.
-        const initial = defaultGroup(books);
-        if (active) {
-          setCategory(initial);
-          await loadPair(null, initial);
-        }
-      } finally {
-        if (active) {
-          setPairInit(false);
-        }
-      }
-    })();
-    return () => {
-      active = false;
-    };
+    // Default category = the one with the most rated books.
+    const initial = defaultGroup(books);
+    setCategory(initial);
+    void loadPair(null, initial).finally(() => setPairInit(false));
   }, [booksQuery.isPending, books, loadPair]);
 
   const ratedBooks = useMemo(() => books.filter((b) => b.stars != null), [books]);
@@ -471,7 +461,7 @@ export function Ranking() {
           </div>
         </div>
 
-        <div className="rank-table-panel">
+        <div className="rank-table-panel" data-agent-anchor="ranking.list">
           <DataTable
             value={ranked}
             loading={loading}

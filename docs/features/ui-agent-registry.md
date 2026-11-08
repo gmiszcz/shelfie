@@ -126,8 +126,35 @@ see [voice-input.md](voice-input.md#playwright-fake-audio-check-real-capture-pip
 proves this end to end: a spoken WAV, with the chat closed, drives a real
 `navigate` through the live registry — no AWS, no Bedrock, no Google Books.
 
+## Agent-only animations
+
+When the **agent** acts, the user sees what it did. The user's own clicks never
+animate.
+
+- **Where it fires:** only in the browser tools `set`, `invoke` and `navigate`
+  (`agui/tools.ts`), after a result with `ok: true`. They call
+  `emitAgentFx({ kind, target, label })` from `agent-ui/agentFx.ts`, which
+  dispatches the window event `shelfie:agent-fx`. User clicks call React
+  handlers directly, so they never reach this event.
+- **What plays** (`components/AgentFxLayer.tsx`, mounted once in `App.tsx`):
+  - `navigate` (also `invoke nav.tab navigate`): a 0.42 s slide + fade of `.app-main`;
+  - `set` / `invoke`: a 1.6 s accent glow on the changed control;
+  - always: a small chip "✦ <label>" under the top bar for ~2.2 s (label from `agui/labels.describeAction`).
+- **Which element glows:** `findAnchorElement(id)` looks for
+  `[data-agent-anchor="<id>"]`, then for the tab's list
+  (`<tab>.books` / `<tab>.list`), then falls back to `.app-main`. Current
+  attributes: `library.search`, `library.starFilter`, `library.filter`,
+  `library.books`, `favourites.books` (`BookGrid` `anchor` prop),
+  `series.search`, `series.list`, `stats.period`, `ranking.list`.
+  A new control that should glow gets `data-agent-anchor="<its anchor id>"` on
+  its wrapper.
+- `prefers-reduced-motion`: no motion. The glow becomes a static outline.
+- Test: `frontend/src/agent-ui/agentFx.test.ts` (fires only on a successful
+  agent action; fallback order of `findAnchorElement`).
+
 ## Files
 
+- `frontend/src/agent-ui/agentFx.ts` + `components/AgentFxLayer.tsx` — agent-only animations (above).
 - `frontend/src/agent-ui/types.ts` — anchor + schema types.
 - `frontend/src/agent-ui/registry.ts` — the runtime registry, `describeUi`, `getAnchorState`, `setAnchor`, `invokeAnchor`, `navigate`.
 - `frontend/src/agent-ui/useAgentAnchor.ts` — the React hook.

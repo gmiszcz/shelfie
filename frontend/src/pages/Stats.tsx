@@ -230,7 +230,7 @@ export function Stats() {
         <div className="stats-controls">
           <div className="stats-control">
             <SectionLabel as="span">Period</SectionLabel>
-            <div className="stats-range">
+            <div className="stats-range" data-agent-anchor="stats.period">
               <SelectButton
                 value={preset}
                 options={PRESETS}

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAgentAnchor, setStaticTabs, setActiveTab } from './agent-ui';
 import { useAuth, UserMenu, UsersPage } from './auth';
 import { ChatProvider, useChat } from './chat/ChatProvider';
+import { AgentFxLayer } from './components/AgentFxLayer';
 import { ChatWidget, chatMicRegistry } from './components/ChatWidget';
 import { GlobalMic, globalMicRegistry } from './components/GlobalMic';
 import { Library } from './pages/Library';
@@ -288,6 +289,7 @@ function AppShell() {
       <SettingsSidebar visible={settingsOpen} onHide={() => setSettingsOpen(false)} />
       <ChatWidget />
       <GlobalMic />
+      <AgentFxLayer />
     </>
   );
 }

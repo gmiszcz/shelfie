@@ -73,3 +73,7 @@ through refs.
 
 The ranking page keeps three pairs ready (`frontend/src/hooks/usePairQueue.ts`). A choice shows the next queued pair at once; the comparison is saved with `POST /api/ratings/compare` in the background, then the queue is refilled with `GET /api/ratings/pairs?count=N&skip=a-b,c-d` (one model fit, distinct pairs, skipping pairs still queued and, when possible, pairs already compared). The covers of queued pairs are preloaded. The ranking table refreshes once, 1.5 s after the last choice. Changing category or focus drops the queue and loads a fresh one.
 
+
+## First pair on open (no "Loading…" hang)
+
+On open the page seeds the category from the cached book list (the one with the most rated books) and loads the first pair. This runs once (`seeded` ref) and has **no** cleanup flag: with the persisted cache the list is ready at once and the background refetch then changes `books`, and a cancelling cleanup (or React StrictMode's double effect) used to leave `pairInit` true, so the compare panel hung on "Loading…". `setPairInit(false)` now always runs when `loadPair` finishes. Regression test: `Ranking.test.tsx` ("finishes loading under StrictMode").

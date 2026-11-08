@@ -174,6 +174,7 @@ export function Favourites() {
         </div>
       ) : (
         <BookGrid
+          anchor="favourites.books"
           books={visibleBooks}
           loading={loading}
           onOpen={setSelected}

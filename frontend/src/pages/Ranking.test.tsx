@@ -1,4 +1,5 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { makeBook } from '../components/testHelpers';
@@ -61,6 +62,18 @@ describe('Ranking page', () => {
     expect(screen.getByRole('search')).toBeTruthy();
     expect(container.querySelector('.p-input-icon-left.rank-search')).toBeNull();
     expect(container.querySelector('.rank-search-clear')).toBeNull();
+  });
+
+  it('finishes loading under StrictMode (double effect) instead of hanging on "Loading…"', async () => {
+    render(
+      <StrictMode>
+        <QueryWrapper>
+          <Ranking />
+        </QueryWrapper>
+      </StrictMode>,
+    );
+    await waitFor(() => expect(screen.getByText(/2 rated books/)).toBeTruthy());
+    expect(screen.queryByText('Loading…')).toBeNull();
   });
 
   it('registers the ranking search, category and focus anchors', async () => {

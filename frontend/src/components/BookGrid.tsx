@@ -8,12 +8,14 @@ interface Props {
   loading: boolean;
   onOpen: (book: Book) => void;
   onToggleFavourite?: (book: Book, next: boolean) => void;
+  /** Agent-fx highlight target (e.g. `library.books`); see agent-ui/agentFx.ts. */
+  anchor?: string;
 }
 
-export function BookGrid({ books, loading, onOpen, onToggleFavourite }: Props) {
+export function BookGrid({ books, loading, onOpen, onToggleFavourite, anchor }: Props) {
   if (loading) {
     return (
-      <div className="book-grid">
+      <div className="book-grid" data-agent-anchor={anchor}>
         {Array.from({ length: 12 }).map((_, i) => (
           <div className="book-card" key={i}>
             <Skeleton width="100%" height="0" style={{ aspectRatio: '2 / 3' }} />
@@ -37,7 +39,7 @@ export function BookGrid({ books, loading, onOpen, onToggleFavourite }: Props) {
   }
 
   return (
-    <div className="book-grid">
+    <div className="book-grid" data-agent-anchor={anchor}>
       {books.map((book) => (
         <BookCard
           key={book.id}
