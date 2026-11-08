@@ -1,0 +1,28 @@
+/* The small square language picker (shared). */
+.ui-lang-picker.p-dropdown {
+  flex: none;
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  justify-content: center;
+}
+.ui-lang-picker .p-dropdown-label {
+  padding: 0 var(--small-padding);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--app-accent);
+}
+.ui-lang-picker .p-dropdown-trigger {
+  display: none;
+}
+.ui-lang-item {
+  display: inline-flex;
+  gap: var(--small-gap);
+}
+.ui-lang-item strong {
+  min-width: 2.6rem;
+  font-family: var(--font-mono);
+}

@@ -1,0 +1,415 @@
+export type ReadingStatus = 'want' | 'reading' | 'finished' | 'abandoned';
+
+/** Structured, model-generated insights about a book (contract 2). All fields nullable. */
+export interface BookInsights {
+  summary: string | null;
+  main_characters: string | null;
+  main_plot: string | null;
+  setting: string | null;
+  themes: string | null;
+  tone: string | null;
+  generated_at: string | null;
+  source: 'agent' | 'user' | null;
+}
+
+/** A metadata hit from Google Books / OpenLibrary, not yet in the library. */
+export interface VolumeSearchResult {
+  google_volume_id: string | null;
+  title: string;
+  subtitle: string | null;
+  authors: string[];
+  publisher: string | null;
+  published_date: string | null;
+  description: string | null;
+  page_count: number | null;
+  categories: string[];
+  language: string | null;
+  isbn_10: string | null;
+  isbn_13: string | null;
+  cover_url: string | null;
+}
+
+/** Everything the user can set on a book (POST /api/books body). Dates are YYYY-MM-DD. */
+export interface BookInput {
+  external_id?: string | null;
+  google_volume_id?: string | null;
+  title: string;
+  subtitle?: string | null;
+  authors?: string[];
+  translators?: string[];
+  publisher?: string | null;
+  published_date?: string | null;
+  description?: string | null;
+  page_count?: number | null;
+  categories?: string[];
+  language?: string | null;
+  isbn_10?: string | null;
+  isbn_13?: string | null;
+  cover_url?: string | null;
+  format?: string | null;
+  edition?: string | null;
+  series?: string | null;
+  volume?: string | null;
+  status?: ReadingStatus;
+  stars?: number | null;
+  started_on?: string | null;
+  finished_on?: string | null;
+  pages_read?: number | null;
+  shelves?: string[];
+  tags?: string[];
+  review?: string | null;
+  notes?: string | null;
+  quotes?: string | null;
+  insights?: BookInsights | null;
+  signed?: boolean;
+  favourite?: boolean;
+  condition?: string | null;
+  copies?: number;
+  purchase_date?: string | null;
+  purchase_price?: number | null;
+  purchase_from?: string | null;
+  metadata_source?: string;
+}
+
+/** Partial update (PATCH /api/books/{id}). */
+export type BookPatch = Partial<Omit<BookInput, 'external_id' | 'metadata_source'>>;
+
+export interface Book extends Required<Omit<BookInput, 'stars' | 'insights'>> {
+  id: number;
+  stars: number | null;
+  insights?: BookInsights | null;
+  latent_strength: number | null;
+  rating_uncertainty: number | null;
+  display_score: number | null;
+  comparison_count: number;
+  added_at: string;
+  updated_at: string;
+}
+
+export interface SearchResponse {
+  total_items: number;
+  items: VolumeSearchResult[];
+  /** Set when Google Books was over its daily limit and results came from OpenLibrary. */
+  notice?: string | null;
+}
+
+// --- stats -------------------------------------------------------------------------------
+
+export type GroupBy = 'shelf' | 'tag' | 'month' | 'year';
+
+export interface StatsBucket {
+  key: string;
+  books: number;
+  pages: number;
+}
+
+export interface StatsSummary {
+  books: number;
+  pages: number;
+  average_stars: number | null;
+  first_finished: string | null;
+  last_finished: string | null;
+}
+
+export interface StatsResponse {
+  date_from: string | null;
+  date_to: string | null;
+  group_by: GroupBy;
+  summary: StatsSummary;
+  buckets: StatsBucket[];
+  books: Book[];
+}
+
+// --- ratings -----------------------------------------------------------------------------
+
+export type Winner = 'left' | 'right' | 'tie';
+
+export interface RatingPair {
+  left: Book;
+  right: Book;
+}
+
+export interface RecomputeResult {
+  rated_books: number;
+  comparisons: number;
+}
+
+// --- agent chat (SSE wire protocol of POST /api/agent/chat) ------------------------------
+
+/** AG-UI canonical event names carried in the `agui` field of each ChatEvent. */
+export type AgUiEventName =
+  | 'RUN_STARTED'
+  | 'RUN_FINISHED'
+  | 'RUN_ERROR'
+  | 'TEXT_MESSAGE_CONTENT'
+  | 'THINKING_TEXT_MESSAGE_CONTENT'
+  | 'TOOL_CALL_START'
+  | 'TOOL_CALL_ARGS'
+  | 'TOOL_CALL_END'
+  | 'TOOL_CALL_RESULT';
+
+/** Which scope the chat runs in: read-only data assistant, or also UI control. */
+export type ChatScope = 'library' | 'ui';
+
+export type ChatEvent =
+  | { type: 'session_start'; session_id: string; agui?: 'RUN_STARTED' }
+  | { type: 'reasoning'; text: string; agui?: 'THINKING_TEXT_MESSAGE_CONTENT' }
+  | { type: 'token'; text: string; agui?: 'TEXT_MESSAGE_CONTENT' }
+  | {
+      type: 'tool_start';
+      id: string;
+      name: string;
+      input: Record<string, unknown>;
+      ui_action?: boolean;
+      agui?: 'TOOL_CALL_START';
+    }
+  | {
+      type: 'tool_args';
+      id: string;
+      name: string;
+      input: Record<string, unknown>;
+      ui_action?: boolean;
+      agui?: 'TOOL_CALL_ARGS';
+    }
+  | {
+      type: 'tool_end';
+      id: string;
+      name: string;
+      status: string;
+      input?: Record<string, unknown>;
+      ui_action?: boolean;
+      agui?: 'TOOL_CALL_END' | 'TOOL_CALL_RESULT';
+    }
+  | { type: 'error'; message: string; agui?: 'RUN_ERROR' }
+  | {
+      type: 'session_finish';
+      session_id?: string;
+      text: string;
+      ok: boolean;
+      agui?: 'RUN_FINISHED' | 'RUN_ERROR';
+    };
+
+/**
+ * UI-bus event detail (agent -> frontend), dispatched as
+ * `window.dispatchEvent(new CustomEvent('shelfie:ui', { detail }))`.
+ * Mirrors the wave-2 UI-bus contract; ag-ui-voice dispatches, ui-shell listens.
+ */
+export type UiBusDetail =
+  | {
+      action: 'filter_library';
+      query?: string;
+      series?: string;
+      author?: string;
+      shelf?: string;
+      tag?: string;
+      status?: string;
+      min_stars?: number;
+      book_ids?: number[];
+    }
+  | { action: 'navigate'; tab: 'library' | 'series' | 'favourites' | 'stats' | 'ranking' }
+  | { action: 'open_book'; book_id: number }
+  | { action: 'clear_filter' };
+
+/** Event name for the agent -> frontend UI bus. */
+export const UI_BUS_EVENT = 'shelfie:ui';
+
+// --- labels ------------------------------------------------------------------------------
+
+export const STATUS_LABELS: Record<ReadingStatus, string> = {
+  want: 'Want to read',
+  reading: 'Reading',
+  finished: 'Finished',
+  abandoned: 'Abandoned',
+};
+
+export const STATUS_SEVERITY: Record<ReadingStatus, 'info' | 'warning' | 'success' | 'danger'> = {
+  want: 'info',
+  reading: 'warning',
+  finished: 'success',
+  abandoned: 'danger',
+};
+
+// --- series tracking (wave 5) ------------------------------------------------------------
+
+export interface KnownVolume {
+  number: number | null;
+  title: string | null;
+  published_date: string | null;
+  source: string | null;
+}
+
+export interface NextExpected {
+  title: string | null;
+  date: string | null;
+  source_url: string | null;
+  confidence: string | null;
+  status: string | null;
+}
+
+export interface OwnedVolume {
+  book_id: number;
+  volume: number | null;
+  volume_label: string | null;
+  title: string;
+  cover_url: string | null;
+  status: ReadingStatus;
+  read: boolean;
+  favourite: boolean;
+  finished_on: string | null;
+}
+
+export interface MissingVolume {
+  number: number | null;
+  title: string | null;
+  published_date: string | null;
+  source: string | null;
+}
+
+/** Which language(s) the release research searches for a series (wave 6). */
+export type SeriesSearchLang = 'pl' | 'en' | 'both';
+
+/** The status of the next-volume research, drives the card status icon (wave 6). */
+export type ReleaseStatus =
+  | 'released'
+  | 'announced'
+  | 'in_translation'
+  | 'no_news'
+  | 'unknown';
+
+/** One factual bullet in a release summary, with an optional source link. */
+export interface ReleaseDetail {
+  text: string;
+  source_url: string | null;
+}
+
+/** Per-edition (PL / EN) release facts inside a release summary. */
+export interface ReleaseEdition {
+  status: ReleaseStatus | string;
+  title: string | null;
+  date: string | null;
+  source_url: string | null;
+}
+
+/**
+ * The editor-written, facts-only release summary for a watched series (wave 6).
+ * One factual `headline` plus structured detail revealed under "Details".
+ */
+export interface FoundVolume {
+  volume: number | null;
+  title: string;
+  status: 'released' | 'announced' | 'unknown';
+  date: string | null;
+  source_url: string | null;
+  added_book_id: number | null;
+}
+
+export interface ReleaseSummary {
+  status: ReleaseStatus;
+  headline: string;
+  next_title: string | null;
+  next_volume: number | null;
+  expected_date: string | null;
+  details: ReleaseDetail[];
+  editions: {
+    pl?: ReleaseEdition | null;
+    en?: ReleaseEdition | null;
+  };
+  /** Volumes found that are not in the library (gaps + next), each addable as 'want'. */
+  found_volumes?: FoundVolume[];
+  added_book_id: number | null;
+  checked_at: string | null;
+}
+
+/** A series as the Series tab shows it (computed reading data + cached lookup). */
+export interface SeriesSummary {
+  series_key: string;
+  name: string;
+  author: string;
+  aliases: string[];
+  owned_volumes: OwnedVolume[];
+  missing_volumes: MissingVolume[];
+  owned_count: number;
+  read_count: number;
+  unread_owned_count: number;
+  total_known: number | null;
+  section: 'in_progress' | 'complete' | 'owned';
+  started: boolean;
+  finished: boolean;
+  watch: boolean;
+  next_expected: NextExpected | null;
+  next_expected_pl: NextExpected | null;
+  next_expected_en: NextExpected | null;
+  checking: boolean;
+  last_checked: string | null;
+  notes: string | null;
+  /** Which language(s) the release research searches for this series (wave 6). */
+  search_lang: SeriesSearchLang;
+  /** The editor-written facts-only release summary, or null when never checked. */
+  release_summary: ReleaseSummary | null;
+}
+
+export interface SeriesAlert {
+  kind: 'in_progress' | 'new_volume';
+  series_key: string;
+  series_name: string;
+  message: string;
+  detail: string | null;
+  source_url: string | null;
+  /** Stable identity of this alert; dismissing stores it, a new alert gets a new key. */
+  alert_key: string;
+  /** Whether the user has already dismissed this exact alert. */
+  seen: boolean;
+}
+
+export interface SeriesAlertsResponse {
+  /** Number of UNSEEN alerts (the badge value). */
+  count: number;
+  unseen_count: number;
+  in_progress: SeriesAlert[];
+  new_volume: SeriesAlert[];
+}
+
+/** The Series-tab filter ids, in display order. */
+export type SeriesFilterId =
+  | 'all'
+  | 'watching'
+  | 'in_progress'
+  | 'missing'
+  | 'complete'
+  | 'owned';
+
+/** Per-user Series-tab preferences (GET/PUT /api/preferences/series). */
+export interface SeriesPreferences {
+  filter: SeriesFilterId;
+  sort: string | null;
+  /** Default release-research language for newly watched series (wave 6; default 'pl'). */
+  default_search_lang: SeriesSearchLang;
+  /** Found volumes: 'auto' adds them as Want to read; 'ask' shows an Add button. */
+  add_mode?: 'auto' | 'ask';
+}
+
+export interface ExpectedBook {
+  id: number;
+  title: string;
+  author: string;
+  series_key: string | null;
+  series_name: string | null;
+  volume: string | null;
+  expected_date: string | null;
+  source_url: string | null;
+  source: string | null;
+  confidence: string | null;
+  notes: string | null;
+}
+
+export interface ExpectedBookInput {
+  title: string;
+  author?: string;
+  series_name?: string | null;
+  volume?: string | null;
+  expected_date?: string | null;
+  source_url?: string | null;
+  source?: string | null;
+  confidence?: string | null;
+  notes?: string | null;
+}

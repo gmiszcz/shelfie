@@ -1,0 +1,52 @@
+/* Shared search box. All spacing comes from index.css :root.
+   Icon slot width = big padding (left inset) + 1rem icon + small gap before text. */
+.ui-search {
+  --ui-search-icon-slot: calc(var(--big-padding) + 1rem + var(--small-gap));
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: min(320px, 100%);
+}
+
+.ui-search--full {
+  display: flex;
+  width: 100%;
+}
+
+.ui-search > .p-inputtext {
+  width: 100%;
+  padding-left: var(--ui-search-icon-slot);
+  padding-right: var(--ui-search-icon-slot);
+}
+
+/* Hide the native clear "x" of type=search; we render our own. */
+.ui-search > .p-inputtext::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.ui-search-icon {
+  position: absolute;
+  left: var(--big-padding);
+  font-size: 1rem;
+  color: var(--app-text-muted);
+  pointer-events: none;
+}
+
+.ui-search-clear {
+  position: absolute;
+  right: var(--default-padding);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--small-padding);
+  background: none;
+  border: none;
+  border-radius: var(--custom-border-radius);
+  color: var(--app-text-muted);
+  cursor: pointer;
+}
+
+.ui-search-clear:hover,
+.ui-search-clear:focus-visible {
+  color: var(--app-text);
+}

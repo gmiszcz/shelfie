@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shelfie"
+version = "0.1.0"
+description = "Shelfie — personal book collection manager and reading tracker."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn>=0.32.0",
+  "pydantic>=2.9.0",
+  "pydantic-settings>=2.6.0",
+  "httpx>=0.27.0",
+  "aiosqlite>=0.20.0",
+  "tzdata>=2024.1; sys_platform == 'win32'",
+  "strands-compose>=0.12.0",
+  "python-multipart>=0.0.33",
+  "amazon-transcribe>=0.6.2",
+  "websockets>=13.0",
+  "boto3>=1.35.0",
+  "argon2-cffi>=25.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0",
+  "pytest-asyncio>=0.24.0",
+  "ruff==0.17.3",
+  "mypy==2.4.1",
+  "bandit==1.9.4",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers --strict-config"
+xfail_strict = true
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["app", "scripts", "tests"]
+plugins = ["pydantic.mypy"]
+check_untyped_defs = true
+warn_unused_ignores = true

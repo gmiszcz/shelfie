@@ -1,0 +1,107 @@
+/* The avatar chip used by the top-bar trigger and the menu header. */
+.user-menu-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* Desktop top-bar trigger: a rounded button wrapping the avatar. */
+.user-menu-trigger.p-button {
+  padding: var(--small-padding);
+  width: var(--touch-target);
+  height: var(--touch-target);
+}
+.user-menu-trigger.p-button:hover {
+  background: var(--app-surface-2);
+}
+
+/* Popup header: avatar + name + e-mail. */
+.user-menu-head {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+  padding: var(--big-padding);
+}
+
+.user-menu-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.user-menu-name {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--app-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-menu-email {
+  font-size: 0.78rem;
+  color: var(--app-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The menu popup: comfortable width, dashboard surface. */
+.user-menu-popup.p-menu {
+  min-width: 15rem;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+}
+
+.user-menu-popup.p-menu .p-menuitem-link {
+  gap: var(--small-gap);
+}
+
+@media (max-width: 640px) {
+  .user-menu-popup.p-menu {
+    min-width: 13rem;
+  }
+}
+
+/* Account dialog (user panel). */
+.account-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--big-gap);
+}
+
+.account-role {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--app-text-muted);
+}
+
+.account-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--small-gap);
+  flex-wrap: wrap;
+  padding-top: var(--big-padding);
+  border-top: 1px solid var(--app-border);
+}
+
+@media (max-width: 640px) {
+  .account-actions {
+    flex-direction: column;
+  }
+  .account-actions .p-button {
+    width: 100%;
+    justify-content: center;
+  }
+}

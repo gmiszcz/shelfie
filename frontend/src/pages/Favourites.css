@@ -1,0 +1,45 @@
+/* Favourites tab layout. Spacing from :root tokens; siblings spaced by gap. */
+.favourites-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--default-gap);
+  margin-bottom: var(--big-gap);
+}
+
+.favourites-toolbar-head {
+  display: flex;
+  align-items: center;
+  gap: var(--default-gap);
+  flex-wrap: wrap;
+}
+
+.favourites-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-gap);
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.favourites-title i {
+  color: #e5484d;
+}
+
+.favourites-count {
+  color: var(--app-text-muted);
+  font-size: 0.9rem;
+  margin-left: auto;
+}
+
+.favourites-toolbar-search {
+  display: flex;
+  width: 100%;
+}
+
+.favourites-toolbar-search .ui-search {
+  width: 100%;
+}
+
+.favourites-toolbar-filter {
+  display: flex;
+}

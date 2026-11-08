@@ -1,0 +1,199 @@
+/* Series card. All spacing from :root tokens; siblings spaced by gap, not margin. */
+.series-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--default-gap);
+  padding: var(--card-padding);
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--custom-border-radius);
+}
+
+.series-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--default-gap);
+}
+
+.series-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+  flex: 0 0 auto;
+}
+
+.series-card-title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-padding);
+  min-width: 0;
+}
+
+.series-card-title h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.25;
+}
+
+.series-card-author {
+  color: var(--app-text-muted);
+  font-size: 0.85rem;
+}
+
+.series-card-aliases {
+  color: var(--app-text-muted);
+  font-size: 0.78rem;
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.series-card-covers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--small-gap);
+}
+
+.series-vol {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--small-padding);
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: var(--custom-border-radius);
+}
+
+.series-vol:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+}
+
+.series-vol .ui-cover {
+  transition:
+    transform 0.12s ease,
+    opacity 0.12s ease;
+}
+
+.series-vol:hover .ui-cover {
+  transform: translateY(-2px);
+}
+
+/* Unread owned volumes are dimmed so progress reads at a glance. */
+.series-vol:not(.series-vol--read) .ui-cover {
+  opacity: 0.55;
+}
+
+.series-vol-num {
+  font-size: 0.72rem;
+  color: var(--app-text-muted);
+}
+
+.series-vol-read {
+  position: absolute;
+  top: var(--small-padding);
+  right: var(--small-padding);
+  font-size: 0.7rem;
+  color: #fff;
+  background: var(--app-accent);
+  border-radius: 50%;
+  padding: var(--small-padding);
+  line-height: 1;
+}
+
+.series-card-missing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+}
+
+.series-card-missing-label {
+  color: var(--app-text-muted);
+  font-size: 0.82rem;
+}
+
+.series-card-missing-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--small-gap);
+}
+
+.series-card-foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+  padding-top: var(--default-padding);
+  border-top: 1px solid var(--app-border);
+}
+
+.series-card-watch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--small-gap);
+  flex-wrap: wrap;
+}
+
+.series-card-watch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-gap);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.series-card-lang {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.series-card-next {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-gap);
+  font-size: 0.85rem;
+  color: var(--app-text);
+}
+
+.series-card-next-editions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-padding);
+  min-width: 0;
+}
+
+.series-card-checking {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-gap);
+  font-size: 0.85rem;
+  color: var(--app-text-muted);
+}
+
+.series-card-checking i {
+  color: var(--app-accent);
+}
+
+.series-card-next i {
+  color: var(--app-accent);
+}
+
+.series-card-next a {
+  color: var(--app-accent);
+}
+
+.series-card-checked {
+  color: var(--app-text-muted);
+  font-size: 0.78rem;
+}
+
+.series-card-notes {
+  margin: 0;
+  color: var(--app-text-muted);
+  font-size: 0.78rem;
+}

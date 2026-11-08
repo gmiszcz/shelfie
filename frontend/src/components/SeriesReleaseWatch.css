@@ -1,0 +1,284 @@
+/* Series card release watch area (wave 6). All spacing from :root tokens; siblings
+   spaced by gap, not margin. */
+.series-release {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+  min-width: 0;
+}
+
+.series-release--checking,
+.series-release--empty {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--small-gap);
+  font-size: 0.85rem;
+  color: var(--app-text-muted);
+}
+
+.series-release--checking i {
+  color: var(--app-accent);
+}
+
+.series-release-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--small-gap);
+  min-width: 0;
+}
+
+.series-release-icon {
+  flex: 0 0 auto;
+  font-size: 1rem;
+  align-self: center;
+}
+
+.series-release-icon--green {
+  color: var(--accent-green);
+}
+
+.series-release-icon--blue {
+  color: var(--accent-blue);
+}
+
+.series-release-icon--violet {
+  color: var(--accent-violet);
+}
+
+.series-release-icon--grey {
+  color: var(--accent-grey-text);
+}
+
+.series-release-status {
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--app-text-muted);
+}
+
+/* The one fact sentence: full width under the status, never squeezed beside it. */
+.series-release-headline {
+  margin: 0;
+  min-width: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--app-text);
+}
+
+/* Found volumes (gaps + next): title, date, Want to read / In library. */
+.series-found {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-padding);
+}
+.series-found-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'main action'
+    'date action';
+  align-items: center;
+  column-gap: var(--small-gap);
+  row-gap: 2px;
+  padding: var(--small-padding) var(--default-padding);
+  border-radius: var(--radius-md);
+  background: var(--app-surface-2);
+}
+.series-found-main {
+  grid-area: main;
+  display: flex;
+  align-items: baseline;
+  gap: var(--small-padding);
+  min-width: 0;
+}
+.series-found-vol {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--app-accent);
+}
+.series-found-title {
+  min-width: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.series-found-date {
+  grid-area: date;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-padding);
+  font-size: 0.75rem;
+  color: var(--app-text-muted);
+}
+.series-found-date.released .pi {
+  color: var(--accent-green);
+}
+.series-found-add.p-button,
+.series-found-in {
+  grid-area: action;
+  min-height: 2.25rem;
+  font-size: 0.75rem;
+  padding: 0 var(--default-padding);
+}
+.series-found-in {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-padding);
+  border: none;
+  background: transparent;
+  color: var(--accent-green);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Details toggle: left-aligned, link-like, 44px touch target. */
+.series-release-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-gap);
+  align-self: flex-start;
+  min-height: var(--touch-target);
+  padding: 0 var(--small-padding);
+  border: none;
+  background: transparent;
+  color: var(--app-accent);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.series-release-toggle:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.series-release-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+  padding: var(--default-padding);
+  background: var(--app-surface-2);
+  border-radius: var(--radius-md);
+}
+
+.series-release-next {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--small-gap);
+  min-width: 0;
+}
+
+.series-release-next-main {
+  font-weight: 600;
+  font-size: 0.85rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.series-release-next-date {
+  flex: 0 0 auto;
+  color: var(--app-text-muted);
+  font-size: 0.8rem;
+}
+
+.series-release-editions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-padding);
+}
+
+.series-release-edition {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+  font-size: 0.8rem;
+  min-width: 0;
+}
+
+.series-release-edition-lang {
+  flex: 0 0 auto;
+  min-width: 1.6rem;
+  font-weight: 700;
+  color: var(--app-text-muted);
+}
+
+.series-release-edition-icon {
+  flex: 0 0 auto;
+  color: var(--app-accent);
+}
+
+.series-release-edition-status {
+  flex: 0 0 auto;
+  color: var(--app-text-muted);
+}
+
+.series-release-edition-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.series-release-edition-date {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--app-text-muted);
+}
+
+.series-release-edition-muted {
+  color: var(--app-text-muted);
+}
+
+.series-release-bullets {
+  list-style: disc;
+  margin: 0;
+  padding-left: var(--big-padding);
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-padding);
+}
+
+.series-release-bullets li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--small-gap);
+  font-size: 0.8rem;
+  line-height: 1.3;
+}
+
+/* Source links are small icon links, never the word "source". */
+.series-release-src {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.6rem;
+  min-height: 1.6rem;
+  color: var(--app-accent);
+}
+
+.series-release-src i {
+  font-size: 0.78rem;
+}
+
+.series-release-added {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.series-release-added .ui-pill i {
+  font-size: 0.7rem;
+}

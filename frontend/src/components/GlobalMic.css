@@ -1,0 +1,192 @@
+/* Floating global microphone on the main view.
+   It sits just to the LEFT of the chat bubble (which stays pinned in the
+   bottom-right corner), so the two never overlap. Spacing comes from the shared
+   :root scale; colours from the --app-* theme tokens. On phones both the button
+   and its toast lift above the bottom tab bar and the home-indicator safe area,
+   matching the chat FAB's own lift in ChatWidget.css. */
+
+.global-mic {
+  position: fixed;
+  /* The chat FAB is 3.5rem wide at right:--content-padding; clear it plus a gap. */
+  right: calc(var(--content-padding) + 3.5rem + var(--default-gap));
+  bottom: var(--content-padding);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--small-gap);
+}
+
+/* The global-variant mic is a solid floating button the size of a FAB, so it
+   reads as a peer of the chat bubble rather than an inline input control. */
+.global-mic .mic-button-global {
+  width: 3.5rem;
+  height: 3.5rem;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border-strong);
+  color: var(--app-accent);
+  box-shadow: var(--shadow-pop);
+}
+
+.global-mic .mic-button-global i {
+  font-size: 1.25rem;
+}
+
+.global-mic .mic-button-global:hover:not(:disabled) {
+  border-color: var(--app-accent);
+  background: var(--app-accent-soft);
+}
+
+/* Recording keeps the shared red treatment from MicButton.css, only on a solid
+   surface so the glow reads against the page. */
+.global-mic .mic-button-global.recording {
+  background: color-mix(in srgb, #e5484d 14%, var(--app-surface));
+}
+
+/* The in-flight ring stays fully opaque while the agent works (busy+disabled). */
+.global-mic .mic-button-global.busy:disabled {
+  opacity: 1;
+}
+
+/* --- result / error toast ------------------------------------------------- */
+
+.global-mic-toast {
+  width: min(20rem, calc(100vw - 2 * var(--content-padding)));
+  padding: var(--default-padding) var(--big-padding);
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+  color: var(--app-text);
+  cursor: pointer;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-padding);
+  /* An exponential ease-out entrance from an already-plausible resting state. */
+  animation: global-mic-toast-in 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    transform 0.12s ease-out,
+    opacity 0.12s ease-out;
+  touch-action: pan-x;
+}
+
+.global-mic-toast:hover {
+  border-color: var(--app-accent);
+}
+
+.global-mic-toast.error {
+  border-color: var(--accent-red);
+  background: color-mix(in srgb, var(--accent-red) 8%, var(--app-surface));
+  cursor: default;
+}
+
+@keyframes global-mic-toast-in {
+  from {
+    transform: translateY(0.5rem);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .global-mic-toast {
+    animation: none;
+  }
+}
+
+.global-mic-toast-close {
+  position: absolute;
+  top: var(--small-padding);
+  right: var(--small-padding);
+  width: 1.5rem;
+  height: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  color: var(--app-text-faint);
+  cursor: pointer;
+}
+
+.global-mic-toast-close:hover {
+  color: var(--app-text);
+  background: var(--app-surface-3);
+}
+
+.global-mic-toast-transcript {
+  margin: 0;
+  padding-right: var(--big-padding);
+  font-size: 0.8rem;
+  color: var(--app-text-muted);
+  display: flex;
+  align-items: baseline;
+  gap: var(--small-gap);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-mic-toast-transcript .pi {
+  color: var(--app-accent);
+  font-size: 0.75rem;
+}
+
+.global-mic-toast-reply {
+  margin: 0;
+  padding-right: var(--big-padding);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: var(--app-text);
+  /* Keep the toast compact: clamp a long reply to three lines. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+.global-mic-toast.error .global-mic-toast-reply {
+  color: var(--accent-red-text, var(--accent-red));
+}
+
+.global-mic-toast-hint {
+  font-size: 0.72rem;
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--app-text-faint);
+}
+
+/* --- phones: lift clear of the bottom tab bar + home-indicator safe area --- */
+@media (max-width: 640px) {
+  .global-mic {
+    /* Match the chat FAB's lift in ChatWidget.css so both clear the tab bar. */
+    bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+    /* The chat FAB sits one 3.5rem button + gap to the right; clear it. */
+    right: calc(var(--content-padding) + 3.5rem + var(--default-gap));
+  }
+
+  .global-mic-toast {
+    width: min(18rem, calc(100vw - 2 * var(--content-padding)));
+  }
+
+  /* Live caption: above the lifted floating buttons. */
+  .global-mic .mic-global .mic-caption {
+    bottom: calc(4.5rem + 3.5rem + var(--default-gap) + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* Chat bubble hidden in Settings: the mic takes the bottom-right corner itself. */
+.global-mic.no-chat {
+  right: var(--content-padding);
+}
+@media (max-width: 640px) {
+  .global-mic.no-chat {
+    right: var(--content-padding);
+  }
+}

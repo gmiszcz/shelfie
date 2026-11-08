@@ -1,0 +1,149 @@
+.stats-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--big-gap);
+}
+
+/* --- Control groups (Period / Group by / Metric) ---------------------------------------- */
+.stats-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--big-gap);
+  align-items: flex-start;
+}
+
+.stats-control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+  min-width: 0;
+}
+
+/* SelectButtons must wrap instead of overflowing behind the chat panel on narrow widths. */
+.stats-control .p-selectbutton {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--small-padding);
+}
+
+.stats-range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--small-gap);
+  align-items: center;
+}
+
+.stats-error {
+  width: 100%;
+}
+
+/* --- Summary KPI grid (StatCards) ------------------------------------------------------- */
+.stats-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--big-gap);
+}
+
+/* Skeleton placeholder mirrors a StatCard's label / value / spark stack. */
+.stats-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+}
+
+/* Period value is longer than a number; keep it on the baseline but smaller. */
+.stats-period-value {
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+/* --- Table ------------------------------------------------------------------------------ */
+.stats-table {
+  display: flex;
+  flex-direction: column;
+  gap: var(--default-gap);
+}
+
+.stats-table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--default-gap);
+}
+
+.stats-table-search {
+  flex: 1;
+  min-width: min(280px, 100%);
+}
+
+.stats-table-count {
+  color: var(--app-text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* --- Shared cell templates -------------------------------------------------------------- */
+.stats-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--small-gap);
+}
+
+.stats-muted {
+  color: var(--app-text-muted);
+}
+
+/* --- Responsive ------------------------------------------------------------------------- */
+/* Phones: KPIs in a tidy 2x2, controls stack full width, value a touch smaller. */
+@media (max-width: 640px) {
+  .stats-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--default-gap);
+  }
+  .stats-summary .ui-statcard-value {
+    font-size: 1.7rem;
+  }
+  .stats-controls {
+    gap: var(--default-gap);
+  }
+  .stats-control,
+  .stats-range,
+  .stats-range .p-calendar {
+    width: 100%;
+  }
+  .stats-range .p-calendar .p-inputtext {
+    width: 100%;
+  }
+
+  /* Compact one-row segmented controls: each option shares the row equally, no wrapping,
+     smaller text. 40px stays comfortable to tap without the oversized pills. */
+  .stats-control .p-selectbutton {
+    display: flex;
+    flex-wrap: nowrap;
+    width: 100%;
+    gap: var(--small-padding);
+  }
+  .stats-control .p-selectbutton .p-button {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 40px;
+    padding: var(--small-padding);
+    font-size: 0.8rem;
+    white-space: nowrap;
+    justify-content: center;
+  }
+  .stats-control .p-selectbutton .p-button .p-button-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .stats-range .p-calendar .p-inputtext {
+    min-height: 40px;
+    padding: var(--small-padding) var(--big-padding);
+    font-size: 0.85rem;
+  }
+}

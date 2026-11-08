@@ -1,0 +1,268 @@
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { AuthUser } from './authTypes';
+
+// All state the vi.mock factory touches must be hoisted (the factory runs before
+// top-level code). vi.hoisted gives us that shared, pre-initialised state.
+const h = vi.hoisted(() => {
+  class MockApiError extends Error {
+    status: number;
+    retryAfter?: number;
+    constructor(status: number, message: string, retryAfter?: number) {
+      super(message);
+      this.status = status;
+      this.retryAfter = retryAfter;
+    }
+  }
+  const unauthorizedListeners = new Set<() => void>();
+  const apiMock = {
+    me: vi.fn(),
+    login: vi.fn(),
+    logout: vi.fn(),
+    changePassword: vi.fn(),
+    getSetupToken: vi.fn(),
+    completeSetup: vi.fn(),
+    listUsers: vi.fn(),
+    addUser: vi.fn(),
+    updateUser: vi.fn(),
+    newSetupLink: vi.fn(),
+    authConfig: vi.fn(),
+    register: vi.fn(),
+    updateMe: vi.fn(),
+  };
+  return { MockApiError, unauthorizedListeners, apiMock };
+});
+
+const { MockApiError, unauthorizedListeners, apiMock } = h;
+
+const ADMIN: AuthUser = { id: 1, email: 'admin@shelfie.app', display_name: 'Patryk Batóg', is_admin: true };
+
+vi.mock('../services/api', () => ({
+  ApiError: h.MockApiError,
+  api: h.apiMock,
+  onUnauthorized: (fn: () => void) => {
+    h.unauthorizedListeners.add(fn);
+    return () => h.unauthorizedListeners.delete(fn);
+  },
+}));
+
+// eslint-disable-next-line import/first
+import { AuthProvider, useAuth } from './AuthProvider';
+// eslint-disable-next-line import/first
+import { AuthGate } from './AuthGate';
+// eslint-disable-next-line import/first
+import { LoginPage } from './LoginPage';
+// eslint-disable-next-line import/first
+import { QueryWrapper } from '../queries/testUtils';
+
+/** Fire a global 401 the way api.ts would. */
+function emitUnauthorized() {
+  for (const fn of unauthorizedListeners) fn();
+}
+
+/** A trivial protected app body with a logout button, used to prove the gate. */
+function ProtectedApp() {
+  const { logout, user } = useAuth();
+  return (
+    <div>
+      <div>LIBRARY for {user?.display_name}</div>
+      <button onClick={() => void logout()}>do-logout</button>
+    </div>
+  );
+}
+
+beforeEach(() => {
+  unauthorizedListeners.clear();
+  for (const fn of Object.values(apiMock)) fn.mockReset();
+  window.history.replaceState(null, '', '/');
+});
+
+afterEach(cleanup);
+
+describe('LoginPage', () => {
+  it('logs in successfully and shows the app (login success)', async () => {
+    apiMock.me.mockRejectedValue(new MockApiError(401, 'no'));
+    apiMock.login.mockResolvedValue(ADMIN);
+
+    render(
+      <QueryWrapper><AuthProvider>
+        <AuthGate>
+          <ProtectedApp />
+        </AuthGate>
+      </AuthProvider></QueryWrapper>,
+    );
+
+    // Starts anonymous → the login form shows.
+    await screen.findByLabelText('E-mail');
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'admin@shelfie.app' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'hunter2hunter2' } });
+    fireEvent.click(screen.getByRole('button', { name: /log in/i }));
+
+    await screen.findByText(/LIBRARY for Patryk/);
+    expect(apiMock.login).toHaveBeenCalledWith('admin@shelfie.app', 'hunter2hunter2');
+  });
+
+  it('shows a generic inline error on invalid credentials (login failure)', async () => {
+    apiMock.me.mockRejectedValue(new MockApiError(401, 'no'));
+    apiMock.login.mockRejectedValue(new MockApiError(401, 'Invalid e-mail or password'));
+
+    render(
+      <QueryWrapper><AuthProvider>
+        <AuthGate>
+          <ProtectedApp />
+        </AuthGate>
+      </AuthProvider></QueryWrapper>,
+    );
+
+    await screen.findByLabelText('E-mail');
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'x@y.z' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'wrongpassword' } });
+    fireEvent.click(screen.getByRole('button', { name: /log in/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/Invalid e-mail or password/i);
+    expect(screen.queryByText(/LIBRARY for/)).toBeNull();
+  });
+
+  it('shows the throttle message with the wait time on 429', async () => {
+    apiMock.me.mockRejectedValue(new MockApiError(401, 'no'));
+    apiMock.login.mockRejectedValue(new MockApiError(429, 'slow down', 120));
+
+    render(
+      <QueryWrapper><AuthProvider>
+        <LoginPage />
+      </AuthProvider></QueryWrapper>,
+    );
+
+    await screen.findByLabelText('E-mail');
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'x@y.z' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'wrongpassword' } });
+    fireEvent.click(screen.getByRole('button', { name: /log in/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/too many attempts/i);
+    expect(alert.textContent).toMatch(/2 minutes/i);
+  });
+
+  it('has email and current-password autocomplete attributes', async () => {
+    apiMock.me.mockRejectedValue(new MockApiError(401, 'no'));
+    render(
+      <QueryWrapper><AuthProvider>
+        <LoginPage />
+      </AuthProvider></QueryWrapper>,
+    );
+    const email = await screen.findByLabelText('E-mail');
+    expect(email.getAttribute('autocomplete')).toBe('email');
+    expect(screen.getByLabelText('Password').getAttribute('autocomplete')).toBe('current-password');
+  });
+});
+
+describe('AuthGate 401 handling', () => {
+  it('a 401 sends the app back to login, then logging in returns to the app', async () => {
+    apiMock.me.mockResolvedValue(ADMIN);
+    apiMock.login.mockResolvedValue(ADMIN);
+
+    render(
+      <QueryWrapper><AuthProvider>
+        <AuthGate>
+          <ProtectedApp />
+        </AuthGate>
+      </AuthProvider></QueryWrapper>,
+    );
+
+    // Authenticated at first.
+    await screen.findByText(/LIBRARY for Patryk/);
+
+    // A session-expiry 401 fires → back to login.
+    emitUnauthorized();
+    await screen.findByLabelText('E-mail');
+    expect(screen.queryByText(/LIBRARY for/)).toBeNull();
+
+    // Logging back in returns to the app (same route is still '/').
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'admin@shelfie.app' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'hunter2hunter2' } });
+    fireEvent.click(screen.getByRole('button', { name: /log in/i }));
+    await screen.findByText(/LIBRARY for Patryk/);
+  });
+
+  it('logout clears state and shows the login page', async () => {
+    apiMock.me.mockResolvedValue(ADMIN);
+    apiMock.logout.mockResolvedValue(undefined);
+
+    render(
+      <QueryWrapper><AuthProvider>
+        <AuthGate>
+          <ProtectedApp />
+        </AuthGate>
+      </AuthProvider></QueryWrapper>,
+    );
+
+    await screen.findByText(/LIBRARY for Patryk/);
+    fireEvent.click(screen.getByText('do-logout'));
+    await screen.findByLabelText('E-mail');
+    expect(apiMock.logout).toHaveBeenCalled();
+    expect(screen.queryByText(/LIBRARY for/)).toBeNull();
+  });
+});
+
+
+describe('RegisterPage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    apiMock.me.mockRejectedValue(new MockApiError(401, 'Not logged in'));
+    apiMock.authConfig.mockResolvedValue({ registration_enabled: true, password_min_length: 8 });
+  });
+  afterEach(() => cleanup());
+
+  it('opens from the login screen, creates the account and enters the app', async () => {
+    apiMock.register.mockResolvedValue({ id: 2, email: 'ola@x.pl', display_name: 'Ola', is_admin: false });
+    render(
+      <QueryWrapper><AuthProvider>
+        <AuthGate>
+          <div>APP BODY</div>
+        </AuthGate>
+      </AuthProvider></QueryWrapper>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Create one' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Ola' } });
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'ola@x.pl' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'secret-pass' } });
+    fireEvent.change(screen.getByLabelText('Repeat password'), { target: { value: 'secret-pass' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+    await waitFor(() => expect(apiMock.register).toHaveBeenCalledWith('ola@x.pl', 'Ola', 'secret-pass'));
+    expect(await screen.findByText('APP BODY')).toBeTruthy();
+  });
+
+  it('hides the register link when registration is off', async () => {
+    apiMock.authConfig.mockResolvedValue({ registration_enabled: false, password_min_length: 8 });
+    render(
+      <QueryWrapper><AuthProvider>
+        <AuthGate>
+          <div>APP BODY</div>
+        </AuthGate>
+      </AuthProvider></QueryWrapper>,
+    );
+    await screen.findByRole('button', { name: 'Log in' });
+    await waitFor(() => expect(apiMock.authConfig).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: 'Create one' })).toBeNull();
+  });
+
+  it('shows a clear message when the e-mail is taken', async () => {
+    apiMock.register.mockRejectedValue(new MockApiError(409, 'taken'));
+    render(
+      <QueryWrapper><AuthProvider>
+        <AuthGate>
+          <div>APP BODY</div>
+        </AuthGate>
+      </AuthProvider></QueryWrapper>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Create one' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Ola' } });
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'admin@shelfie.app' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'secret-pass' } });
+    fireEvent.change(screen.getByLabelText('Repeat password'), { target: { value: 'secret-pass' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+    expect(await screen.findByText(/already exists/)).toBeTruthy();
+  });
+});

@@ -1,0 +1,80 @@
+.cover-picker {
+  display: flex;
+  gap: var(--big-gap);
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.cover-preview {
+  width: 160px;
+  aspect-ratio: 2 / 3;
+  flex-shrink: 0;
+  border: 1px solid var(--app-border);
+  border-radius: var(--custom-border-radius);
+  background: var(--app-surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--app-text-muted);
+  overflow: hidden;
+}
+
+.cover-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cover-preview > i {
+  font-size: 2.5rem;
+}
+
+.cover-actions {
+  flex: 1;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--default-gap);
+}
+
+.cover-error {
+  color: var(--red-400);
+}
+
+.cover-hit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: var(--small-gap);
+  max-height: 260px;
+  overflow: auto;
+  padding: var(--small-padding);
+  border: 1px solid var(--app-border);
+  border-radius: var(--custom-border-radius);
+  background: var(--app-surface-2);
+}
+
+.cover-hit {
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  background: var(--app-surface);
+  cursor: pointer;
+  overflow: hidden;
+  aspect-ratio: 2 / 3;
+}
+
+.cover-hit:hover {
+  border-color: var(--app-accent);
+}
+
+.cover-hit.selected {
+  border-color: var(--app-accent);
+  box-shadow: 0 0 0 1px var(--app-accent);
+}
+
+.cover-hit img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}

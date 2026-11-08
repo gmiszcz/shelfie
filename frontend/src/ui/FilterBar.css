@@ -1,0 +1,71 @@
+/* FilterBar — compact segmented filter pills. All spacing from :root tokens; siblings
+   spaced by gap. One row that scrolls horizontally on narrow screens (no wrapping). */
+.ui-filterbar {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+  overflow-x: auto;
+  /* Hide the scrollbar chrome but keep the scroll; the row still fits most desktops. */
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: var(--small-padding);
+}
+
+.ui-filterbar::-webkit-scrollbar {
+  display: none;
+}
+
+.ui-filterbar-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-gap);
+  flex: 0 0 auto;
+  min-height: var(--touch-target);
+  padding: var(--small-padding) var(--big-padding);
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-pill);
+  background: var(--app-surface);
+  color: var(--app-text);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.ui-filterbar-pill:hover {
+  border-color: var(--app-accent);
+}
+
+.ui-filterbar-pill:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+}
+
+.ui-filterbar-pill--active {
+  background: var(--app-accent);
+  border-color: var(--app-accent);
+  color: #fff;
+}
+
+.ui-filterbar-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.3rem;
+  height: 1.3rem;
+  padding: 0 var(--small-padding);
+  border-radius: var(--radius-pill);
+  background: var(--accent-grey-soft);
+  color: var(--accent-grey-text);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.ui-filterbar-pill--active .ui-filterbar-count {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}

@@ -1,0 +1,297 @@
+/* Series tab layout. All spacing from :root tokens; siblings spaced by gap. */
+.series-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--default-gap);
+  margin-bottom: var(--big-gap);
+}
+
+.series-toolbar-head {
+  display: flex;
+  align-items: center;
+  gap: var(--default-gap);
+  flex-wrap: wrap;
+}
+
+.series-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-gap);
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.series-title i {
+  color: var(--app-accent);
+}
+
+.series-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4rem;
+  height: 1.4rem;
+  padding: 0 var(--small-padding);
+  border-radius: 999px;
+  background: #e5484d;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.series-count {
+  color: var(--app-text-muted);
+  font-size: 0.9rem;
+  margin-left: auto;
+}
+
+.series-toolbar-search {
+  display: flex;
+  width: 100%;
+}
+
+.series-toolbar-search .ui-search {
+  width: 100%;
+}
+
+/* Notifications panel. */
+.series-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+  padding: var(--big-padding);
+  margin-bottom: var(--big-gap);
+  background: var(--app-surface-2);
+  border: 1px solid var(--app-border);
+  border-radius: var(--custom-border-radius);
+}
+
+.series-alerts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--default-gap);
+}
+
+.series-alerts-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+}
+
+.series-alerts-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+  font-size: 0.9rem;
+}
+
+.series-alert-detail {
+  color: var(--app-text-muted);
+}
+
+/* Earlier (seen) notifications: muted panel + the show/hide link. */
+.series-alerts-earlier {
+  display: flex;
+  margin-bottom: var(--default-gap);
+}
+
+.series-alerts--seen {
+  opacity: 0.85;
+}
+
+/* Watching section groups: a series card with its own waiting-list rows below it. */
+.series-watch-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+  min-width: 0;
+}
+
+.series-watch-waiting {
+  padding-left: 0;
+}
+
+.series-watch-orphans {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+  margin-top: var(--default-gap);
+}
+
+/* Sections. */
+.series-section {
+  margin-bottom: var(--big-gap);
+}
+
+.series-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-padding);
+  margin-bottom: var(--default-gap);
+}
+
+.series-section-head h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+  margin: 0;
+  font-size: 1.05rem;
+  padding-bottom: var(--small-padding);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.series-section-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.3rem;
+  height: 1.3rem;
+  padding: 0 var(--small-padding);
+  border-radius: 999px;
+  background: var(--app-surface-2);
+  color: var(--app-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.series-section-hint {
+  margin: 0;
+  color: var(--app-text-muted);
+  font-size: 0.82rem;
+}
+
+.series-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--big-gap);
+}
+
+/* Waiting list. */
+.series-waiting-empty {
+  color: var(--app-text-muted);
+  font-size: 0.9rem;
+}
+
+.series-waiting-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+}
+
+.series-waiting-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--default-gap);
+  padding: var(--default-padding) var(--big-padding);
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--custom-border-radius);
+}
+
+.series-waiting-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-padding);
+  min-width: 0;
+}
+
+.series-waiting-title {
+  font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Edition + date: the facts that matter, always fully visible. */
+.series-waiting-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--small-padding) var(--small-gap);
+}
+.series-waiting-ed {
+  padding: 0 var(--small-padding);
+  border-radius: var(--radius-pill);
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+.series-waiting-date {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-padding);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--app-text);
+  white-space: nowrap;
+}
+.series-waiting-date .pi {
+  font-size: 0.75rem;
+  color: var(--app-accent);
+}
+.series-waiting-date.none {
+  font-weight: 400;
+  color: var(--app-text-muted);
+}
+
+.series-waiting-meta {
+  color: var(--app-text-muted);
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.series-waiting-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+  flex: 0 0 auto;
+}
+
+/* Source is a small icon link, never the word "source"; 44px touch target. */
+.series-waiting-src {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  color: var(--app-accent);
+}
+
+.series-waiting-src i {
+  font-size: 0.9rem;
+}
+
+/* Mobile: series cards go full width. */
+@media (max-width: 640px) {
+  .series-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Phone (390px): keep waiting rows tidy — title/meta on one ellipsised line each,
+   actions fixed to the right; never wrap one word per line. */
+@media (max-width: 420px) {
+  .series-waiting-item {
+    padding: var(--default-padding);
+    gap: var(--small-gap);
+  }
+
+  .series-card-watch-row {
+    gap: var(--small-gap);
+  }
+}

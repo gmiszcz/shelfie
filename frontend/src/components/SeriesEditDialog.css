@@ -1,0 +1,181 @@
+/* Series edit dialog. All spacing from :root tokens; siblings spaced by gap, not margin. */
+.sed-dialog {
+  width: min(720px, 96vw);
+}
+
+.sed-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--big-gap);
+}
+
+.sed-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+}
+
+.sed-section-title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--label-size);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--app-text-muted);
+}
+
+.sed-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--default-gap);
+}
+
+.sed-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-padding);
+  min-width: 0;
+}
+
+.sed-field > span {
+  font-size: 0.85rem;
+  color: var(--app-text-muted);
+}
+
+.sed-field-wide {
+  grid-column: 1 / -1;
+}
+
+.sed-hint {
+  color: var(--app-text-faint);
+  font-size: 0.75rem;
+}
+
+.sed-books {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+}
+
+.sed-book {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+  padding: var(--default-padding);
+  background: var(--app-surface-2);
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-md);
+}
+
+.sed-book-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+
+.sed-book-vol {
+  width: 6rem;
+  flex: 0 0 auto;
+}
+
+.sed-empty {
+  margin: 0;
+  color: var(--app-text-muted);
+  font-size: 0.85rem;
+}
+
+.sed-candidates {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-padding);
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.sed-candidate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-padding);
+  width: 100%;
+  text-align: left;
+  padding: var(--default-padding);
+  background: var(--app-surface-2);
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.sed-candidate:hover {
+  border-color: var(--app-border-strong);
+}
+
+.sed-candidate--on {
+  border-color: var(--app-accent);
+  outline: 2px solid var(--app-accent);
+  outline-offset: -1px;
+}
+
+.sed-candidate-title {
+  font-size: 0.9rem;
+}
+
+.sed-candidate-meta {
+  font-size: 0.78rem;
+  color: var(--app-text-muted);
+}
+
+.sed-add-row {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+  flex-wrap: wrap;
+}
+
+.sed-merge-pick {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.sed-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--small-gap);
+}
+
+/* Phones: full-screen, single column. */
+@media (max-width: 640px) {
+  .sed-dialog {
+    width: 100vw;
+    height: 100vh;
+    max-height: 100vh;
+    margin: 0;
+    border-radius: 0;
+  }
+
+  .sed-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sed-add-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sed-add-row .sed-book-vol {
+    width: 100%;
+  }
+
+  /* Keep the member-row volume input compact so the book title stays visible. */
+  .sed-book-vol {
+    width: 4.5rem;
+  }
+}

@@ -1,0 +1,53 @@
+/* Heart toggle. Spacing/radius from :root tokens only. */
+.ui-fav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--small-padding);
+  border: none;
+  background: transparent;
+  color: var(--app-text-muted);
+  cursor: pointer;
+  border-radius: var(--custom-border-radius);
+  line-height: 1;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease,
+    transform 0.12s ease;
+}
+
+.ui-fav:hover {
+  color: #e5484d;
+}
+
+.ui-fav:active {
+  transform: scale(0.9);
+}
+
+.ui-fav:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+}
+
+.ui-fav--on {
+  color: #e5484d;
+}
+
+.ui-fav i {
+  font-size: 1.1rem;
+}
+
+/* Overlay variant: a translucent chip pinned to the top-right of a cover. */
+.ui-fav--overlay {
+  position: absolute;
+  top: var(--small-gap);
+  right: var(--small-gap);
+  background: color-mix(in srgb, var(--app-bg) 62%, transparent);
+  backdrop-filter: blur(4px);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.28);
+  z-index: 2;
+}
+
+.ui-fav--overlay:hover {
+  background: color-mix(in srgb, var(--app-bg) 78%, transparent);
+}

@@ -1,0 +1,251 @@
+/* Ranking page. All spacing comes from the :root variables in index.css. */
+
+/* Top-level page: sections separated by a single large gap (no child margins). */
+.rank-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--big-gap);
+}
+
+/* Toolbar: Recalculate button + rated-books count in one aligned flex row. */
+.rank-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--default-gap);
+  flex-wrap: wrap;
+}
+
+.rank-toolbar-count {
+  color: var(--app-text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+
+.rank-error {
+  margin: 0;
+  color: var(--accent-red-text);
+}
+
+.rank-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--default-gap);
+}
+
+.rank-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--default-gap);
+  flex-wrap: wrap;
+}
+
+/* Section headings read as the design system's muted monospace section labels. */
+.rank-section-head h2 {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--label-size);
+  font-weight: 500;
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--app-text-faint);
+}
+
+.rank-section-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--default-gap);
+  flex-wrap: wrap;
+}
+
+.rank-focus {
+  min-width: 240px;
+}
+
+.rank-category {
+  min-width: 200px;
+}
+
+/* The shared SearchInput; only its width is set here (per search-input ref). */
+.rank-search {
+  min-width: 240px;
+}
+
+.rank-shelf {
+  min-width: 180px;
+}
+
+.rank-counter {
+  color: var(--app-text-muted);
+  font-size: 0.9rem;
+}
+
+.rank-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+  color: var(--app-text);
+}
+
+/* Compare + table area each sit in a padded panel so content never touches the edge. */
+.rank-compare-panel,
+.rank-table-panel {
+  padding: var(--panel-padding);
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+}
+
+.rank-compare-skeleton {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.rank-number {
+  font-weight: 600;
+  color: var(--app-text-muted);
+}
+
+.rank-title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-padding);
+}
+
+.rank-title .t {
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.rank-title .a {
+  color: var(--app-text-muted);
+  font-size: 0.85rem;
+}
+
+.rank-score {
+  font-weight: 600;
+  color: var(--app-accent);
+}
+
+.rank-band {
+  font-variant-numeric: tabular-nums;
+  color: var(--app-text-muted);
+}
+
+.rank-infobox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+  padding: var(--default-padding) var(--big-padding);
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--custom-border-radius);
+  color: var(--app-text);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.rank-infobox-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--small-gap);
+  min-height: var(--touch-target);
+  cursor: pointer;
+  list-style: none;
+}
+.rank-infobox-summary::-webkit-details-marker {
+  display: none;
+}
+.rank-infobox-summary::after {
+  content: '\e902'; /* pi-chevron-down */
+  font-family: 'primeicons';
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--app-text-faint);
+  transition: transform 0.15s ease;
+}
+.rank-infobox[open] .rank-infobox-summary::after {
+  transform: rotate(180deg);
+}
+
+.rank-infobox .pi-info-circle {
+  color: var(--app-accent);
+  font-size: 1.2rem;
+}
+
+.rank-infobox code {
+  background: var(--app-surface-2);
+  border-radius: var(--custom-border-radius);
+  padding: 0 var(--small-padding);
+  font-variant-numeric: tabular-nums;
+}
+
+.rank-confidence {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-padding);
+}
+
+.rank-confidence-label {
+  font-size: 0.8rem;
+  color: var(--app-text-muted);
+}
+
+/* --- Responsive ------------------------------------------------------------------------- */
+@media (max-width: 640px) {
+  /* Section head: label on its own line, controls stacked full width. */
+  .rank-section-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  /* Category + focus share one row; the counter goes under them. */
+  .rank-section-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: stretch;
+    gap: var(--small-gap);
+  }
+  .rank-counter {
+    grid-column: 1 / -1;
+    font-size: 0.8rem;
+  }
+  .rank-focus,
+  .rank-category,
+  .rank-search,
+  .rank-shelf {
+    min-width: 0;
+    width: 100%;
+  }
+  .rank-section-controls .p-dropdown .p-dropdown-label {
+    padding: var(--small-gap) var(--default-padding);
+    font-size: 0.85rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .rank-page {
+    gap: var(--default-gap);
+  }
+  .rank-toolbar .p-button {
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: var(--small-gap) var(--big-padding);
+    font-size: 0.85rem;
+  }
+  .rank-infobox {
+    padding: 0 var(--default-padding);
+    font-size: 0.82rem;
+  }
+  .rank-infobox[open] {
+    padding-bottom: var(--default-padding);
+  }
+  .rank-infobox-summary {
+    font-size: 0.85rem;
+  }
+  .rank-compare-panel,
+  .rank-table-panel {
+    padding: var(--big-padding);
+    border-radius: var(--radius-md);
+  }
+}

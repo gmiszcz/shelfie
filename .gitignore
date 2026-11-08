@@ -4,6 +4,7 @@ node_modules/
 # Build output
 dist/
 build/
+*.tsbuildinfo
 
 # Environment
 .env
@@ -21,3 +22,22 @@ Thumbs.db
 # Editor
 .vscode/
 .idea/
+
+# Python / uv
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Tooling caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Data
+data/
+!data/README.md
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

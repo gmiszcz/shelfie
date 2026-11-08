@@ -1,0 +1,82 @@
+.star-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--small-gap);
+  align-items: center;
+}
+
+.star-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hairline-gap);
+  padding: var(--small-padding) var(--default-padding);
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-pill);
+  background: var(--app-surface-2);
+  color: var(--app-text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  transition:
+    color 0.14s ease,
+    background-color 0.14s ease,
+    border-color 0.14s ease;
+}
+
+.star-filter-any {
+  font-weight: 600;
+}
+
+.star-filter-chip .pi-star-fill {
+  font-size: 0.75rem;
+  color: var(--app-accent);
+}
+
+.star-filter-chip:hover {
+  color: var(--app-text);
+  background: var(--app-surface-3);
+  border-color: var(--app-border-strong);
+}
+
+/* Active = soft-accent chip, consistent with the SelectButton toggles. */
+.star-filter-chip.is-active {
+  background: var(--app-accent-soft);
+  border-color: transparent;
+  color: var(--app-accent);
+}
+
+.star-filter-chip.is-active .pi-star-fill {
+  color: var(--app-accent);
+}
+
+.star-filter-chip:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+}
+
+/* On narrow screens keep every chip on ONE tidy row: no wrapping, scroll if needed.
+   The 5-star chip never lands alone on a second line. */
+@media (max-width: 640px) {
+  .star-filter {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: var(--small-padding);
+    /* Full-bleed within the toolbar so the row can scroll edge to edge. */
+    width: 100%;
+    padding-bottom: var(--small-padding);
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .star-filter::-webkit-scrollbar {
+    display: none;
+  }
+  .star-filter-chip {
+    padding: var(--small-padding) var(--default-padding);
+    font-size: 0.8rem;
+  }
+  .star-filter-chip .pi-star-fill {
+    font-size: 0.68rem;
+  }
+}

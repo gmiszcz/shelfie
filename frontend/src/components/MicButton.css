@@ -1,0 +1,264 @@
+/* Microphone button with a live input-level glow ring.
+   Colours use the shared --app-* theme tokens so it tracks the dark/light
+   switch; the ring size/opacity is driven by the --mic-level custom property
+   (0..1) the component sets from the hook's smoothed RMS level. */
+
+.mic-button-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.mic-button {
+  position: relative;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--app-border);
+  background: transparent;
+  color: var(--app-text-muted, inherit);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.mic-button:hover:not(:disabled) {
+  border-color: var(--app-accent);
+  color: var(--app-accent);
+}
+
+.mic-button:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+}
+
+.mic-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* While a chat request is in flight the mic stays disabled but must not look
+   dead: keep it fully opaque so the loading ring around it reads clearly. */
+.mic-button.busy:disabled {
+  opacity: 1;
+}
+
+/* Circular loading ring AROUND the mic button while the chat request is in
+   flight (after send, until the reply finishes). A rotating conic-gradient arc
+   masked to a thin ring, sitting just outside the button edge. */
+.mic-progress {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+  background: conic-gradient(
+    var(--app-accent) 0deg,
+    var(--app-accent) 90deg,
+    transparent 90deg,
+    transparent 360deg
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  animation: mic-progress-spin 0.9s linear infinite;
+}
+
+@keyframes mic-progress-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mic-progress {
+    animation: none;
+    /* A steady full ring so the in-flight state is still visible. */
+    background: conic-gradient(
+      color-mix(in srgb, var(--app-accent) 45%, transparent) 0deg,
+      color-mix(in srgb, var(--app-accent) 45%, transparent) 360deg
+    );
+  }
+}
+
+.mic-button i {
+  position: relative;
+  z-index: 1;
+  font-size: 1.05rem;
+}
+
+/* Recording: red button, and the ring becomes a live glow. */
+.mic-button.recording {
+  --mic-color: #e5484d;
+  border-color: var(--mic-color);
+  background: color-mix(in srgb, var(--mic-color) 16%, transparent);
+  color: var(--mic-color);
+}
+
+.mic-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0;
+}
+
+/* The glow scales and brightens with --mic-level while recording. The width of
+   the glow is animated smoothly by the rAF-updated custom property, not by a
+   keyframe, so it tracks the voice in real time. */
+.mic-button.recording .mic-ring {
+  --mic-color: #e5484d;
+  opacity: calc(0.35 + 0.65 * var(--mic-level, 0));
+  box-shadow:
+    0 0 0 calc(1px + 3px * var(--mic-level, 0)) color-mix(in srgb, var(--mic-color) 55%, transparent),
+    0 0 calc(6px + 18px * var(--mic-level, 0)) calc(1px + 4px * var(--mic-level, 0))
+      color-mix(in srgb, var(--mic-color) 45%, transparent);
+  transition:
+    box-shadow 0.08s linear,
+    opacity 0.08s linear;
+}
+
+/* A gentle steady pulse as a floor so an idle-but-recording mic still reads as
+   live. Suppressed under reduced motion. */
+.mic-button.recording .mic-ring::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--mic-color) 50%, transparent);
+  animation: mic-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.1;
+    transform: scale(1.35);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mic-button.recording .mic-ring {
+    transition: none;
+  }
+  .mic-button.recording .mic-ring::after {
+    animation: none;
+    opacity: 0.4;
+  }
+}
+
+/* Live caption while recording. It is NOT sized by the tiny mic wrapper (that
+   made the text wrap one syllable per line); each placement anchors it to a
+   wide parent instead:
+   - chat: spans the whole composer row, just above it (ChatWidget.css makes
+     .chat-input the containing block);
+   - global: a centred bar above the floating buttons, viewport-wide on phones. */
+.mic-button-wrap.mic-chat,
+.mic-button-wrap.mic-global {
+  position: static;
+}
+
+.mic-caption {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-gap);
+  padding: var(--default-padding) var(--big-padding);
+  color: var(--app-text);
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-md, 12px);
+  box-shadow: var(--shadow-pop, 0 8px 24px rgba(17, 24, 39, 0.12));
+  pointer-events: none;
+  animation: mic-caption-in 0.16s ease-out;
+}
+
+.mic-chat .mic-caption {
+  left: var(--default-padding);
+  right: var(--default-padding);
+  bottom: calc(100% + var(--small-gap));
+}
+
+.mic-global .mic-caption {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(32rem, calc(100vw - 2 * var(--content-padding)));
+  bottom: calc(var(--content-padding) + 3.5rem + var(--default-gap));
+}
+
+.mic-caption-head {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--small-gap);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #e5484d;
+}
+
+.mic-caption-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: #e5484d;
+  animation: mic-caption-blink 1.2s ease-in-out infinite;
+}
+
+.mic-caption-text {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.4;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.mic-caption-text.placeholder {
+  color: var(--app-text-muted);
+}
+
+@keyframes mic-caption-in {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+
+@keyframes mic-caption-blink {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mic-caption,
+  .mic-caption-dot {
+    animation: none;
+  }
+}
+
+.mic-error {
+  position: absolute;
+  bottom: calc(100% + 0.4rem);
+  left: 0;
+  width: max-content;
+  max-width: min(16rem, calc(100vw - 2rem));
+  padding: var(--small-padding) var(--default-padding);
+  font-size: 0.76rem;
+  color: #e5484d;
+  background: color-mix(in srgb, #e5484d 10%, var(--app-surface-2));
+  border: 1px solid #e5484d;
+  border-radius: var(--custom-border-radius, 8px);
+  z-index: 2;
+}

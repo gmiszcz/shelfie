@@ -1,0 +1,27 @@
+/* Series progress track. Spacing/radius from :root tokens only. */
+.ui-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--small-padding);
+  width: 100%;
+}
+
+.ui-progress-label {
+  font-size: 0.8rem;
+  color: var(--app-text-muted);
+}
+
+.ui-progress-track {
+  width: 100%;
+  height: 0.5rem;
+  background: var(--app-surface-2);
+  border-radius: var(--custom-border-radius);
+  overflow: hidden;
+}
+
+.ui-progress-fill {
+  height: 100%;
+  background: var(--app-accent);
+  border-radius: var(--custom-border-radius);
+  transition: width 0.3s ease;
+}
