@@ -69,19 +69,27 @@ def test_add_book_manual_requires_title(write_db: Path) -> None:
 def test_add_book_from_search_uses_best_match(
     write_db: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def fake_best_match(query: str) -> VolumeSearchResult:
-        return VolumeSearchResult(
-            google_volume_id="vol-dune",
-            title="Dune",
-            authors=["Frank Herbert"],
-            published_date="1965",
-            description="Desert planet epic.",
-            isbn_13="9780441013593",
-            cover_url="https://example.test/dune.jpg",
-        )
+    async def fake_matches(query: str) -> list[VolumeSearchResult]:
+        return [
+            # The first hit is a different book by another author: must be skipped.
+            VolumeSearchResult(
+                google_volume_id="vol-x", title="Dune Messiah Guide", authors=["Someone Else"]
+            ),
+            VolumeSearchResult(
+                google_volume_id="vol-dune",
+                title="Dune",
+                authors=["Frank Herbert"],
+                published_date="1965",
+                description="Desert planet epic.",
+                isbn_13="9780441013593",
+                cover_url="https://example.test/dune.jpg",
+            ),
+        ]
 
-    monkeypatch.setattr(tools, "_search_best_match", fake_best_match)
-    out = tools.add_book(query="dune herbert", status="finished", stars=5)
+    monkeypatch.setattr(tools, "_search_matches", fake_matches)
+    out = tools.add_book(
+        query="dune herbert", title="Dune", authors="Frank Herbert", status="finished", stars=5
+    )
     assert out["ok"] is True
     added = out["added"]
     assert added["title"] == "Dune"
@@ -96,12 +104,50 @@ def test_add_book_from_search_uses_best_match(
 
 
 def test_add_book_from_search_no_match(write_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    async def none_match(query: str) -> None:
-        return None
+    async def wrong_author(query: str) -> list[VolumeSearchResult]:
+        return [
+            VolumeSearchResult(google_volume_id="v1", title="Bezsilna", authors=["Inna Autorka"])
+        ]
 
-    monkeypatch.setattr(tools, "_search_best_match", none_match)
-    out = tools.add_book(query="zzz nonexistent")
-    assert "error" in out and "no Google Books match" in out["error"]
+    monkeypatch.setattr(tools, "_search_matches", wrong_author)
+    out = tools.add_book(query="Bezsilna Roberts", title="Bezsilna", authors="Lauren Roberts")
+    # Same title, wrong author: NOT added, candidates returned instead.
+    assert "error" in out and "nothing was added" in out["error"]
+    assert out["candidates"][0]["authors"] == ["Inna Autorka"]
+    assert tools.search_library(query="Bezsilna")["count"] == 0
+
+
+def test_add_book_from_search_needs_title_and_author(write_db: Path) -> None:
+    out = tools.add_book(query="dune")
+    assert "error" in out and "title and authors" in out["error"]
+
+
+def test_add_book_fills_missing_cover_from_openlibrary(
+    write_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.integrations import openlibrary
+
+    async def no_cover(query: str) -> list[VolumeSearchResult]:
+        return [
+            VolumeSearchResult(
+                google_volume_id="v-n",
+                title="Niepewna",
+                authors=["Lauren Roberts"],
+                isbn_13="9788300000000",
+            )
+        ]
+
+    async def fake_cover(isbn: str | None, client: object = None) -> str | None:
+        return f"https://covers.openlibrary.org/b/isbn/{isbn}-L.jpg" if isbn else None
+
+    monkeypatch.setattr(tools, "_search_matches", no_cover)
+    monkeypatch.setattr(openlibrary, "cover_by_isbn", fake_cover)
+    out = tools.add_book(
+        query="Niepewna Lauren Roberts", title="Niepewna", authors="Lauren Roberts"
+    )
+    assert out["ok"] is True
+    detail = tools.get_book_details(book_id=out["added"]["id"])
+    assert detail["cover_url"] == "https://covers.openlibrary.org/b/isbn/9788300000000-L.jpg"
 
 
 # --- update_book ------------------------------------------------------------------------

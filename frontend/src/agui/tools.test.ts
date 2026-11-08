@@ -51,7 +51,7 @@ afterEach(() => {
 });
 
 describe('toolSchemas', () => {
-  it('exposes exactly the 8 generic browser tools with JSON-schema parameters', () => {
+  it('exposes exactly the 9 generic browser tools with JSON-schema parameters', () => {
     const schemas = toolSchemas(createTools({ getBooks: () => [] }));
     const names = schemas.map((s) => s.name);
     expect(names).toEqual([
@@ -63,10 +63,37 @@ describe('toolSchemas', () => {
       'find_books',
       'series_releases',
       'ask_librarian',
+      'librarian_add',
     ]);
     for (const s of schemas) {
       expect(s.parameters).toMatchObject({ type: 'object' });
     }
+  });
+});
+
+describe('librarian_add', () => {
+  it('hands the add request to the add-scoped librarian and shows its answer as final', async () => {
+    const calls: string[] = [];
+    const t = createTools({
+      getBooks: () => BOOKS,
+      addViaLibrarian: async (r) => {
+        calls.push(r);
+        return 'Dodałem „Beztroska” — Lauren Roberts (Bezsilna, tom 2).';
+      },
+    }).find((x) => x.name === 'librarian_add')!;
+    const result = (await t.execute({ request: 'dodaj Bezsilna tom 2' })) as {
+      ok: boolean;
+      final_answer: boolean;
+      answer: string;
+    };
+    expect(calls).toEqual(['dodaj Bezsilna tom 2']);
+    expect(result).toMatchObject({ ok: true, final_answer: true });
+    expect(result.answer).toContain('Beztroska');
+  });
+
+  it('fails gracefully when no librarian is wired', async () => {
+    const result = (await tool('librarian_add').execute({ request: 'dodaj X' })) as { ok: boolean };
+    expect(result.ok).toBe(false);
   });
 });
 

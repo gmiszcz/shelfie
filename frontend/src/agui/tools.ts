@@ -70,6 +70,8 @@ export interface ToolContext {
   series?: SeriesDeps;
   /** Ask the backend (read-only) librarian; absent in contexts with no data agent. */
   askLibrarian?: AskLibrarian;
+  /** Hand an ADD request to the backend librarian (scope library_add: read + add only). */
+  addViaLibrarian?: AskLibrarian;
   /** AbortSignal propagated into ask_librarian's backend call (the run's signal). */
   signal?: AbortSignal;
 }
@@ -330,7 +332,47 @@ export function createTools(ctx: ToolContext): AgentTool[] {
     },
   };
 
-  return [describe, getState, set, invoke, navigate, findBooks, seriesReleases, askLibrarian];
+  const librarianAdd: AgentTool = {
+    name: 'librarian_add',
+    description:
+      'ADD a book to the library ("dodaj książkę X", "dodaj Bezsilna tom 2", "add Dune"). Hands ' +
+      'the request to the backend librarian, which finds the right book in Google Books (title ' +
+      'AND author must match; for a series volume it looks the series up first), adds it with ' +
+      'full metadata and cover, and puts it in the series. Pass the user\'s request in their own ' +
+      'words, with every detail they gave (title, author, series, volume, status). The ' +
+      "librarian's answer is shown verbatim as your reply — call this tool and stop. Use " +
+      'library.addBook (the search window) ONLY when the user explicitly asks to OPEN the ' +
+      'add/search window.',
+    parameters: objSchema({ request: { type: 'string' } }, ['request']),
+    execute: async (args) => {
+      const add = ctx.addViaLibrarian;
+      if (!add) {
+        return { ok: false, error: 'the librarian is not available' };
+      }
+      const request = str(args.request);
+      if (!request) {
+        return { ok: false, error: 'request is required' };
+      }
+      try {
+        const answer = await add(request, ctx.signal);
+        return { ok: true, final_answer: true, answer };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  };
+
+  return [
+    describe,
+    getState,
+    set,
+    invoke,
+    navigate,
+    findBooks,
+    seriesReleases,
+    askLibrarian,
+    librarianAdd,
+  ];
 }
 
 /** Compact series view for the model: names, progress and the per-edition next volume. */

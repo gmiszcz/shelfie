@@ -262,6 +262,24 @@ def test_apply_scope_prunes_every_write_tool() -> None:
     assert set(entry.tool_registry.registry) == set(READONLY_TOOLS)
 
 
+def test_add_scope_keeps_only_read_and_add_tools() -> None:
+    """The UI agent's librarian_add scope can add a book, but never update/delete/merge."""
+    names = sorted(READONLY_TOOLS) + [
+        "add_book",
+        "add_book_to_series",
+        "update_book",
+        "delete_book",
+        "merge_series",
+        "set_series_watch",
+    ]
+    entry = _FakeAgentEntry(names, "base")
+    _apply_scope(entry, "library_add")
+    assert set(entry.tool_registry.registry) == set(READONLY_TOOLS) | {
+        "add_book",
+        "add_book_to_series",
+    }
+
+
 def test_apply_scope_default_library_keeps_all_tools() -> None:
     names = sorted(READONLY_TOOLS) + ["add_book", "delete_book"]
     entry = _FakeAgentEntry(names, "base")

@@ -72,3 +72,32 @@ class OpenLibraryClient:
         docs = data.get("docs", [])
         items = [_normalize_doc(doc) for doc in docs]
         return int(data.get("numFound", len(items))), items
+
+
+ISBN_COVER_URL = "https://covers.openlibrary.org/b/isbn/{isbn}-L.jpg"
+#: Smaller bodies are OpenLibrary's blank placeholder, not a real cover.
+MIN_COVER_BYTES = 5000
+
+
+async def cover_by_isbn(isbn: str | None, client: httpx.AsyncClient | None = None) -> str | None:
+    """A real OpenLibrary cover URL for ``isbn``, or None. Free and keyless (not Google).
+
+    ``?default=false`` makes OpenLibrary answer 404 instead of a blank image when it has no
+    cover; the body must also be a real image of at least :data:`MIN_COVER_BYTES`.
+    """
+    if not isbn:
+        return None
+    url = ISBN_COVER_URL.format(isbn=isbn)
+    try:
+        if client is not None:
+            resp = await client.get(url, params={"default": "false"}, follow_redirects=True)
+        else:
+            async with httpx.AsyncClient(timeout=10.0) as own:
+                resp = await own.get(url, params={"default": "false"}, follow_redirects=True)
+    except httpx.HTTPError:
+        return None
+    if resp.status_code != 200 or len(resp.content) < MIN_COVER_BYTES:
+        return None
+    if not resp.headers.get("content-type", "").startswith("image/"):
+        return None
+    return url

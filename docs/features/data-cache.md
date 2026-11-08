@@ -80,6 +80,16 @@ then invalidate it so the authoritative server copy reconciles in the background
   invalidates `expected` and `books`.
 - Dismiss alerts → optimistic flip on the `series alerts` query with rollback on error.
 
+Writes that happen on the SERVER, not through a frontend mutation (fixed 2026-11-08: a book
+the agent added showed in Series but not in Library until the 5-minute stale time ran out):
+
+- Every library-agent chat run and every librarian call from the UI agent (`ask_librarian`,
+  `librarian_add`) ends with `invalidateQueries(['user', id])` in `chat/ChatProvider.tsx`
+  (`refreshUserData`): books, series, waiting list, alerts and stats refetch (unchanged
+  lists answer 304).
+- `useSeries`: when a series check finishes (`checking` true → false), the `books` and
+  `expected` queries are invalidated, because the check may auto-add found volumes as books.
+
 ## Backend: ETag / 304 and cover caching
 
 `app/api/conditional.py` adds a strong `ETag` (SHA-256 of the exact JSON body) to

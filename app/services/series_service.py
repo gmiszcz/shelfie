@@ -575,6 +575,14 @@ async def _add_volume(
     except Exception:  # noqa: BLE001 - 429/budget/transport: add from the title instead
         logger.info("Google Books lookup skipped for %r", query, exc_info=True)
 
+    if hit is not None and not hit.cover_url:
+        # Google holds the volume without a cover: try OpenLibrary by ISBN (free, not Google).
+        from app.integrations.openlibrary import cover_by_isbn
+
+        cover = await cover_by_isbn(hit.isbn_13) or await cover_by_isbn(hit.isbn_10)
+        if cover:
+            hit = hit.model_copy(update={"cover_url": cover})
+
     vol_str = None
     if volume is not None:
         vol_str = str(int(volume)) if float(volume).is_integer() else str(volume)

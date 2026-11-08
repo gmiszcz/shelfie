@@ -22,7 +22,9 @@ class ChatIn(BaseModel):
     #: (answer-only: the write tools are pruned server-side). The legacy "ui" value is
     #: accepted and treated as "library" (the UI-control scope was removed). The UI
     #: agent's ask_librarian tool uses "library_readonly".
-    scope: Literal["library", "library_readonly", "ui"] = "library"
+    #: "library_add" (read + add_book / add_book_to_series only) is the UI agent's
+    #: librarian_add tool.
+    scope: Literal["library", "library_readonly", "library_add", "ui"] = "library"
 
 
 @router.post("/chat")

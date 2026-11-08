@@ -281,3 +281,17 @@ def new_client() -> Iterator[object]:
     yield make
     for c in created:
         c.close()
+
+
+@pytest.fixture(autouse=True)
+def _no_openlibrary_cover_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hermetic tests: the OpenLibrary cover-by-ISBN fallback never reaches the network.
+
+    A test that needs a cover patches ``openlibrary.cover_by_isbn`` itself (later patch wins).
+    """
+    from app.integrations import openlibrary
+
+    async def _none(isbn: str | None, client: object = None) -> None:
+        return None
+
+    monkeypatch.setattr(openlibrary, "cover_by_isbn", _none)

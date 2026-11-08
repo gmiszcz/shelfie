@@ -237,7 +237,7 @@ export const api = {
   chat: (
     message: string,
     sessionId: string | null,
-    scope: 'library' | 'library_readonly' | 'ui' = 'library',
+    scope: 'library' | 'library_readonly' | 'library_add' | 'ui' = 'library',
     signal?: AbortSignal,
   ) =>
     fetch(`${BASE}/agent/chat`, {

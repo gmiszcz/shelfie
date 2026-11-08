@@ -131,6 +131,16 @@ export function useSeries(): UseSeries {
   // card flips from the spinner to the found PL/EN release without a manual refresh. Stop
   // once nothing is checking, or after 60s (20 polls) as a safety cap.
   const anyChecking = series.some((s) => s.checking);
+  // A finished check may have auto-added found volumes as books (add_mode "auto"):
+  // when checking flips true -> false, refetch the library so they show in Library too.
+  const wasChecking = useRef(false);
+  useEffect(() => {
+    if (wasChecking.current && !anyChecking) {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.books(userId) });
+      void queryClient.invalidateQueries({ queryKey: expectedKey });
+    }
+    wasChecking.current = anyChecking;
+  }, [anyChecking, queryClient, userId, expectedKey]);
   useEffect(() => {
     if (!anyChecking) {
       return;
