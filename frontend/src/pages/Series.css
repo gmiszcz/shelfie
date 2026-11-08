@@ -205,27 +205,56 @@
 
 .series-waiting-title {
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .series-waiting-meta {
   color: var(--app-text-muted);
   font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .series-waiting-actions {
   display: flex;
   align-items: center;
   gap: var(--small-gap);
+  flex: 0 0 auto;
 }
 
-.series-waiting-actions a {
+/* Source is a small icon link, never the word "source"; 44px touch target. */
+.series-waiting-src {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
   color: var(--app-accent);
-  font-size: 0.82rem;
+}
+
+.series-waiting-src i {
+  font-size: 0.9rem;
 }
 
 /* Mobile: series cards go full width. */
 @media (max-width: 640px) {
   .series-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Phone (390px): keep waiting rows tidy — title/meta on one ellipsised line each,
+   actions fixed to the right; never wrap one word per line. */
+@media (max-width: 420px) {
+  .series-waiting-item {
+    padding: var(--default-padding);
+    gap: var(--small-gap);
+  }
+
+  .series-card-watch-row {
+    gap: var(--small-gap);
   }
 }

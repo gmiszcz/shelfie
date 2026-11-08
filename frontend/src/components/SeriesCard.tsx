@@ -2,17 +2,21 @@ import { Button } from 'primereact/button';
 import { InputSwitch } from 'primereact/inputswitch';
 import { Tag } from 'primereact/tag';
 
-import type { NextExpected, OwnedVolume, SeriesSummary } from '../types';
-import { BookCover, ProgressBar } from '../ui';
+import type { OwnedVolume, SeriesSearchLang, SeriesSummary } from '../types';
+import { BookCover, LangSegmented, ProgressBar } from '../ui';
 
+import { SeriesReleaseWatch } from './SeriesReleaseWatch';
 import './SeriesCard.css';
 
 interface Props {
   series: SeriesSummary;
   onOpenVolume: (bookId: number) => void;
   onToggleWatch: (key: string, watch: boolean) => void;
-  onRefresh: (key: string) => void;
+  /** Refresh the release lookup; the current search language is passed through. */
+  onRefresh: (key: string, searchLang: SeriesSearchLang) => void;
   onEdit: (key: string) => void;
+  /** Persist a new search language for this series (PATCH search_lang). */
+  onSetLang: (key: string, lang: SeriesSearchLang) => void;
   refreshing: boolean;
 }
 
@@ -23,33 +27,24 @@ function volumeLabel(vol: OwnedVolume): string {
   return vol.volume_label ? `#${vol.volume_label}` : '';
 }
 
-/** One edition's next-volume line, e.g. "Ritual of Ruin · 2025-11-11 (released)" or "not announced". */
-function editionLabel(edition: NextExpected | null): string {
-  if (!edition || (!edition.title && !edition.date && (edition.status ?? 'unknown') === 'unknown')) {
-    return 'not announced';
-  }
-  const parts: string[] = [];
-  if (edition.title) {
-    parts.push(edition.title);
-  }
-  if (edition.date) {
-    parts.push(edition.date);
-  } else if (edition.status === 'announced') {
-    parts.push('date not announced');
-  }
-  const base = parts.join(' · ') || 'not announced';
-  return edition.status && edition.status !== 'unknown' ? `${base} (${edition.status})` : base;
-}
-
 /**
  * One series on the Series tab: owned-volume covers, a read-progress bar, the missing
- * volume list, a watch toggle, a refresh button and (for watched series) the next
- * expected release. Clicking an owned volume opens the book detail dialog.
+ * volume list, a watch toggle, a per-series search-language control, a refresh button
+ * and (for watched series) the editor-written release summary. Clicking an owned volume
+ * opens the book detail dialog.
  */
-export function SeriesCard({ series, onOpenVolume, onToggleWatch, onRefresh, onEdit, refreshing }: Props) {
+export function SeriesCard({
+  series,
+  onOpenVolume,
+  onToggleWatch,
+  onRefresh,
+  onEdit,
+  onSetLang,
+  refreshing,
+}: Props) {
   const totalLabel = series.total_known ?? series.owned_count;
   const progressLabel = `${series.read_count} of ${totalLabel} read`;
-  const nxt = series.next_expected;
+  const lang = series.search_lang ?? 'pl';
 
   return (
     <article className="series-card">
@@ -77,7 +72,7 @@ export function SeriesCard({ series, onOpenVolume, onToggleWatch, onRefresh, onE
             text
             aria-label={`Refresh ${series.name}`}
             disabled={refreshing}
-            onClick={() => onRefresh(series.series_key)}
+            onClick={() => onRefresh(series.series_key, lang)}
           />
         </div>
       </header>
@@ -121,65 +116,32 @@ export function SeriesCard({ series, onOpenVolume, onToggleWatch, onRefresh, onE
       )}
 
       <footer className="series-card-foot">
-        <label className="series-card-watch">
-          <InputSwitch
-            checked={series.watch}
-            onChange={(e) => onToggleWatch(series.series_key, !!e.value)}
-            aria-label={`Watch ${series.name} for new volumes`}
+        <div className="series-card-watch-row">
+          <label className="series-card-watch">
+            <InputSwitch
+              checked={series.watch}
+              onChange={(e) => onToggleWatch(series.series_key, !!e.value)}
+              aria-label={`Watch ${series.name} for new volumes`}
+            />
+            <span>Watch for new volumes</span>
+          </label>
+          <LangSegmented
+            value={lang}
+            onChange={(next) => onSetLang(series.series_key, next)}
+            ariaLabel={`Search language for ${series.name}`}
+            className="series-card-lang"
           />
-          <span>Watch for new volumes</span>
-        </label>
+        </div>
 
-        {series.checking && (
-          <div className="series-card-checking">
-            <i className="pi pi-spin pi-spinner" aria-hidden="true" />
-            <span>Checking new volumes…</span>
-          </div>
+        {series.watch && (
+          <SeriesReleaseWatch
+            seriesKey={series.series_key}
+            seriesName={series.name}
+            summary={series.release_summary}
+            checking={series.checking}
+            onOpenBook={onOpenVolume}
+          />
         )}
-
-        {!series.checking && series.watch && (series.next_expected_pl || series.next_expected_en) && (
-          <div className="series-card-next">
-            <i className="pi pi-bell" aria-hidden="true" />
-            <div className="series-card-next-editions">
-              <span>
-                PL — {editionLabel(series.next_expected_pl)}
-                {series.next_expected_pl?.source_url && (
-                  <a href={series.next_expected_pl.source_url} target="_blank" rel="noreferrer noopener">
-                    {' '}source
-                  </a>
-                )}
-              </span>
-              <span>
-                EN — {editionLabel(series.next_expected_en)}
-                {series.next_expected_en?.source_url && (
-                  <a href={series.next_expected_en.source_url} target="_blank" rel="noreferrer noopener">
-                    {' '}source
-                  </a>
-                )}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {!series.checking &&
-          series.watch &&
-          !series.next_expected_pl &&
-          !series.next_expected_en &&
-          nxt &&
-          (nxt.title || nxt.date) && (
-            <div className="series-card-next">
-              <i className="pi pi-bell" aria-hidden="true" />
-              <span>
-                Next: {nxt.title ?? 'TBA'}
-                {nxt.date && ` · ${nxt.date}`}
-              </span>
-              {nxt.source_url && (
-                <a href={nxt.source_url} target="_blank" rel="noreferrer noopener">
-                  source
-                </a>
-              )}
-            </div>
-          )}
 
         {series.watch && series.last_checked && (
           <span className="series-card-checked">

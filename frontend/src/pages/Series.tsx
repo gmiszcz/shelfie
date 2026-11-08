@@ -22,6 +22,7 @@ import type {
   ExpectedBook,
   ReadingStatus,
   SeriesFilterId,
+  SeriesSearchLang,
   SeriesSummary,
 } from '../types';
 
@@ -62,13 +63,20 @@ function WaitingRow({
           {item.author}
           {item.series_name && ` · ${item.series_name}`}
           {item.volume && ` · vol. ${item.volume}`}
-          {item.expected_date ? ` · ${item.expected_date}` : ' · date unknown'}
+          {item.expected_date ? ` · ${item.expected_date}` : ' · no date'}
         </span>
       </div>
       <div className="series-waiting-actions">
         {item.source_url && (
-          <a href={item.source_url} target="_blank" rel="noreferrer noopener">
-            source
+          <a
+            className="series-waiting-src"
+            href={item.source_url}
+            target="_blank"
+            rel="noreferrer noopener"
+            aria-label={`Source for ${item.title}`}
+            title="Source"
+          >
+            <i className="pi pi-external-link" aria-hidden="true" />
           </a>
         )}
         <Button
@@ -95,6 +103,7 @@ export function Series() {
     reload,
     setWatch,
     refresh,
+    setLang,
     removeExpected,
     setFilter,
     dismissAlerts,
@@ -188,15 +197,23 @@ export function Series() {
     setEditing(next);
   };
 
-  const handleRefresh = async (key: string) => {
+  const handleRefresh = async (key: string, searchLang?: SeriesSearchLang) => {
     setRefreshingKey(key);
     try {
-      await refresh(key);
+      await refresh(key, searchLang);
       toast.current?.show({ severity: 'success', summary: 'Refreshed', life: 2000 });
     } catch (err) {
       notifyError(err instanceof Error ? err.message : 'Lookup failed');
     } finally {
       setRefreshingKey(null);
+    }
+  };
+
+  const handleSetLang = async (key: string, lang: SeriesSearchLang) => {
+    try {
+      await setLang(key, lang);
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Could not change language');
     }
   };
 
@@ -581,6 +598,7 @@ export function Series() {
                       )
                     }
                     onRefresh={handleRefresh}
+                    onSetLang={handleSetLang}
                     onEdit={openEdit}
                     refreshing={refreshingKey === s.series_key}
                   />
@@ -651,6 +669,7 @@ export function Series() {
                       )
                     }
                     onRefresh={handleRefresh}
+                    onSetLang={handleSetLang}
                     onEdit={openEdit}
                     refreshing={refreshingKey === s.series_key}
                   />

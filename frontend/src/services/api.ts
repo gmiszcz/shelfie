@@ -10,6 +10,7 @@ import type {
   SearchResponse,
   SeriesAlertsResponse,
   SeriesPreferences,
+  SeriesSearchLang,
   SeriesSummary,
   StatsResponse,
   VolumeSearchResult,
@@ -265,7 +266,7 @@ export const api = {
       body: JSON.stringify({ watch }),
     }),
 
-  /** Edit a series' metadata (name, aliases, author, total volumes, notes). */
+  /** Edit a series' metadata (name, aliases, author, total volumes, notes, search language). */
   updateSeries: (
     key: string,
     changes: {
@@ -275,6 +276,7 @@ export const api = {
       total_volumes?: number;
       notes?: string;
       watch?: boolean;
+      search_lang?: SeriesSearchLang;
     },
   ) =>
     request<SeriesSummary>(`/series/${encodeURIComponent(key)}`, {
@@ -316,8 +318,16 @@ export const api = {
       body: JSON.stringify({ other_key: otherKey }),
     }),
 
-  refreshSeries: (key: string) =>
-    request<SeriesSummary>(`/series/${encodeURIComponent(key)}/refresh`, { method: 'POST' }),
+  /**
+   * Run the release lookup for one series. Pass `searchLang` to override the stored
+   * language for this one-off check (the server also saves it); omit to use the
+   * series' saved `search_lang`.
+   */
+  refreshSeries: (key: string, searchLang?: SeriesSearchLang) =>
+    request<SeriesSummary>(`/series/${encodeURIComponent(key)}/refresh`, {
+      method: 'POST',
+      body: JSON.stringify(searchLang ? { search_lang: searchLang } : {}),
+    }),
 
   checkSeries: () => request<{ checked: number; updated: number; series: string[] }>(
     '/series/check',

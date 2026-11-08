@@ -4,6 +4,7 @@ import { InputSwitch } from 'primereact/inputswitch';
 import { Sidebar } from 'primereact/sidebar';
 import { useEffect, useState } from 'react';
 
+import { SeriesSettings } from './SeriesSettings';
 import { useSettings } from './SettingsContext';
 import {
   CARD_FIELDS,
@@ -18,7 +19,7 @@ interface Props {
 }
 
 /** Which screen of the drawer is showing: the menu, or one group's options. */
-type View = 'menu' | 'cards' | 'detail';
+type View = 'menu' | 'cards' | 'detail' | 'series';
 
 /**
  * Settings drawer as a two-level menu (like phone settings):
@@ -53,7 +54,7 @@ export function SettingsSidebar({ visible, onHide }: Props) {
     ) : (
       <button type="button" className="settings-back" onClick={() => setView('menu')}>
         <i className="pi pi-chevron-left" aria-hidden="true" />
-        {view === 'cards' ? 'Library cards' : 'Book detail'}
+        {view === 'cards' ? 'Library cards' : view === 'detail' ? 'Book detail' : 'Series search'}
       </button>
     );
 
@@ -85,6 +86,14 @@ export function SettingsSidebar({ visible, onHide }: Props) {
                 <span className="settings-menu-sub">
                   {detailOn} of {DETAIL_SECTIONS.length} sections shown
                 </span>
+              </span>
+              <i className="pi pi-chevron-right settings-menu-chevron" aria-hidden="true" />
+            </button>
+            <button type="button" className="settings-menu-row" onClick={() => setView('series')}>
+              <i className="pi pi-bookmark settings-menu-icon" aria-hidden="true" />
+              <span className="settings-menu-text">
+                <span className="settings-menu-label">Series search</span>
+                <span className="settings-menu-sub">Default research language</span>
               </span>
               <i className="pi pi-chevron-right settings-menu-chevron" aria-hidden="true" />
             </button>
@@ -158,6 +167,8 @@ export function SettingsSidebar({ visible, onHide }: Props) {
           </div>
         </div>
       )}
+
+      {view === 'series' && <SeriesSettings />}
     </Sidebar>
   );
 }
