@@ -42,11 +42,32 @@ class SpaStaticFiles(StaticFiles):
 
     async def get_response(self, path: str, scope: Scope) -> Response:
         try:
-            return await super().get_response(path, scope)
+            response = await super().get_response(path, scope)
         except StarletteHTTPException as exc:
             if exc.status_code != 404 or path.startswith("api") or "." in path.rsplit("/", 1)[-1]:
                 raise
-            return await super().get_response("index.html", scope)
+            response = await super().get_response("index.html", scope)
+        return _with_cache_headers(path, response)
+
+
+#: Vite puts a content hash in every file name under assets/, so a new build never reuses a name.
+_IMMUTABLE = "public, max-age=31536000, immutable"
+
+
+def _with_cache_headers(path: str, response: Response) -> Response:
+    """Cache hashed assets for a year; make the HTML shell revalidate on every load.
+
+    Without a Cache-Control header a browser (an iPhone home-screen app above all) may keep
+    an old ``index.html`` that still points at the previous build, so after a deploy it runs
+    old code against the new API. ``no-cache`` means "ask first": an unchanged page costs a
+    304 thanks to the ETag.
+    """
+    path = path.replace("\\", "/")  # StaticFiles normalises with os.path (backslashes on Windows)
+    if path.startswith("assets/"):
+        response.headers["Cache-Control"] = _IMMUTABLE
+    elif response.media_type == "text/html" or path in ("", "index.html"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 def _export_bedrock_token(settings: Settings) -> None:
