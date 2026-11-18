@@ -16,7 +16,7 @@ from typing import Annotated
 import aiosqlite
 from fastapi import Depends, Request
 
-from app.agent.engine import ChatEngine, compose_session_factory
+from app.agent.sessions import AgentSessions
 from app.authdb import AuthUser, get_auth_connection
 from app.config import Settings, get_settings
 from app.db import get_connection, init_db
@@ -114,9 +114,9 @@ def google_books_client(
 
 
 @lru_cache(maxsize=1)
-def chat_engine() -> ChatEngine:
-    """One engine per process; it owns the chat sessions (keyed by user + session id)."""
-    return ChatEngine(compose_session_factory(get_settings()))
+def agent_sessions() -> AgentSessions:
+    """One store per process; it owns the assistant sessions (keyed by user + thread)."""
+    return AgentSessions.from_settings(get_settings())
 
 
 #: Backward-compatible alias: routes still take ``user_id: CurrentUser`` as the per-user
@@ -133,4 +133,4 @@ CurrentUser = Annotated[int, Depends(current_user_id)]
 DbConn = Annotated[aiosqlite.Connection, Depends(db_connection)]
 BooksClient = Annotated[GoogleBooksClient, Depends(google_books_client)]
 AppSettings = Annotated[Settings, Depends(get_settings)]
-Chat = Annotated[ChatEngine, Depends(chat_engine)]
+Agents = Annotated[AgentSessions, Depends(agent_sessions)]

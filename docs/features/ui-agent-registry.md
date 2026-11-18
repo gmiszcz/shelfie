@@ -1,5 +1,12 @@
 # Universal UI agent — the runtime anchor registry
 
+> **2026-11-18.** There is no separate "UI agent" any more: the one assistant gets the screen
+> tools (`describe_ui`, `get_state`, `set`, `invoke`, `navigate`) from the browser over AG-UI.
+> `find_books`, `series_releases`, `ask_librarian` and `librarian_add` were removed (the agent has
+> data tools for that). The registry described here is unchanged; `invoke` may now return a result
+> (the library filter returns `{ filter, shown }`). See
+> [../agent-ag-ui-bedrock.md](../agent-ag-ui-bedrock.md).
+
 The in-app **UI agent** drives the interface. It used to carry one hand-written
 tool per action (`set_search`, `set_star_filter`, `navigate`, `open_add_book`, …)
 and a matching case in a `shelfie:ui` event bus, so **adding a tab or a control

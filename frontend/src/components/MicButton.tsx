@@ -12,7 +12,6 @@ import {
   useVoiceInput,
 } from '../chat/useVoiceInput';
 import type { VoiceMachineConfig } from '../chat/voiceMachine';
-import type { ChatScope } from '../types';
 import './MicButton.css';
 
 /** Where the mic lives, which changes only its size/shell styling. */
@@ -30,8 +29,6 @@ export interface MicHandle {
 export interface MicButtonProps {
   /** Called with each finalized transcript. `autoSend` -> send immediately. */
   onFinal: (text: string, meta: FinalMeta) => void;
-  /** Chat scope, forwarded to the hook for future per-scope UX. */
-  scope?: ChatScope;
   /** Transcription language (controlled by the parent's PL/EN toggle). */
   language: TranscriptLanguage;
   /** Disable the control (e.g. while the assistant is streaming a reply). */
@@ -90,7 +87,6 @@ export function captionTail(text: string, max = 120): string {
 export const MicButton = forwardRef<MicHandle, MicButtonProps>(function MicButton(
   {
     onFinal,
-    scope,
     language,
     disabled = false,
     busy = false,
@@ -104,7 +100,7 @@ export const MicButton = forwardRef<MicHandle, MicButtonProps>(function MicButto
   },
   ref,
 ) {
-  const voice = useVoiceInput(onFinal, scope, config);
+  const voice = useVoiceInput(onFinal, config);
   const { status, partial, level, error } = voice.state;
   const recording = status === 'recording';
   const requesting = status === 'requesting';

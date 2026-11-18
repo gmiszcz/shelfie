@@ -1,5 +1,3 @@
-import type { ChatEvent } from '../types';
-
 export type MessageRole = 'user' | 'assistant';
 export type MessageStatus = 'streaming' | 'done' | 'error';
 export type ToolStatus = 'running' | 'success' | 'error';
@@ -34,8 +32,9 @@ export interface ChatState {
 
 export type ChatAction =
   | { type: 'send'; text: string; userId: string; assistantId: string }
-  | { type: 'event'; event: ChatEvent }
   | { type: 'text_delta'; text: string }
+  | { type: 'reasoning_delta'; text: string }
+  | { type: 'tool_start'; id: string; name: string }
   | { type: 'action_start'; id: string; name: string; label: string; args: Record<string, unknown> }
   | { type: 'action_label'; id: string; label: string; args: Record<string, unknown> }
   | { type: 'action_result'; id: string; ok: boolean }
@@ -115,13 +114,24 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         ),
       }));
 
-    case 'action_result':
+    case 'reasoning_delta':
+      return patchLastAssistant(state, (m) => ({ ...m, reasoning: m.reasoning + action.text }));
+
+    case 'tool_start':
       return patchLastAssistant(state, (m) => ({
         ...m,
-        actions: m.actions.map((a) =>
-          a.id === action.id ? { ...a, status: action.ok ? 'success' : 'error' } : a,
-        ),
+        tools: [...m.tools, { id: action.id, name: action.name, status: 'running' }],
       }));
+
+    case 'action_result': {
+      // One result action for both kinds: a server data tool chip or a browser action card.
+      const status: ToolStatus = action.ok ? 'success' : 'error';
+      return patchLastAssistant(state, (m) => ({
+        ...m,
+        tools: m.tools.map((t) => (t.id === action.id ? { ...t, status } : t)),
+        actions: m.actions.map((a) => (a.id === action.id ? { ...a, status } : a)),
+      }));
+    }
 
     case 'finish':
       return patchLastAssistant(state, (m) => ({
@@ -136,64 +146,6 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         status: 'error',
         error: action.message,
       }));
-
-    // --- Library agent (backend wire protocol) -------------------------------
-    case 'event': {
-      const event = action.event;
-      switch (event.type) {
-        case 'session_start':
-          return { ...state, sessionId: event.session_id };
-
-        case 'reasoning':
-          return patchLastAssistant(state, (m) => ({ ...m, reasoning: m.reasoning + event.text }));
-
-        case 'token':
-          return patchLastAssistant(state, (m) => ({ ...m, text: m.text + event.text }));
-
-        case 'tool_start':
-          return patchLastAssistant(state, (m) => ({
-            ...m,
-            tools: [...m.tools, { id: event.id, name: event.name, status: 'running' }],
-          }));
-
-        case 'tool_args':
-          return state;
-
-        case 'tool_end':
-          return patchLastAssistant(state, (m) => {
-            const nextStatus: ToolStatus = event.status === 'error' ? 'error' : 'success';
-            let matched = false;
-            const tools = m.tools.map((t) => {
-              if (!matched && t.id === event.id && t.status === 'running') {
-                matched = true;
-                return { ...t, status: nextStatus };
-              }
-              return t;
-            });
-            if (!matched) {
-              tools.push({ id: event.id, name: event.name, status: nextStatus });
-            }
-            return { ...m, tools };
-          });
-
-        case 'error':
-          return patchLastAssistant(state, (m) => ({
-            ...m,
-            status: 'error',
-            error: event.message,
-          }));
-
-        case 'session_finish':
-          return patchLastAssistant(state, (m) => ({
-            ...m,
-            text: event.text ? event.text : m.text,
-            status: m.status === 'error' || !event.ok ? 'error' : 'done',
-          }));
-
-        default:
-          return state;
-      }
-    }
 
     default:
       return state;

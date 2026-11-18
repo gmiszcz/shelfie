@@ -232,29 +232,6 @@ export const api = {
       body: JSON.stringify({ left_id: leftId, right_id: rightId, winner, session_id: sessionId }),
     }),
 
-  /** POST /api/agent/chat — the response body is an SSE stream; read it with chat/sse.ts.
-   *  scope "library_readonly" is the answer-only librarian the UI agent's ask_librarian uses. */
-  chat: (
-    message: string,
-    sessionId: string | null,
-    scope: 'library' | 'library_readonly' | 'library_add' | 'ui' = 'library',
-    signal?: AbortSignal,
-  ) =>
-    fetch(`${BASE}/agent/chat`, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Shelfie-Client': 'web',
-        Accept: 'text/event-stream',
-      },
-      body: JSON.stringify({ message, session_id: sessionId, scope }),
-      signal,
-    }),
-
-  resetChat: (sessionId: string) =>
-    request<void>(`/agent/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
-
   // --- series tracking (wave 5) ---
 
   listSeries: () => request<SeriesSummary[]>('/series'),

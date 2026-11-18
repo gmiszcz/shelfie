@@ -1,98 +1,61 @@
-"""The browser-side (frontend-tools) AG-UI agent endpoint.
+"""``POST /api/agui`` - the Shelfie assistant over the AG-UI protocol.
 
-``POST /api/agui/run`` is a **thin LLM runner**: one request = one model turn.
-The browser owns the tools (they are defined and executed there); the server only
-holds the Bedrock credentials. The request carries the running conversation, the
-browser's tool schemas and a snapshot of the UI state; the response is an AG-UI
-event stream (SSE). See :mod:`app.agent.ui_agent` and
-``docs/agent-ag-ui-bedrock.md``.
+The body is an AG-UI ``RunAgentInput``; the response is an AG-UI event stream (SSE).
+The ``threadId`` (a UUID owned by the browser) is the conversation: the agent keeps
+the history server-side, so only the new input of each run is read. Sessions are
+per logged-in user, see :mod:`app.agent.sessions`.
+
+``DELETE /api/agui/threads/{thread_id}`` forgets a conversation ("new chat").
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
-from typing import Any
 
-from fastapi import APIRouter
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from ag_ui.core import RunAgentInput
+from fastapi import APIRouter, Request, status
+from fastapi.responses import JSONResponse, Response, StreamingResponse
+from pydantic import ValidationError
+from strands_compose_agentcore.agui.inbound import (
+    AguiInputError,
+    run_input_to_invocation,
+    validate_thread_id,
+)
+from strands_compose_agentcore.agui.sse import AguiSseStream
 
-from app.agent import ui_agent
-from app.api.deps import AppSettings, CurrentUser
+from app.api.deps import Agents, CurrentAuthUser
 
 router = APIRouter(prefix="/agui", tags=["agui"])
 
-
-class AgUiTool(BaseModel):
-    """A browser-owned tool, described to the model as a JSON-Schema function."""
-
-    name: str = Field(min_length=1, max_length=64)
-    description: str = ""
-    parameters: dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
+_SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
 
-class AgUiToolCall(BaseModel):
-    id: str = ""
-    name: str = ""
-    args: dict[str, Any] | str = Field(default_factory=dict)
+def _problem(detail: str, type_uri: str = "about:blank", **extra: object) -> JSONResponse:
+    body = {"type": type_uri, "title": "Unprocessable Content", "status": 422, "detail": detail}
+    return JSONResponse({**body, **extra}, status_code=422, media_type="application/problem+json")
 
 
-class AgUiMessage(BaseModel):
-    """One AG-UI conversation message.
+@router.post("")
+async def run(request: Request, user: CurrentAuthUser, agents: Agents) -> Response:
+    try:
+        run_input = RunAgentInput.model_validate_json(await request.body())
+    except ValidationError as exc:
+        errors = json.loads(exc.json(include_url=False))
+        return _problem("The body is not a valid RunAgentInput.", errors=errors)
+    try:
+        validate_thread_id(run_input.thread_id)
+        invocation = run_input_to_invocation(run_input)
+    except AguiInputError as exc:
+        return _problem(str(exc), exc.type_uri)
 
-    ``role`` is ``user`` | ``assistant`` | ``tool``. An assistant message may carry
-    ``toolCalls``; a tool message carries ``toolCallId`` and the tool's result as
-    ``content``.
-    """
-
-    role: str
-    content: Any = ""
-    toolCalls: list[AgUiToolCall] = Field(default_factory=list)
-    toolCallId: str | None = None
-
-
-class RunIn(BaseModel):
-    threadId: str = Field(default="", max_length=128)
-    runId: str = Field(default="", max_length=128)
-    messages: list[AgUiMessage] = Field(default_factory=list)
-    tools: list[AgUiTool] = Field(default_factory=list)
-    state: dict[str, Any] | None = None
-
-
-@router.post("/run")
-async def run(data: RunIn, settings: AppSettings, _user: CurrentUser) -> StreamingResponse:
-    messages = [m.model_dump() for m in data.messages]
-    tools = [t.model_dump() for t in data.tools]
-
-    # ``ui_agent.run_stream`` is a SYNC generator driving the blocking boto3
-    # ``converse_stream`` iterator. Returning a *sync* generator to StreamingResponse
-    # makes Starlette iterate it in its threadpool, so the blocking Bedrock reads
-    # never stall the asyncio event loop (which previously froze every other request
-    # — and the SSE heartbeats — for the whole model turn).
-    def events() -> Iterator[str]:
-        try:
-            for event in ui_agent.run_stream(
-                thread_id=data.threadId,
-                run_id=data.runId,
-                messages=messages,
-                tools=tools,
-                state=data.state,
-                model_id=settings.bedrock_model_id,
-                region=settings.aws_region,
-            ):
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-        except Exception as exc:  # noqa: BLE001 - e.g. missing AWS credentials when the client is built
-            err = {
-                "type": ui_agent.RUN_ERROR,
-                "threadId": data.threadId,
-                "runId": data.runId,
-                "message": f"{type(exc).__name__}: {exc}",
-            }
-            yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
-
+    sse = AguiSseStream(invocation.thread_id, invocation.run_id)
     return StreamingResponse(
-        events(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        sse.frames(agents.stream(user.id, invocation)),
+        media_type=sse.media_type,
+        headers=_SSE_HEADERS,
     )
+
+
+@router.delete("/threads/{thread_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_thread(thread_id: str, user: CurrentAuthUser, agents: Agents) -> None:
+    agents.reset(user.id, thread_id.lower())

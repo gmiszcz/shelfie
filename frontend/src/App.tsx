@@ -129,7 +129,7 @@ function AppShell() {
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [page, setPage] = useState<AppPage>('library');
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const { open: chatOpen, setOpen: setChatOpen, switchMode } = useChat();
+  const { open: chatOpen, setOpen: setChatOpen } = useChat();
   const { user } = useAuth();
 
   useEffect(() => {
@@ -154,9 +154,7 @@ function AppShell() {
         } else if (globalMicRegistry.current) {
           globalMicRegistry.current.toggle();
         } else {
-          // No global mic (setting off): fall back to opening the chat on the UI
-          // agent so Ctrl+M still reaches a microphone.
-          switchMode('ui');
+          // No global mic (setting off): open the chat so Ctrl+M still reaches a mic.
           setChatOpen(true);
         }
       } else if (e.key === 'Escape') {
@@ -169,7 +167,7 @@ function AppShell() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [chatOpen, setChatOpen, switchMode]);
+  }, [chatOpen, setChatOpen]);
 
   const toggleTheme = useCallback(() => setTheme((t) => (t === 'dark' ? 'light' : 'dark')), []);
 

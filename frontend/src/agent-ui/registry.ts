@@ -251,6 +251,8 @@ export interface ActResult {
   ok: boolean;
   id?: string;
   value?: unknown;
+  /** What an `invoke` action returned (e.g. the library filter's `{ shown }`). */
+  result?: unknown;
   error?: string;
   /** On an error, the valid ids or option values to help the model recover. */
   valid?: string[];
@@ -343,8 +345,8 @@ export async function invokeAnchor(
     };
   }
   try {
-    await anchor.invoke(action, args);
-    return { ok: true, id };
+    const result = await anchor.invoke(action, args);
+    return result === undefined ? { ok: true, id } : { ok: true, id, result };
   } catch (err) {
     return { ok: false, id, error: err instanceof Error ? err.message : String(err) };
   }

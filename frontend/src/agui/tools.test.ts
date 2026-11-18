@@ -1,147 +1,56 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { createTools, toolSchemas } from './tools';
 import {
   _resetRegistry,
   registerAnchor,
-  setStaticTabs,
   setActiveTab,
+  setStaticTabs,
   type UiSchema,
 } from '../agent-ui';
-import type { Book } from '../types';
+import { describeScreen, isBrowserTool, runTool, TOOL_DEFINITIONS } from './tools';
 
-const BOOKS: Book[] = [
-  {
-    id: 7,
-    title: 'Początek',
-    authors: ['Wasilij Mahanienko'],
-    series: 'Droga Szamana',
-    shelves: ['Fantasy'],
-    tags: ['LitRPG'],
-    stars: 5,
-    display_score: 4.8,
-    insights: null,
-  } as unknown as Book,
-  {
-    id: 9,
-    title: 'Diuna',
-    authors: ['Frank Herbert'],
-    series: null,
-    shelves: ['SF'],
-    tags: [],
-    stars: 5,
-    display_score: 5.0,
-    insights: null,
-  } as unknown as Book,
-];
-
-function tool(name: string) {
-  const t = createTools({ getBooks: () => BOOKS }).find((x) => x.name === name);
-  if (!t) {
-    throw new Error(`no tool ${name}`);
-  }
-  return t;
+/** Run a browser tool like the AG-UI loop does and parse its result. */
+async function call(name: string, args: Record<string, unknown> = {}) {
+  const result = await runTool(name, JSON.stringify(args));
+  return {
+    value: result.content ? (JSON.parse(result.content) as Record<string, unknown>) : null,
+    error: result.error ? (JSON.parse(result.error) as Record<string, unknown>) : null,
+  };
 }
 
-beforeEach(() => {
-  _resetRegistry();
-});
-afterEach(() => {
-  _resetRegistry();
-});
+beforeEach(() => _resetRegistry());
+afterEach(() => _resetRegistry());
 
-describe('toolSchemas', () => {
-  it('exposes exactly the 9 generic browser tools with JSON-schema parameters', () => {
-    const schemas = toolSchemas(createTools({ getBooks: () => [] }));
-    const names = schemas.map((s) => s.name);
-    expect(names).toEqual([
+describe('TOOL_DEFINITIONS', () => {
+  it('exposes exactly the 5 generic screen tools, without run functions', () => {
+    expect(TOOL_DEFINITIONS.map((t) => t.name)).toEqual([
       'describe_ui',
       'get_state',
       'set',
       'invoke',
       'navigate',
-      'find_books',
-      'series_releases',
-      'ask_librarian',
-      'librarian_add',
     ]);
-    for (const s of schemas) {
-      expect(s.parameters).toMatchObject({ type: 'object' });
+    for (const t of TOOL_DEFINITIONS) {
+      expect(t.parameters).toMatchObject({ type: 'object' });
+      expect('run' in t).toBe(false);
     }
   });
-});
 
-describe('librarian_add', () => {
-  it('hands the add request to the add-scoped librarian and shows its answer as final', async () => {
-    const calls: string[] = [];
-    const t = createTools({
-      getBooks: () => BOOKS,
-      addViaLibrarian: async (r) => {
-        calls.push(r);
-        return 'Dodałem „Beztroska” — Lauren Roberts (Bezsilna, tom 2).';
-      },
-    }).find((x) => x.name === 'librarian_add')!;
-    const result = (await t.execute({ request: 'dodaj Bezsilna tom 2' })) as {
-      ok: boolean;
-      final_answer: boolean;
-      answer: string;
-    };
-    expect(calls).toEqual(['dodaj Bezsilna tom 2']);
-    expect(result).toMatchObject({ ok: true, final_answer: true });
-    expect(result.answer).toContain('Beztroska');
-  });
-
-  it('fails gracefully when no librarian is wired', async () => {
-    const result = (await tool('librarian_add').execute({ request: 'dodaj X' })) as { ok: boolean };
-    expect(result.ok).toBe(false);
+  it('isBrowserTool tells screen tools from server data tools', () => {
+    expect(isBrowserTool('navigate')).toBe(true);
+    expect(isBrowserTool('search_library')).toBe(false);
   });
 });
 
-describe('ask_librarian', () => {
-  it('calls the injected librarian and carries its answer as the final answer', async () => {
-    const calls: string[] = [];
-    const t = createTools({
-      getBooks: () => BOOKS,
-      askLibrarian: async (q) => {
-        calls.push(q);
-        return 'Przeczytałeś 12 książek w 2026.';
-      },
-    }).find((x) => x.name === 'ask_librarian')!;
-
-    const result = (await t.execute({ question: 'ile w tym roku?' })) as {
-      ok: boolean;
-      final_answer: boolean;
-      answer: string;
-    };
-
-    expect(calls).toEqual(['ile w tym roku?']);
-    expect(result.ok).toBe(true);
-    expect(result.final_answer).toBe(true);
-    expect(result.answer).toBe('Przeczytałeś 12 książek w 2026.');
-  });
-
-  it('fails gracefully when no librarian is wired', async () => {
-    const t = tool('ask_librarian');
-    const result = (await t.execute({ question: 'ile?' })) as { ok: boolean; error: string };
-    expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/not available/);
-  });
-
-  it('reports the error when the librarian call throws', async () => {
-    const t = createTools({
-      getBooks: () => BOOKS,
-      askLibrarian: async () => {
-        throw new Error('NoCredentialsError');
-      },
-    }).find((x) => x.name === 'ask_librarian')!;
-    const result = (await t.execute({ question: 'ile?' })) as { ok: boolean; error: string };
-    expect(result.ok).toBe(false);
-    expect(result.error).toBe('NoCredentialsError');
+describe('runTool', () => {
+  it('reports an unknown tool and bad JSON as errors, never throws', async () => {
+    expect((await runTool('nope', '{}')).error).toMatch(/unknown tool/);
+    expect((await runTool('navigate', '{oops')).error).toBeTruthy();
   });
 });
 
-describe('describe_ui', () => {
-  it('builds the schema from the live registry, grouped by tab', () => {
+describe('describe_ui / describeScreen', () => {
+  it('builds the schema from the live registry and sends it as AG-UI context', async () => {
     setStaticTabs([
       { id: 'library', label: 'Library' },
       { id: 'stats', label: 'Statistics' },
@@ -155,48 +64,28 @@ describe('describe_ui', () => {
       getState: () => 'dune',
       set: () => {},
     });
-    registerAnchor({
-      id: 'theme.toggle',
-      kind: 'select',
-      label: 'Theme',
-      getState: () => 'dark',
-      options: () => [
-        { value: 'dark', label: 'Dark' },
-        { value: 'light', label: 'Light' },
-      ],
-      set: () => {},
-    });
 
-    const out = tool('describe_ui').execute({}) as { ok: boolean; schema: UiSchema };
-    expect(out.ok).toBe(true);
-    expect(out.schema.activeTab).toBe('library');
-    const library = out.schema.tabs.find((t) => t.id === 'library')!;
-    expect(library.active).toBe(true);
-    expect(library.mounted).toBe(true);
-    const search = library.anchors.find((a) => a.id === 'library.search')!;
-    expect(search).toMatchObject({ kind: 'search', value: 'dune', settable: true });
-    // The unmounted stats tab is still listed (from the static nav).
-    const stats = out.schema.tabs.find((t) => t.id === 'stats')!;
-    expect(stats.mounted).toBe(false);
-    // The global theme anchor carries its options.
-    const theme = out.schema.global.find((a) => a.id === 'theme.toggle')!;
-    expect(theme.options).toEqual([
-      { value: 'dark', label: 'Dark' },
-      { value: 'light', label: 'Light' },
-    ]);
+    const schema = (await call('describe_ui')).value as unknown as UiSchema;
+    expect(schema.activeTab).toBe('library');
+    const library = schema.tabs.find((t) => t.id === 'library')!;
+    expect(library.anchors.find((a) => a.id === 'library.search')).toMatchObject({
+      kind: 'search',
+      value: 'dune',
+      settable: true,
+    });
+    expect(schema.tabs.find((t) => t.id === 'stats')?.mounted).toBe(false);
+
+    const [context] = describeScreen();
+    expect(JSON.parse(context.value)).toEqual(schema);
   });
 });
 
 describe('get_state / set / invoke / navigate', () => {
-  it('get_state reads a registered anchor and errors on an unknown id', () => {
+  it('get_state reads an anchor; an unknown id lists the valid ones', async () => {
     registerAnchor({ id: 'library.search', kind: 'search', label: 's', getState: () => 'x' });
-    expect(tool('get_state').execute({ id: 'library.search' })).toMatchObject({
-      ok: true,
-      value: 'x',
-    });
-    const miss = tool('get_state').execute({ id: 'nope' }) as { ok: boolean; valid: string[] };
-    expect(miss.ok).toBe(false);
-    expect(miss.valid).toContain('library.search');
+    expect((await call('get_state', { id: 'library.search' })).value).toMatchObject({ value: 'x' });
+    const miss = await call('get_state', { id: 'nope' });
+    expect(miss.error?.valid).toContain('library.search');
   });
 
   it('set writes a value control and validates against options', async () => {
@@ -214,18 +103,10 @@ describe('get_state / set / invoke / navigate', () => {
         value = String(v);
       },
     });
-    const ok = (await tool('set').execute({ id: 'stats.period', value: 'last12Months' })) as {
-      ok: boolean;
-    };
-    expect(ok.ok).toBe(true);
+    expect((await call('set', { id: 'stats.period', value: 'last12Months' })).error).toBeNull();
     expect(value).toBe('last12Months');
-
-    const bad = (await tool('set').execute({ id: 'stats.period', value: 'nope' })) as {
-      ok: boolean;
-      valid: string[];
-    };
-    expect(bad.ok).toBe(false);
-    expect(bad.valid).toEqual(['thisYear', 'last12Months']);
+    const bad = await call('set', { id: 'stats.period', value: 'nope' });
+    expect(bad.error?.valid).toEqual(['thisYear', 'last12Months']);
   });
 
   it('invoke runs an action and reports valid actions on error', async () => {
@@ -240,20 +121,10 @@ describe('get_state / set / invoke / navigate', () => {
         calls.push({ action, args });
       },
     });
-    const ok = (await tool('invoke').execute({
-      id: 'library.books',
-      action: 'open',
-      args: { id: 7 },
-    })) as { ok: boolean };
-    expect(ok.ok).toBe(true);
+    await call('invoke', { id: 'library.books', action: 'open', args: { id: 7 } });
     expect(calls[0]).toEqual({ action: 'open', args: { id: 7 } });
-
-    const bad = (await tool('invoke').execute({ id: 'library.books', action: 'delete' })) as {
-      ok: boolean;
-      valid: string[];
-    };
-    expect(bad.ok).toBe(false);
-    expect(bad.valid).toEqual(['open']);
+    const bad = await call('invoke', { id: 'library.books', action: 'delete' });
+    expect(bad.error?.valid).toEqual(['open']);
   });
 
   it('navigate switches through the nav.tab anchor and rejects unknown tabs', async () => {
@@ -272,22 +143,14 @@ describe('get_state / set / invoke / navigate', () => {
         tab = String(args?.tab);
       },
     });
-    const ok = (await tool('navigate').execute({ tab: 'stats' })) as { ok: boolean };
-    expect(ok.ok).toBe(true);
+    expect((await call('navigate', { tab: 'stats' })).error).toBeNull();
     expect(tab).toBe('stats');
-
-    const bad = (await tool('navigate').execute({ tab: 'nope' })) as {
-      ok: boolean;
-      valid: string[];
-    };
-    expect(bad.ok).toBe(false);
-    expect(bad.valid).toEqual(['library', 'stats']);
+    expect((await call('navigate', { tab: 'nope' })).error?.valid).toEqual(['library', 'stats']);
   });
 });
 
 describe('universality — a brand-new control needs no agent code', () => {
-  it('describe_ui lists a freshly registered dummy anchor and set() drives it', async () => {
-    // A component the agent has never heard of registers itself at runtime.
+  it('describe_ui lists a freshly registered anchor and set() drives it', async () => {
     let dummy = 'before';
     registerAnchor({
       id: 'future.widget',
@@ -299,44 +162,13 @@ describe('universality — a brand-new control needs no agent code', () => {
         dummy = String(v);
       },
     });
-
-    // The agent discovers it purely from describe_ui — no tool was added.
-    const schema = (tool('describe_ui').execute({}) as { schema: UiSchema }).schema;
+    const schema = (await call('describe_ui')).value as unknown as UiSchema;
     const found = schema.tabs
       .flatMap((t) => t.anchors)
       .concat(schema.global)
       .find((a) => a.id === 'future.widget');
-    expect(found).toMatchObject({
-      id: 'future.widget',
-      kind: 'text-input',
-      label: 'A future control',
-      value: 'before',
-      settable: true,
-    });
-
-    // And the generic set() tool drives it with no change to the agent.
-    const res = (await tool('set').execute({ id: 'future.widget', value: 'after' })) as {
-      ok: boolean;
-    };
-    expect(res.ok).toBe(true);
+    expect(found).toMatchObject({ kind: 'text-input', value: 'before', settable: true });
+    await call('set', { id: 'future.widget', value: 'after' });
     expect(dummy).toBe('after');
-  });
-});
-
-describe('find_books', () => {
-  it('matches across title/author/series and returns ids + titles', () => {
-    const out = tool('find_books').execute({ query: 'Droga Szamana' }) as {
-      count: number;
-      books: { id: number; title: string }[];
-    };
-    expect(out.count).toBe(1);
-    expect(out.books[0]).toMatchObject({ id: 7, title: 'Początek' });
-  });
-
-  it('requires every term to match (AND)', () => {
-    const out = tool('find_books').execute({ query: 'Frank Diuna' }) as { count: number };
-    expect(out.count).toBe(1);
-    const miss = tool('find_books').execute({ query: 'Frank Szamana' }) as { count: number };
-    expect(miss.count).toBe(0);
   });
 });

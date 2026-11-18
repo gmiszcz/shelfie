@@ -1,13 +1,11 @@
-"""The current-date system note, shared by BOTH agents.
+"""The current-date note for the assistant.
 
-Neither the UI agent (``app.agent.ui_agent``) nor the librarian
-(``app.agent.config.yaml`` / ``app.agent.engine``) has a clock of its own, so
-without this they guess the year and in practice ask the user what year it is.
-This module builds one note that states today's date, the current year, and that
-a bare "this year" / "w tym roku" means books FINISHED in the current calendar
-year. Both agents inject the SAME note **in code at each reply**, so it stays
-correct across midnight in a long-lived session (it is rebuilt every turn from
-:func:`now`, never baked into a static prompt or the YAML).
+The model has no clock of its own, so without this it guesses the year and asks
+the user what year it is. This module builds one note that states today's date,
+the current year, and that a bare "this year" / "w tym roku" means books FINISHED
+in the current calendar year. ``app.agent.sessions`` adds it to the AG-UI client
+context **on every run**, so it stays correct across midnight in a long-lived
+session (rebuilt from :func:`now`, never baked into the YAML).
 """
 
 from __future__ import annotations

@@ -64,7 +64,8 @@ export function fold(v: string): string {
 function foldMatch(value: string, needle: string): boolean {
   const v = fold(value);
   const n = fold(needle);
-  if (!n) {
+  // An empty value (a book with no series) must not match: '' is "contained" in any needle.
+  if (!n || !v) {
     return false;
   }
   if (v === n) {

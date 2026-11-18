@@ -80,7 +80,11 @@ export interface AnchorConfig {
    * with several (e.g. a dialog's `open` / `close`); `args` carries parameters
    * (e.g. a list item id to open). Value controls usually omit this.
    */
-  invoke?: (action?: string, args?: Record<string, unknown>) => void | Promise<void>;
+  /**
+   * May return a small JSON-able result (e.g. `{ shown: 7 }`); it goes back to the
+   * agent as the tool result, so the agent can see what the action did.
+   */
+  invoke?: (action?: string, args?: Record<string, unknown>) => unknown | Promise<unknown>;
   /** Allowed values for a `select` / `multi-select`, read live. */
   options?: () => AnchorOption[];
   /** The items of a `list` anchor, read live (the registry bounds how many it exposes). */

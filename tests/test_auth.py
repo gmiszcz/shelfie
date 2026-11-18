@@ -377,27 +377,14 @@ def test_isolation_covers_are_per_user(admin_client: TestClient, new_client) -> 
     assert heidi.get(url).status_code == 404
 
 
-def test_isolation_chat_sessions_keyed_by_user() -> None:
-    """The chat engine stores sessions under (user_id, session_id)."""
-    from app.agent.engine import ChatEngine
+def test_isolation_agent_sessions_keyed_by_user(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The assistant stores sessions under (user_id, thread_id)."""
+    from app.agent import sessions
 
-    calls: list[str] = []
-
-    def factory(session_id: str, scope: str = "library"):
-        calls.append(session_id)
-        from app.agent.engine import ChatSession
-
-        class _Q:
-            def flush(self): ...
-            def emit_session_start(self, m): ...
-            async def get(self): ...
-            async def close(self, d=None): ...
-            def put_event(self, e): ...
-
-        return ChatSession(session_id=session_id, entry=None, queue=_Q(), manifest=None)
-
-    engine = ChatEngine(factory)
-    s1 = engine.session(1, "shared")
-    s2 = engine.session(2, "shared")
-    assert s1 is not s2  # same session id, different user -> different session
-    assert engine.session(1, "shared") is s1
+    monkeypatch.setattr(sessions, "resolve_session", lambda _config, sid: object())
+    store = sessions.AgentSessions(app_config=None)  # type: ignore[arg-type]
+    thread = "6f1c2a8e-1d2b-4c3d-9e8f-0a1b2c3d4e5f"
+    s1 = store._get(1, thread)
+    s2 = store._get(2, thread)
+    assert s1 is not s2  # same thread id, different user -> different session
+    assert store._get(1, thread) is s1

@@ -168,7 +168,11 @@ export function Library() {
           filter.book_ids = ids;
         }
       }
-      setAssistantFilter(isEmptyFilter(filter) ? null : filter);
+      const applied = isEmptyFilter(filter) ? null : filter;
+      setAssistantFilter(applied);
+      // Tell the agent what it did: the resolved filter and how many books are now shown,
+      // so "0 shown" can be reported (or retried with another name) instead of "done".
+      return { filter: applied, shown: applyFilter(books, applied).length };
     },
   });
 

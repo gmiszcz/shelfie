@@ -1,14 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ChatEvent } from '../types';
 import { type ChatState, chatReducer, initialChatState } from './chatState';
 
 function send(state: ChatState, text: string): ChatState {
   return chatReducer(state, { type: 'send', text, userId: 'u1', assistantId: 'a1' });
-}
-
-function feed(state: ChatState, events: ChatEvent[]): ChatState {
-  return events.reduce((s, event) => chatReducer(s, { type: 'event', event }), state);
 }
 
 describe('chatReducer — common', () => {
@@ -23,76 +18,38 @@ describe('chatReducer — common', () => {
     expect(state.messages[1]).toMatchObject({ role: 'assistant', text: '', status: 'streaming' });
   });
 
-  it('reset clears messages and session id', () => {
-    let state = send(initialChatState, 'hi');
-    state = feed(state, [{ type: 'session_start', session_id: 's' }]);
-    state = chatReducer(state, { type: 'reset' });
+  it('reset clears messages', () => {
+    const state = chatReducer(send(initialChatState, 'hi'), { type: 'reset' });
     expect(state).toEqual(initialChatState);
   });
 });
 
-describe('chatReducer — library agent (backend wire events)', () => {
-  it('processes a full successful turn', () => {
-    let state = send(initialChatState, 'hi');
-    state = feed(state, [
-      { type: 'session_start', session_id: 'sess-1' },
-      { type: 'reasoning', text: 'Let me ' },
-      { type: 'reasoning', text: 'check.' },
-      { type: 'tool_start', id: 't1', name: 'search_library', input: {} },
-      { type: 'tool_end', id: 't1', name: 'search_library', status: 'success' },
-      { type: 'token', text: 'Masz ' },
-      { type: 'token', text: '12 ' },
-      { type: 'token', text: 'książek.' },
-      { type: 'session_finish', session_id: 'sess-1', text: 'Masz 12 książek.', ok: true },
-    ]);
-
-    expect(state.sessionId).toBe('sess-1');
+describe('chatReducer — server data tools and reasoning', () => {
+  it('records reasoning and a data-tool chip, then marks it done', () => {
+    let state = send(initialChatState, 'ile mam książek?');
+    state = chatReducer(state, { type: 'reasoning_delta', text: 'Let me ' });
+    state = chatReducer(state, { type: 'reasoning_delta', text: 'check.' });
+    state = chatReducer(state, { type: 'tool_start', id: 't1', name: 'search_library' });
+    state = chatReducer(state, { type: 'action_result', id: 't1', ok: true });
+    state = chatReducer(state, { type: 'text_delta', text: 'Masz 12 książek.' });
+    state = chatReducer(state, { type: 'finish', ok: true });
     const assistant = state.messages[1];
     expect(assistant.reasoning).toBe('Let me check.');
     expect(assistant.tools).toEqual([{ id: 't1', name: 'search_library', status: 'success' }]);
+    expect(assistant.actions).toEqual([]);
     expect(assistant.text).toBe('Masz 12 książek.');
     expect(assistant.status).toBe('done');
-    expect(assistant.error).toBeUndefined();
   });
 
-  it('keeps streamed tokens when session_finish text is empty', () => {
+  it('an error event marks the message as error', () => {
     let state = send(initialChatState, 'hi');
-    state = feed(state, [
-      { type: 'token', text: 'partial answer' },
-      { type: 'session_finish', text: '', ok: true },
-    ]);
-    expect(state.messages[1].text).toBe('partial answer');
-    expect(state.messages[1].status).toBe('done');
-  });
-
-  it('marks a tool as error on a failed tool_end', () => {
-    let state = send(initialChatState, 'hi');
-    state = feed(state, [
-      { type: 'tool_start', id: 't9', name: 'reading_stats', input: {} },
-      { type: 'tool_end', id: 't9', name: 'reading_stats', status: 'error' },
-    ]);
-    expect(state.messages[1].tools).toEqual([{ id: 't9', name: 'reading_stats', status: 'error' }]);
-  });
-
-  it('processes an error turn', () => {
-    let state = send(initialChatState, 'hi');
-    state = feed(state, [
-      { type: 'error', message: 'RuntimeError: boom' },
-      { type: 'session_finish', text: '', ok: false },
-    ]);
-    const assistant = state.messages[1];
-    expect(assistant.status).toBe('error');
-    expect(assistant.error).toBe('RuntimeError: boom');
-  });
-
-  it('session_finish ok=false marks error even without an error event', () => {
-    let state = send(initialChatState, 'hi');
-    state = feed(state, [{ type: 'session_finish', text: '', ok: false }]);
-    expect(state.messages[1].status).toBe('error');
+    state = chatReducer(state, { type: 'error', message: 'AccessDenied' });
+    state = chatReducer(state, { type: 'finish', ok: false });
+    expect(state.messages[1]).toMatchObject({ status: 'error', error: 'AccessDenied' });
   });
 });
 
-describe('chatReducer — UI agent (browser-side actions)', () => {
+describe('chatReducer — browser (screen) tools', () => {
   it('streams text deltas into the assistant message', () => {
     let state = send(initialChatState, 'pokaż serię');
     state = chatReducer(state, { type: 'text_delta', text: 'Pokazuję ' });

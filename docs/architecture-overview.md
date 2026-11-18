@@ -14,8 +14,8 @@ deployed on Fly.io (app `mybooks`).
   of truth; display scores are recomputable.
 - **One deployable unit.** FastAPI serves `frontend/dist` (`app/main.py` `SpaStaticFiles`).
   One image, one port (8000), one healthcheck (`/api/health`).
-- **The agents never get a privileged side door.** The library agent's tools call the same
-  `app.services` layer the HTTP API uses (or read SQLite directly for reads); the UI agent's
+- **The assistant never gets a privileged side door.** Its data tools call the same
+  `app.services` layer the HTTP API uses (or read SQLite directly for reads); its screen
   tools run in the browser against the live UI. There is **no MCP, no A2A and no A2UI** in the
   code.
 
@@ -27,8 +27,7 @@ deployed on Fly.io (app `mybooks`).
 | **Backend (FastAPI)** | REST + SSE + WebSocket API, Google Books/cover pipeline, rating engine, auth, and both agent runners |
 | **Google Books integration** | Search by ISBN/title/author, descriptions, covers (`app/integrations/google_books.py`); OpenLibrary fallback |
 | **Rating engine** | Star rating → latent strength; pairwise "left or right?" sessions; continuous `display_score` |
-| **Library agent (strands-compose on Bedrock)** | Answers and manages library **data** by chat; read+write tools, human-in-the-loop for destructive/wide changes |
-| **UI agent (thin Bedrock runner + browser tools)** | Drives the on-screen UI (navigate, filter, open) and delegates data questions to the librarian |
+| **Assistant (strands-compose on Bedrock, AG-UI)** | Answers and manages library **data** with server tools (human-in-the-loop for destructive/wide changes) and drives the on-screen UI with browser tools |
 | **AWS Transcribe** | Streaming speech-to-text for voice input |
 | **Persistence** | SQLite per user (file volume `/app/data`), plus each user's `books.json` and covers |
 
@@ -37,27 +36,26 @@ deployed on Fly.io (app `mybooks`).
 | Protocol | Where | Purpose |
 |---|---|---|
 | REST | frontend ↔ backend | CRUD, search, ratings, series, auth |
-| SSE | `POST /api/agent/chat` | library-agent streamed answer (wire protocol → AG-UI-annotated) |
-| SSE | `POST /api/agui/run` | UI-agent AG-UI events (one model turn per request) |
+| SSE | `POST /api/agui` | the assistant: one AG-UI run per request (`RunAgentInput` in, AG-UI events out) |
 | WebSocket | `GET /api/transcribe/stream` | voice: PCM up, partial/final transcripts down |
 | ETag / 304 | `GET /api/books`, `GET /api/series` | cheap background revalidation of the client cache (`app/api/conditional.py`) |
 
-## The two agents
+## The assistant
 
-Both run on **AWS Bedrock** (Claude Haiku 5.5, region `eu-central-1`). Bedrock auth uses the
+It runs on **AWS Bedrock** (Claude Haiku 5.5, region `eu-central-1`). Bedrock auth uses the
 long-term API key `AWS_BEARER_TOKEN_BEDROCK`, exported from `.env` into the process environment
 in `app/main.py` `_export_bedrock_token`; on Fly `AWS_EC2_METADATA_DISABLED=true` keeps boto3 from
 probing the EC2 metadata service.
 
-- **Library agent** (`app/agent/engine.py`, `config.yaml`, `tools.py`) — a strands-compose
-  assistant that reads and writes library data. Its tools run in-process: reads hit SQLite
-  directly, writes go through `app.services.books`. Destructive (`delete_book`) and wide
-  (`update_book` over three books) changes are two-phase, confirmed by the user in chat. A
-  read-only scope (`library_readonly`) prunes every write tool server-side.
-- **UI agent** (`app/agent/ui_agent.py`, `frontend/src/agui/`, `frontend/src/agent-ui/`) — a thin
-  Bedrock `converse_stream` runner with **no database access**. Every tool is defined and executed
-  in the browser against a runtime anchor registry, so it drives any current or future tab. Its
-  `ask_librarian` tool reaches the librarian in the read-only scope for data questions.
+- **Data tools** (`app/agent/config.yaml`, `tools.py`) — run in-process in the strands-compose
+  agent: reads hit SQLite directly, writes go through `app.services.books`. Destructive
+  (`delete_book`) and wide (`update_book` over three books) changes are two-phase, confirmed by
+  the user in chat.
+- **Screen tools** (`frontend/src/agui/tools.ts`, `frontend/src/agent-ui/`) — sent by the browser
+  with every AG-UI run and executed there against a runtime anchor registry, so they drive any
+  current or future tab. `allow_client_tools: true` lets the agent accept them.
+- **Endpoint** (`app/api/routes/agui.py`, `app/agent/sessions.py`) — `POST /api/agui`, one
+  session per (user, AG-UI `threadId`).
 
 See [agent-ag-ui-bedrock.md](agent-ag-ui-bedrock.md) and [features/chatbot.md](features/chatbot.md)
 for the full picture, including a "Who answers what" request-path table.
@@ -69,8 +67,9 @@ for the full picture, including a "Who answers what" request-path table.
 2. **Rate.** 1–5 stars; a 5.0 enqueues a comparison session.
 3. **Compare.** The backend picks an informative pair → the UI shows "left or right?" → each
    choice appends to the comparison log → scores refit into `display_score`.
-4. **Chat / voice.** A chat request goes to the library agent (data) or the UI agent (screen);
-   voice is transcribed by AWS Transcribe and fed into the UI agent.
+4. **Chat / voice.** A chat request goes to the assistant, which uses data tools on the server
+   and screen tools in the browser; voice is transcribed by AWS Transcribe and sent to the same
+   assistant.
 
 ## See also
 

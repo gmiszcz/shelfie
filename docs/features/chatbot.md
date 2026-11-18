@@ -1,5 +1,11 @@
 # Library assistant (chatbot)
 
+> **2026-11-18 — transport changed.** The assistant now speaks AG-UI at `POST /api/agui`
+> (strands-compose `allow_client_tools`, one agent with data tools AND browser screen tools).
+> `POST /api/agent/chat`, its wire protocol, the scopes and the Library/UI mode switch are gone.
+> The data tools and the confirmation rules below still apply. Current transport, request paths
+> and files: [../agent-ag-ui-bedrock.md](../agent-ag-ui-bedrock.md).
+
 The current chat agent: its tools, the SSE wire protocol it streams, and the chat
 widget that renders it.
 

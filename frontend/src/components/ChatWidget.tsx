@@ -10,30 +10,26 @@ import type { FinalMeta } from '../chat/useVoiceInput';
 import { MicButton, type MicHandle } from './MicButton';
 import './ChatWidget.css';
 
-/** The two chat agents the widget switches between. */
-type AgentMode = 'library' | 'ui';
-
-/** Human labels for the LIBRARY agent's backend data tools. */
+/** Human labels for the assistant's server-side data tools (app/agent/tools.py). */
 const TOOL_LABELS: Record<string, string> = {
   search_library: 'Searching your library',
   list_books: 'Listing books',
+  get_book: 'Reading a book',
   get_book_details: 'Reading book details',
   reading_stats: 'Computing statistics',
   library_overview: 'Library overview',
+  list_series: 'Listing series',
+  get_series: 'Reading a series',
+  refresh_series: 'Checking new volumes',
+  add_book: 'Adding a book',
+  update_book: 'Updating a book',
 };
 
-const EXAMPLE_PROMPTS: Record<AgentMode, string[]> = {
-  library: [
-    'How many books have I finished this year?',
-    'Recommend something from my unread shelf',
-    'Which author do I own the most of?',
-  ],
-  ui: [
-    'Pokaż książki z serii Droga Szamana',
-    'Pokaż tylko 5 gwiazdek',
-    'Przejdź do rankingu',
-  ],
-};
+const EXAMPLE_PROMPTS = [
+  'Ile książek przeczytałem w tym roku?',
+  'Pokaż książki z serii Droga Szamana',
+  'Przejdź do rankingu',
+];
 
 function toolLabel(name: string): string {
   return TOOL_LABELS[name] ?? name;
@@ -166,8 +162,6 @@ export function ChatWidget() {
   const {
     open,
     setOpen,
-    mode,
-    switchMode,
     voiceLang,
     setVoiceLang,
     state,
@@ -218,7 +212,7 @@ export function ChatWidget() {
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      void send(input);
+      submit(input);
     }
   };
 
@@ -231,7 +225,6 @@ export function ChatWidget() {
   );
 
   const empty = state.messages.length === 0;
-  const title = mode === 'ui' ? 'UI agent' : 'Library agent';
 
   return (
     <>
@@ -251,7 +244,7 @@ export function ChatWidget() {
         <div className="chat-panel" role="dialog" aria-label="Shelfie assistant">
           <header className="chat-header">
             <span className="chat-title">
-              <i className={`pi ${mode === 'ui' ? 'pi-desktop' : 'pi-book'}`} /> {title}
+              <i className="pi pi-sparkles" /> Assistant
             </span>
             <span className="chat-header-actions">
               <Button
@@ -271,40 +264,13 @@ export function ChatWidget() {
             </span>
           </header>
 
-          <div className="chat-mode-switch" role="tablist" aria-label="Agent mode">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === 'library'}
-              className={`chat-mode-btn ${mode === 'library' ? 'active' : ''}`}
-              onClick={() => switchMode('library')}
-            >
-              <i className="pi pi-book" />
-              <span>Library agent</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === 'ui'}
-              className={`chat-mode-btn ${mode === 'ui' ? 'active' : ''}`}
-              onClick={() => switchMode('ui')}
-            >
-              <i className="pi pi-desktop" />
-              <span>UI agent</span>
-            </button>
-          </div>
-
           <div className="chat-scroll" ref={scrollRef}>
             {empty ? (
               <div className="chat-empty">
                 <i className="pi pi-sparkles" />
-                <p>
-                  {mode === 'ui'
-                    ? 'Ask me to filter, open, add or navigate — I drive the interface.'
-                    : 'Ask about your books, reading stats or recommendations.'}
-                </p>
+                <p>Ask about your books, or tell me what to show — I can drive the app.</p>
                 <div className="chat-examples">
-                  {EXAMPLE_PROMPTS[mode].map((p) => (
+                  {EXAMPLE_PROMPTS.map((p) => (
                     <button
                       type="button"
                       key={p}
@@ -335,7 +301,6 @@ export function ChatWidget() {
             <MicButton
               ref={micRef}
               onFinal={onFinalTranscript}
-              scope={mode}
               language={voiceLang}
               disabled={streaming}
               busy={streaming}
@@ -346,7 +311,7 @@ export function ChatWidget() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
-              placeholder={mode === 'ui' ? 'Tell me what to do…' : 'Message the assistant…'}
+              placeholder="Message the assistant…"
               autoResize
               rows={1}
               className="chat-textarea"

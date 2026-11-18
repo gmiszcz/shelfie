@@ -47,27 +47,16 @@ vi.mock('./MicButton', async () => {
   };
 });
 
-// A deterministic UI-agent run: no tools, one text reply.
-const runAgent = vi.fn(async (opts: { messages: unknown[]; callbacks?: { onRunFinish?: () => void } }) => {
-  opts.callbacks?.onRunFinish?.();
-  return {
-    messages: [...opts.messages, { role: 'assistant', content: FAKE_REPLY }],
-    finalText: FAKE_REPLY,
-    toolCalls: [],
-  };
+// A deterministic assistant run: no tools, one text reply.
+const ask = vi.fn(async (_agent: unknown, _message: string, chat: { onText: (d: string) => void }) => {
+  chat.onText(FAKE_REPLY);
+  return FAKE_REPLY;
 });
 
-vi.mock('../agui/client', () => ({
-  runAgent: (opts: unknown) => runAgent(opts as never),
-}));
-
-vi.mock('../services/api', () => ({
-  ApiError: class ApiError extends Error {},
-  api: {
-    listBooks: vi.fn(async () => []),
-    chat: vi.fn(),
-    resetChat: vi.fn(async () => undefined),
-  },
+vi.mock('../agui/agent', () => ({
+  ask: (agent: unknown, message: string, chat: never) => ask(agent, message, chat),
+  newAgent: () => ({ threadId: 't', abortRun: vi.fn() }),
+  forgetThread: vi.fn(async () => undefined),
 }));
 
 // eslint-disable-next-line import/first
@@ -79,13 +68,12 @@ import { SettingsProvider } from '../settings/SettingsContext';
 // eslint-disable-next-line import/first
 import { QueryWrapper } from '../queries/testUtils';
 
-/** A probe exposing the shared chat `open` flag, mode and message count to assertions. */
+/** A probe exposing the shared chat `open` flag and message count to assertions. */
 function OpenProbe() {
-  const { open, mode, state } = useChat();
+  const { open, state } = useChat();
   return (
     <>
       <span data-testid="chat-open">{open ? 'open' : 'closed'}</span>
-      <span data-testid="chat-mode">{mode}</span>
       <span data-testid="chat-msgcount">{state.messages.length}</span>
     </>
   );
@@ -108,7 +96,7 @@ beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
   micProps = null;
-  runAgent.mockClear();
+  ask.mockClear();
   vi.useFakeTimers({ shouldAdvanceTime: true });
 });
 
@@ -122,12 +110,11 @@ describe('GlobalMic', () => {
     renderGlobalMic();
     expect(micProps).not.toBeNull();
     expect(micProps?.variant).toBe('global');
-    // It does not own Ctrl+M (the shell routes it) and drives the UI agent.
+    // It does not own Ctrl+M (the shell routes it).
     expect(micProps?.captureShortcuts).toBe(false);
-    expect(micProps?.scope).toBe('ui');
   });
 
-  it('sends the transcript to the UI agent WITHOUT opening the chat', async () => {
+  it('sends the transcript to the assistant WITHOUT opening the chat', async () => {
     renderGlobalMic();
     expect(screen.getByTestId('chat-open').textContent).toBe('closed');
 
@@ -135,11 +122,8 @@ describe('GlobalMic', () => {
       fireEvent.click(screen.getByText('speak'));
     });
 
-    expect(runAgent).toHaveBeenCalledTimes(1);
-    // The transcript is the last user message handed to the UI agent.
-    const arg = runAgent.mock.calls[0][0] as { messages: { role: string; content: string }[] };
-    const lastUser = [...arg.messages].reverse().find((m) => m.role === 'user');
-    expect(lastUser?.content).toBe('pokaż statystyki');
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(ask.mock.calls[0][1]).toBe('pokaż statystyki');
     // The chat panel stayed closed the whole time.
     expect(screen.getByTestId('chat-open').textContent).toBe('closed');
   });
@@ -168,13 +152,8 @@ describe('GlobalMic', () => {
       fireEvent.click(screen.getByText(FAKE_REPLY));
     });
 
-    // Regression (bug 3): tapping used to call switchMode('ui') which RESET the
-    // thread, so the chat opened empty and the spoken exchange was lost. It must now
-    // open on the UI agent WITH the exchange still present.
+    // Regression: tapping must open the chat WITH the spoken exchange still present.
     await waitFor(() => expect(screen.getByTestId('chat-open').textContent).toBe('open'));
-    expect(screen.getByTestId('chat-mode').textContent).toBe('ui');
-    // The thread still holds the user + assistant messages — it was NOT reset (the
-    // old switchMode('ui') path cleared it, opening an empty chat).
     expect(Number(screen.getByTestId('chat-msgcount').textContent)).toBe(countBeforeTap);
   });
 

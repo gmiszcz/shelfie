@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { ChatScope } from '../types';
 import {
   DEFAULT_CONFIG,
   type VoiceEffect,
@@ -88,7 +87,6 @@ function statusFrom(phase: VoiceMachineState['phase']): VoiceStatus {
  */
 export function useVoiceInput(
   onFinal: (text: string, meta: FinalMeta) => void,
-  _scope?: ChatScope,
   config: VoiceMachineConfig = DEFAULT_CONFIG,
 ) {
   const [state, setState] = useState<VoiceState>({

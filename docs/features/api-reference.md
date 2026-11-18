@@ -183,22 +183,18 @@ if a book cannot be read back.
 
 See [chatbot.md](chatbot.md).
 
-### `POST /api/agent/chat`
-Stream one **library-agent** turn as Server-Sent Events.
-**Body:** `{ message: str (1–4000), session_id?: str ([A-Za-z0-9_-], ≤64), scope?: "library" | "library_readonly" | "ui" }`.
-`scope` defaults to `library` (read+write); `library_readonly` prunes the write tools server-side
-(used by the UI agent's `ask_librarian`); legacy `ui` is treated as `library`.
-**Response:** `text/event-stream` of the wire protocol:
-`session_start → (reasoning | token | tool_start | tool_end)* → session_finish | error`.
+### `POST /api/agui`
+One **AG-UI run** of the assistant. **Body:** an AG-UI `RunAgentInput`
+(`threadId` = canonical UUID, `runId`, `messages`, `tools` = the browser's screen tools,
+`context` = the screen description). The server keeps the conversation per (user, `threadId`)
+and reads only the new input (the last user message, or the tool results after it).
+**Response:** `text/event-stream` of AG-UI events: `RUN_STARTED` → text / reasoning / tool-call
+events → `RUN_FINISHED` (with `pendingToolCallIds` when browser tools must run) | `RUN_ERROR`.
+A body that is not a `RunAgentInput`, or a bad `threadId`, is `422` Problem Details.
+See [../agent-ag-ui-bedrock.md](../agent-ag-ui-bedrock.md).
 
-### `DELETE /api/agent/sessions/{session_id}`
-Drop one in-memory chat session's state (all scopes). **Response:** `204`.
-
-### `POST /api/agui/run`
-One **UI-agent** model turn. **Body:** `{ threadId, runId, messages, tools, state }` (the browser
-owns the tool schemas and sends the live UI state). **Response:** `text/event-stream` of AG-UI
-events (`RUN_STARTED` → text and/or tool-call events → `RUN_FINISHED` | `RUN_ERROR`). See
-[../agent-ag-ui-bedrock.md](../agent-ag-ui-bedrock.md).
+### `DELETE /api/agui/threads/{thread_id}`
+Forget one conversation ("new chat"). **Response:** `204`.
 
 ### `GET /api/transcribe/stream` (WebSocket)
 Voice input: send `{action:"start"}`, binary 16 kHz 16-bit mono PCM frames, then `{action:"stop"}`;

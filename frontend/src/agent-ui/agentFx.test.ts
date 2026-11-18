@@ -2,15 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { AGENT_FX_EVENT, findAnchorElement, type AgentFxDetail } from './agentFx';
 import { _resetRegistry, registerAnchor, setStaticTabs } from './index';
-import { createTools } from '../agui/tools';
+import { runTool } from '../agui/tools';
 
 const seen: AgentFxDetail[] = [];
 const onFx = (e: Event) => seen.push((e as CustomEvent<AgentFxDetail>).detail);
 
 function tool(name: string) {
-  const t = createTools({ getBooks: () => [] }).find((x) => x.name === name);
-  if (!t) throw new Error(`no tool ${name}`);
-  return t;
+  return { execute: (args: Record<string, unknown>) => runTool(name, JSON.stringify(args)) };
 }
 
 beforeEach(() => {

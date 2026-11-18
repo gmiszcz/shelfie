@@ -15,8 +15,8 @@ Live app: [https://mybooks.fly.dev](https://mybooks.fly.dev) (Fly.io app `mybook
   short "left or right?" session against other top books and refines a continuous `display_score`.
 - Track book series — owned / read / missing volumes, name aliases, and a web release check for the
   next volume (Polish + original editions).
-- Chat with a **library agent** that reads and manages the library data, and a **UI agent** that
-  drives the on-screen interface; add and search by voice.
+- Chat with **one assistant** that reads and manages the library data and drives the on-screen
+  interface (AG-UI); add and search by voice.
 
 ## Technology stack
 
@@ -27,14 +27,13 @@ Live app: [https://mybooks.fly.dev](https://mybooks.fly.dev) (Fly.io app `mybook
 | Data | SQLite per user (`data/users/<id>/`), shared `auth.sqlite` |
 | Book metadata | Google Books API v1, OpenLibrary fallback |
 | Rating engine | Pairwise comparison → continuous display score |
-| Library agent | AWS Bedrock (Claude Haiku 5.5) via strands-compose, in-process data tools |
-| UI agent | Thin Bedrock `converse_stream` runner + browser-side AG-UI frontend-tools |
+| Assistant | AWS Bedrock (Claude Haiku 5.5) via strands-compose; server data tools + browser screen tools over AG-UI (`POST /api/agui`, `allow_client_tools`) |
 | Voice | AWS Transcribe (web mic → streaming transcription) |
 | Env & tasks | uv + `.venv`, `just` task runner |
 | Delivery | Multi-stage, multi-arch Docker image; GitHub Actions → GHCR → Fly.io |
 
-There is **no MCP, A2A or A2UI** — the library agent's tools call `app.services` / SQLite
-in-process, and the UI agent's tools run in the browser.
+There is **no MCP, A2A or A2UI** — the assistant's data tools call `app.services` / SQLite
+in-process, and its screen tools run in the browser.
 
 ## Architecture at a glance
 
@@ -48,7 +47,7 @@ in-process, and the UI agent's tools run in the browser.
           ┌───────────────▼──────────────────────────────┐
           │                Backend (FastAPI)              │
           │  books/series API · rating engine · auth      │
-          │  library agent (SSE) · UI agent runner (SSE)  │
+          │  assistant: AG-UI over SSE (POST /api/agui)   │
           └───────┬───────────────┬───────────────┬───────┘
                   │               │               │
         ┌─────────▼──┐   ┌────────▼────────┐  ┌───▼─────────┐

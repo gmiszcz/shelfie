@@ -55,7 +55,7 @@ interface ToastContent {
  */
 export function GlobalMic() {
   const { settings } = useSettings();
-  const { voiceLang, streaming, sendUiAgent, revealUiChat, lastUiExchange } = useChat();
+  const { voiceLang, streaming, send, setOpen, lastExchange } = useChat();
 
   const micRef = useRef<MicHandle | null>(null);
   const [toast, setToast] = useState<ToastContent | null>(null);
@@ -112,27 +112,27 @@ export function GlobalMic() {
         return;
       }
       awaitingExchange.current = true;
-      void sendUiAgent(trimmed, { reveal: false });
+      void send(trimmed, { reveal: false });
     },
-    [sendUiAgent],
+    [send],
   );
 
   // Surface a finished UI-agent exchange (only the one WE triggered) in the toast.
   useEffect(() => {
-    if (!awaitingExchange.current || !lastUiExchange) {
+    if (!awaitingExchange.current || !lastExchange) {
       return;
     }
     awaitingExchange.current = false;
     showToast({
-      id: lastUiExchange.id,
-      transcript: lastUiExchange.transcript,
+      id: lastExchange.id,
+      transcript: lastExchange.transcript,
       reply:
-        lastUiExchange.reply ||
-        (lastUiExchange.ok ? 'Done.' : 'Something went wrong.'),
-      ok: lastUiExchange.ok,
+        lastExchange.reply ||
+        (lastExchange.ok ? 'Done.' : 'Something went wrong.'),
+      ok: lastExchange.ok,
       isError: false,
     });
-  }, [lastUiExchange, showToast]);
+  }, [lastExchange, showToast]);
 
   // A mic/transport error (e.g. insecure origin needs HTTPS) goes to the toast.
   const onMicError = useCallback(
@@ -157,10 +157,9 @@ export function GlobalMic() {
       return;
     }
     dismissToast();
-    // reveal (not switchMode): the spoken exchange is already in the shared UI
-    // thread, and switchMode('ui') would reset it to an empty conversation.
-    revealUiChat();
-  }, [toast, dismissToast, revealUiChat]);
+    // The spoken exchange is already in the shared thread: just open the panel.
+    setOpen(true);
+  }, [toast, dismissToast, setOpen]);
 
   const onTouchStart = useCallback((e: React.TouchEvent) => {
     touchStartX.current = e.touches[0]?.clientX ?? null;
@@ -224,7 +223,6 @@ export function GlobalMic() {
         ref={micRef}
         variant="global"
         onFinal={onFinal}
-        scope="ui"
         language={voiceLang}
         busy={streaming}
         disabled={streaming}

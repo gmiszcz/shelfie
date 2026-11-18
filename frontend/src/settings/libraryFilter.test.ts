@@ -187,6 +187,11 @@ describe('applyFilter tolerant facet matching', () => {
     expect(applyFilter(tolkienBooks, { series: 'srodziemie' }).map((b) => b.id)).toEqual([10]);
   });
 
+  it('a series filter never keeps books that have no series', () => {
+    const books = [...tolkienBooks, makeBook({ id: 12, title: 'Solo', series: null })];
+    expect(applyFilter(books, { series: 'Diuna' }).map((b) => b.id)).toEqual([11]);
+  });
+
   it('matches an author by surname only', () => {
     expect(applyFilter(tolkienBooks, { author: 'Tolkien' }).map((b) => b.id)).toEqual([10]);
   });
