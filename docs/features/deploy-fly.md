@@ -76,3 +76,12 @@ EC2 metadata service (IMDS) until it timed out. `AWS_EC2_METADATA_DISABLED=true`
 ## Rotating `FLY_API_TOKEN` (GitHub environment `production`)
 
 Create the token with `fly tokens create deploy -a mybooks -x 8760h`, check it locally (`$env:FLY_API_TOKEN=...; fly status -a mybooks`), and store it **from a file without a trailing newline**: `cmd /c "gh secret set FLY_API_TOKEN --env production -R gmiszcz/shelfie < token.txt"`, then delete the file. Do not pipe the token from PowerShell 5 (`$t | gh secret set ...`): the pipe re-encodes it and adds a newline, and Fly then rejects it ("token validation error", or a 401 from `flyctl auth docker`). Revoke the old token afterwards (`fly tokens list/revoke -a mybooks`).
+
+## Browser cache after a deploy
+
+`app/main.py` (`_with_cache_headers`) sends `Cache-Control: no-cache` for `index.html` (and every
+client route that falls back to it) and `public, max-age=31536000, immutable` for `/assets/*`
+(Vite puts a content hash in those names). Without it a phone (an iPhone home-screen app above all)
+kept the old `index.html` after the 2026-11-18 deploy, ran the old bundle and called the removed
+`POST /api/agui/run` (405, "Something went wrong" after the mic). An app tab that was already open
+during a deploy still runs the old code until it reloads.
