@@ -23,6 +23,7 @@ import {
 import type { UiTab } from './settings/uiBus';
 import { Stats } from './pages/Stats';
 import { applyTheme, initialTheme, THEME_KEY, type Theme } from './theme';
+import { warmUpOnce } from './warmup';
 
 const PAGES: { id: UiTab; label: string; icon: string }[] = [
   { id: 'library', label: 'Library', icon: 'pi pi-book' },
@@ -131,6 +132,11 @@ function AppShell() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { open: chatOpen, setOpen: setChatOpen } = useChat();
   const { user } = useAuth();
+
+  // Once per app open, free: warm the mic and agent paths on the server (see warmup.ts).
+  useEffect(() => {
+    warmUpOnce();
+  }, []);
 
   useEffect(() => {
     applyTheme(theme);

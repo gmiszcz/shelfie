@@ -389,6 +389,9 @@ export const api = {
 
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
 
+  /** Free one-time server warm-up of the mic and agent paths (no Bedrock, no stream). */
+  warmup: () => request<{ timings_ms: Record<string, number> }>('/warmup', { method: 'POST', silent401: true }),
+
   changePassword: (currentPassword: string, newPassword: string) =>
     request<void>('/auth/password', {
       method: 'POST',
