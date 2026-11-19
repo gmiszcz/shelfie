@@ -34,6 +34,12 @@ probing the EC2 metadata service.
 | **Series release question** | Data tools `get_series` / `refresh_series` (`app/services/series_service.py` → researcher + editor agents, `app/agent/series_research.py`). |
 | **Enrichment / insights** (not chat) | `app/services/enrichment.py`, its own Bedrock model, independent of the assistant. |
 
+## Warm-up
+
+When the app opens, the browser calls `POST /api/warmup` once. It loads the SDKs and builds one
+throwaway agent, so the first mic click and the first run are faster. No Bedrock call. See
+[features/warm-up.md](features/warm-up.md).
+
 ## One message, several runs
 
 An AG-UI **run** is one `POST /api/agui` that streams events back.

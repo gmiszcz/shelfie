@@ -28,6 +28,7 @@ real code. Start here.
 | [statistics.md](statistics.md) | `/api/stats`, grouping, date range, summary cards, charts, table. |
 | [ui-agent-registry.md](ui-agent-registry.md) | Universal UI agent: the runtime anchor registry, generic browser tools, date-awareness and structured library filters. |
 | [ui-shell-and-settings.md](ui-shell-and-settings.md) | App shell, navigation, book cards/grid/detail, settings. |
+| [warm-up.md](warm-up.md) | Free one-time warm-up of the mic (Transcribe) and the agent when the app opens, with measured timings. |
 | [voice-input.md](voice-input.md) | Hands-free voice input: mic capture, the VAD stop/send state machine, the Transcribe WebSocket, teardown. |
 
 ## See also

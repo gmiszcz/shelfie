@@ -17,6 +17,7 @@ from app.api.routes import (
     series,
     stats,
     transcribe,
+    warmup,
 )
 
 api_router = APIRouter(prefix="/api")
@@ -32,3 +33,4 @@ api_router.include_router(series.router)
 api_router.include_router(preferences.router)
 api_router.include_router(agui.router)
 api_router.include_router(transcribe.router)
+api_router.include_router(warmup.router)

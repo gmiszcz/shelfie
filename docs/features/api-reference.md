@@ -201,6 +201,11 @@ Voice input: send `{action:"start"}`, binary 16 kHz 16-bit mono PCM frames, then
 receive `{partial|final|error}` transcript frames. Closes with code `4401` when the session cookie
 is missing. See [voice-input.md](voice-input.md).
 
+### `POST /api/warmup`
+Free one-time warm-up of the mic and agent paths (no Bedrock call, no Transcribe stream).
+The app calls it once when it opens. **Response:** `{ timings_ms }` (empty after the first call).
+See [warm-up.md](warm-up.md).
+
 ## Series & waiting list
 
 See [series-tracking.md](series-tracking.md) for the model and the check flow.
